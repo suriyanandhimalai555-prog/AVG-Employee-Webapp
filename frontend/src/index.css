@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy: #0B1C30;
+  --color-indigo: #4338CA; /* Adjusted to match screenshot */
+  --color-yellow: #FACC15; /* Adjusted to match screenshot */
+  --color-emerald: #10B981;
+  --color-surface: #F8F9FF;
+  --color-surface-container: #E5EEFF;
+  --color-surface-container-low: #EFF4FF;
+  --color-surface-container-lowest: #FFFFFF;
+  
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Berkeley Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-navy font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-xl shadow-navy/5;
+  }
+  
+  .glass-dark {
+    @apply bg-navy/70 backdrop-blur-xl border border-navy/20 shadow-lg shadow-black/20;
+  }
+  
+  .gradient-primary {
+    @apply bg-linear-to-br from-indigo to-[#6366F1];
+  }
+  
+  .gradient-yellow {
+    @apply bg-linear-to-br from-yellow to-[#EAB308];
+  }
+  
+  .no-border {
+    @apply border-none shadow-none;
+  }
+  
+  .tactile-press {
+    @apply active:scale-[0.98] transition-transform duration-100;
+  }
+  
+  .card-shadow {
+    @apply shadow-[0_8px_30px_rgb(0,0,0,0.04)];
+  }
+}

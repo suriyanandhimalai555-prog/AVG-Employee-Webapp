@@ -1,0 +1,48 @@
+# ======================
+# Dependencies
+# ======================
+node_modules/
+frontend/node_modules/
+
+# ======================
+# Environment variables
+# ======================
+.env
+.env.*
+apps/*/.env
+!*.env.example
+
+# ======================
+# OS files
+# ======================
+.DS_Store
+
+# ======================
+# Build outputs
+# ======================
+dist/
+build/
+.out/
+
+# ======================
+# Logs
+# ======================
+logs
+*.log
+npm-debug.log*
+
+# ======================
+# TypeScript
+# ======================
+*.tsbuildinfo
+
+# ======================
+# IDE
+# ======================
+.vscode/
+.idea/
+
+# ======================
+# Railway / deployment (optional)
+# ======================
+.env.local

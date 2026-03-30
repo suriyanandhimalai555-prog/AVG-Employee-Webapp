@@ -1,0 +1,18 @@
+{
+  "name": "attendance-management",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @attendance/api\" \"npm run dev -w @attendance/worker\" \"npm run dev -w frontend\"",
+    "build": "npm run build --workspaces --if-present",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

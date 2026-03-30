@@ -1,0 +1,107 @@
+// src/app.ts
+import Fastify, { FastifyInstance } from 'fastify';
+import fastifyCors from '@fastify/cors';
+import fastifyRateLimit from '@fastify/rate-limit';
+
+// Infrastructure Configuration: validated environment variables
+import { env } from './config/env';
+// Redis client used for session caching and rate limiting
+import redisClient from './config/redis';
+
+// Infrastructure Plugins: DB, Auth decorators, and Global Error Handling
+import dbPlugin from './plugins/db.plugin';
+import redisPlugin from './plugins/redis.plugin';
+import authPlugin from './plugins/auth.plugin';
+import errorHandlerPlugin from './plugins/error-handler.plugin';
+
+// Feature Modules: encapsulated routes and business logic
+import authRoutes from './modules/auth/auth.routes';
+import attendanceRoutes from './modules/attendance/attendance.routes';
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// APP FACTORY IMPLEMENTATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Creates and configures the Fastify application instance.
+ * Following the industry-standard modular approach:
+ * 1. Global Setup (Logger, CORS)
+ * 2. Infrastructure Plugins (DB, JWT, Rate Limiting, Error Handling)
+ * 3. Feature Modules (Auth, Attendance)
+ */
+const buildApp = async (): Promise<FastifyInstance> => {
+  // Step 1: Create Fastify instance with environment-aware logging
+  const app = Fastify({
+    logger: {
+      level: env.NODE_ENV === 'production' ? 'warn' : 'info',
+    },
+  });
+
+  // Step 2: Register Global CORS policy
+  // Allows the frontend to interact with the API securely
+  await app.register(fastifyCors, {
+    origin: env.FRONTEND_URL,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+
+  // Step 3: Register Rate Limiting
+  // Uses Redis as the backing store to share limits across multiple instances
+  await app.register(fastifyRateLimit, {
+    max: 100,
+    timeWindow: 60000,
+    redis: redisClient,
+    // Rate limit per user (if logged in) or by IP address
+    keyGenerator: (request: any) => request.user?.id ?? request.ip,
+    errorResponseBuilder: () => ({
+      success: false,
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many requests. Please slow down.',
+      },
+    }),
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Step 4: Infrastructure Registration
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // Register the Database plugin (decorates instance with 'fastify.db')
+  await app.register(dbPlugin);
+
+  // Register the Redis plugin (decorates instance with 'fastify.redis')
+  await app.register(redisPlugin);
+
+  // Register the Authentication plugin (decorates instance with 'fastify.authenticate')
+  await app.register(authPlugin);
+
+  // Register the Global Error Handling plugin (handles 404s and all exceptions)
+  await app.register(errorHandlerPlugin);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Step 5: Feature Module Registration
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // Register a simple health check route (used by monitoring/deployment tools)
+  app.get('/health', async () => ({
+    success: true,
+    data: {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      environment: env.NODE_ENV,
+    },
+  }));
+
+  // Register the Authentication module (Login, Me, Logout)
+  // Mounts under the '/api/auth' prefix
+  await app.register(authRoutes, { prefix: '/api/auth' });
+
+  // Register the Attendance module (Submission, Listing, Summaries)
+  // Mounts under the '/api/attendance' prefix
+  await app.register(attendanceRoutes, { prefix: '/api/attendance' });
+
+  return app;
+};
+
+// Export the buildApp factory function for use in index.ts or test runners
+export default buildApp;

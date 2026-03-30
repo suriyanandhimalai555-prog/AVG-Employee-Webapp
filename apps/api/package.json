@@ -1,0 +1,34 @@
+{
+  "name": "@attendance/api",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "fastify": "latest",
+    "@fastify/jwt": "latest",
+    "@fastify/cors": "latest",
+    "@fastify/rate-limit": "latest",
+    "pg": "latest",
+    "ioredis": "latest",
+    "bullmq": "latest",
+    "zod": "latest",
+    "@aws-sdk/client-s3": "latest",
+    "@aws-sdk/s3-request-presigner": "latest",
+    "socket.io": "latest",
+    "@socket.io/redis-adapter": "latest",
+    "bcrypt": "latest",
+    "dotenv": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/pg": "latest",
+    "@types/bcrypt": "latest",
+    "@types/node": "latest",
+    "ts-node": "latest",
+    "nodemon": "latest"
+  }
+}
