@@ -5,8 +5,10 @@ import { env } from './env';
 const pool = new Pool({
   // Specify the connection string for the database
   connectionString: env.DATABASE_URL,
-  // Define the maximum number of simultaneous connections (20)
-  max: 20,
+  // Increased to 50 to support 1500+ concurrent traffic spikes
+  max: 50,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
 // Register an event listener for when a new client is connected to the database

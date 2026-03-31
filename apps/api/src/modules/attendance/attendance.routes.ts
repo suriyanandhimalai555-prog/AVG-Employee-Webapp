@@ -90,8 +90,8 @@ interface AuthenticatedRequest extends FastifyRequest {
 
 export default async function attendanceRoutes(fastify: FastifyInstance): Promise<void> {
 
-  // ─── POST /api/attendance (Self-mark) ───
-  fastify.post('/api/attendance', {
+  // ─── POST / (Self-mark) ───
+  fastify.post('/', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -120,24 +120,26 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── POST /api/attendance/admin-mark (Admin mark) ───
-  fastify.post('/api/attendance/admin-mark', {
+  // ─── POST /admin-mark (Admin mark) ───
+  fastify.post('/admin-mark', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'branch_admin') {
-        return sendForbidden(reply, 'Only branch admins can use this endpoint');
+      const allowedRoles = ['branch_admin', 'md', 'gm'];
+      if (!allowedRoles.includes(req.user.role)) {
+        return sendForbidden(reply, 'You do not have permission to use this endpoint');
       }
 
-      const body = AdminMarkSchema.parse(req.body);
+      const payload = AdminMarkSchema.parse(req.body);
 
-      const result = await AttendanceService.adminMarkAttendance(
+      const result = await AttendanceService.adminMark(
         fastify.db,
         fastify.redis,
         req.user.id,
+        req.user.role,
         req.user.branchId,
-        body
+        payload
       );
 
       return reply.code(202).send({
@@ -152,8 +154,8 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── GET /api/attendance/upload-url (S3 URL) ───
-  fastify.get('/api/attendance/upload-url', {
+  // ─── GET /upload-url (S3 URL) ───
+  fastify.get('/upload-url', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -169,8 +171,26 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── GET /api/attendance (List) ───
-  fastify.get('/api/attendance', {
+  // ─── GET /photo/:key/url (S3 Download URL) ───
+  fastify.get<{ Params: { key: string } }>('/photo/:key/url', {
+    onRequest: [fastify.authenticate],
+  }, async (request, reply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role === 'client') {
+        return sendForbidden(reply, 'Clients cannot view attendance photos');
+      }
+
+      const { key } = request.params;
+      const result = await AttendanceService.getPresignedDownloadUrl(key);
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET / (List) ───
+  fastify.get('/', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -189,14 +209,37 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
         query
       );
 
-      return reply.send({ success: true, ...result });
+      return reply.send({ success: true, data: result });
     } catch (error) {
       return handleError(error, reply);
     }
   });
 
-  // ─── GET /api/attendance/summary (Stats) ───
-  fastify.get('/api/attendance/summary', {
+  // ─── GET /employees (Branch employees with today's status) ───
+  fastify.get('/employees', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'branch_admin' && req.user.role !== 'gm' && req.user.role !== 'md') {
+        return sendForbidden(reply, 'Only admins can view the employee list');
+      }
+
+      const result = await AttendanceService.getBranchEmployees(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        req.user.branchId
+      );
+
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /summary (Stats) ───
+  fastify.get('/summary', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -210,6 +253,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
 
       const result = await AttendanceService.getAttendanceSummary(
         fastify.db,
+        fastify.redis,
         req.user.id,
         req.user.role,
         req.user.branchId,
@@ -222,8 +266,8 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── GET /api/attendance/:userId/history ───
-  fastify.get('/api/attendance/:userId/history', {
+  // ─── GET /:userId/history ───
+  fastify.get('/:userId/history', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -248,26 +292,28 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── PATCH /api/attendance/:id/correct ───
-  fastify.patch('/api/attendance/:id/correct', {
+  // ─── PATCH /:id/correct ───
+  fastify.patch('/:id/correct', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'branch_admin') {
-        return sendForbidden(reply, 'Only branch admins can correct attendance records');
+      const allowedRoles = ['branch_admin', 'md', 'gm'];
+      if (!allowedRoles.includes(req.user.role)) {
+        return sendForbidden(reply, 'You do not have permission to correct attendance records');
       }
 
       const { id } = req.params as { id: string };
-      const body = CorrectionSchema.parse(req.body);
+      const payload = CorrectionSchema.parse(req.body);
 
       const result = await AttendanceService.correctAttendance(
         fastify.db,
         fastify.redis,
         req.user.id,
+        req.user.role,
         req.user.branchId,
         id,
-        body
+        payload
       );
 
       return reply.send({
@@ -279,8 +325,8 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── PATCH /api/users/:userId/smartphone (Toggle role-based access) ───
-  fastify.patch('/api/users/:userId/smartphone', {
+  // ─── PATCH /users/:userId/smartphone (Toggle role-based access) ───
+  fastify.patch('/users/:userId/smartphone', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {

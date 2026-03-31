@@ -25,12 +25,12 @@ export const SubmitAttendanceSchema = z.object({
       });
     }
   } else if (data.mode === 'field') {
-    // Ensure both a photo and a note are provided when the user is in the field
-    if (!data.photoKey || !data.fieldNote) {
+    // Ensure a photo, note, and GPS coordinates are provided when the user is in the field
+    if (!data.photoKey || !data.fieldNote || data.checkInLat === undefined || data.checkInLng === undefined) {
       // Provide a clear explanation of which fields are required for field mode
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'photoKey and fieldNote are required for field mode',
+        message: 'photoKey, fieldNote, checkInLat, and checkInLng are required for field mode',
         path: ['mode'],
       });
     }

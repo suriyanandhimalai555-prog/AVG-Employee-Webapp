@@ -55,32 +55,63 @@ const redis = new IORedis(env.REDIS_URL, {
 const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => {
   console.log(`🔄 Processing attendance job ${job.id} for user ${job.data.userId}`);
 
-  // Write to PostgreSQL with idempotency (ON CONFLICT DO NOTHING)
-  await db.query(
-    `INSERT INTO attendance (
-      user_id, branch_id, date, mode, status,
-      check_in_time, check_in_lat, check_in_lng,
-      photo_key, field_note, marked_by, submitted_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
-    )
-    ON CONFLICT (user_id, date) DO NOTHING`,
-    [
-      job.data.userId,
-      job.data.branchId,
-      job.data.date,
-      job.data.mode,
-      job.data.status,
-      job.data.checkInTime,
-      job.data.checkInLat ?? null,
-      job.data.checkInLng ?? null,
-      job.data.photoKey ?? null,
-      job.data.fieldNote ?? null,
-      job.data.markedBy,
-    ]
-  );
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
 
-  console.log(`✅ Attendance saved for user ${job.data.userId}`);
+    // Write to PostgreSQL with idempotency (ON CONFLICT DO NOTHING)
+    const insertResult = await client.query(
+      `INSERT INTO attendance (
+        user_id, branch_id, date, mode, status,
+        check_in_time, check_in_lat, check_in_lng,
+        photo_key, field_note, marked_by, submitted_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
+      )
+      ON CONFLICT (user_id, date) DO NOTHING
+      RETURNING id`,
+      [
+        job.data.userId,
+        job.data.branchId,
+        job.data.date,
+        job.data.mode,
+        job.data.status,
+        job.data.checkInTime,
+        job.data.checkInLat ?? null,
+        job.data.checkInLng ?? null,
+        job.data.photoKey ?? null,
+        job.data.fieldNote ?? null,
+        job.data.markedBy,
+      ]
+    );
+
+    // Only log to audit if a new row was actually inserted (not a duplicate)
+    if (insertResult.rowCount && insertResult.rowCount > 0) {
+      const attendanceId = insertResult.rows[0].id;
+
+      // Log the initial check-in to the immutable audit table
+      await client.query(
+        `INSERT INTO attendance_audit (
+          attendance_id, changed_by, change_type, old_data, new_data
+        ) VALUES (
+          $1, $2, 'initial_mark', NULL,
+          (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1)
+        )`,
+        [attendanceId, job.data.markedBy]
+      );
+
+      console.log(`✅ Attendance saved and audited for user ${job.data.userId}`);
+    } else {
+      console.log(`⏭️  Duplicate job skipped for user ${job.data.userId} on ${job.data.date}`);
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err; // Re-throw so BullMQ retries the job
+  } finally {
+    client.release();
+  }
 
   // Publish confirmation event to Redis Pub/Sub for real-time API updates
   await redis.publish(

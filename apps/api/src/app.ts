@@ -17,6 +17,9 @@ import errorHandlerPlugin from './plugins/error-handler.plugin';
 // Feature Modules: encapsulated routes and business logic
 import authRoutes from './modules/auth/auth.routes';
 import attendanceRoutes from './modules/attendance/attendance.routes';
+import branchRoutes from './modules/branches/branch.routes';
+import transactionRoutes from './modules/transactions/transaction.routes';
+import userRoutes from './modules/users/user.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -99,6 +102,18 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the Attendance module (Submission, Listing, Summaries)
   // Mounts under the '/api/attendance' prefix
   await app.register(attendanceRoutes, { prefix: '/api/attendance' });
+
+  // Register the Branches module (List, Create, Update — MD only for writes)
+  // Mounts under the '/api/branches' prefix
+  await app.register(branchRoutes, { prefix: '/api/branches' });
+
+  // Register the Transactions module (Create, List, Update status — automatic auditing)
+  // Mounts under the '/api/transactions' prefix
+  await app.register(transactionRoutes, { prefix: '/api/transactions' });
+
+  // Register the User Management module (MD only for creation)
+  // Mounts under the '/api/users' prefix
+  await app.register(userRoutes, { prefix: '/api/users' });
 
   return app;
 };

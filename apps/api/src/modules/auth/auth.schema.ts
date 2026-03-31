@@ -27,5 +27,6 @@ export interface AuthUserResponse {
   email: string;
   role: string;
   branchId: string;
+  branchName: string | null;
   hasSmartphone: boolean;
 }

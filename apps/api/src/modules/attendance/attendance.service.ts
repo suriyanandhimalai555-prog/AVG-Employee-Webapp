@@ -1,8 +1,8 @@
 // src/modules/attendance/attendance.service.ts
 import { Pool } from 'pg';
 import Redis from 'ioredis';
-// Import S3 utilities for generating photo upload URLs and unique keys
-import { generateUploadUrl, generatePhotoKey } from '../../config/s3';
+// Import S3 utilities for generating photo upload URLs, unique keys, and download URLs
+import { generateUploadUrl, generatePhotoKey, generateDownloadUrl } from '../../config/s3';
 // Import the queue function that pushes attendance jobs to the background worker
 import { addAttendanceJob } from './attendance.queue';
 // Import the hierarchy function that returns all subordinate user IDs
@@ -32,6 +32,13 @@ import type {
 // All functions now accept 'db' and 'redis' as arguments to support Dependency Injection.
 export const AttendanceService = {
   
+  // Generate a presigned URL mapping mapped to an AWS GET command to yield secure time-sensitive picture access
+  async getPresignedDownloadUrl(photoKey: string) {
+    // Generate the URL directly using the S3 utility wrapper handling AWS Signature V4
+    const downloadUrl = await generateDownloadUrl(photoKey);
+    return { downloadUrl };
+  },
+
   // ─── SUBMIT ATTENDANCE (Employee) ───
   
   async submitAttendance(
@@ -94,11 +101,12 @@ export const AttendanceService = {
 
   // ─── ADMIN MARK ATTENDANCE (Branch Admin) ───
   
-  async adminMarkAttendance(
+  async adminMark(
     db: Pool,
     redis: Redis,
     adminId: string,
-    adminBranchId: string,
+    adminRole: string,
+    adminBranchId: string | null,
     payload: AdminMarkInput
   ): Promise<{ queued: boolean; jobId: string }> {
     assertCanCorrectAttendance('branch_admin');
@@ -114,7 +122,10 @@ export const AttendanceService = {
 
     const targetUser = targetResult.rows[0];
 
-    if (targetUser.branch_id !== adminBranchId) {
+    // Scoping Check: 
+    // Branch admins can only mark for their own branch.
+    // MDs can mark for any branch.
+    if (adminRole !== 'md' && targetUser.branch_id !== adminBranchId) {
       throw new ForbiddenError('You can only mark attendance for employees in your branch');
     }
 
@@ -137,7 +148,8 @@ export const AttendanceService = {
 
     const jobData = {
       userId: payload.targetUserId,
-      branchId: adminBranchId,
+      // If admin has no branchId (MD), use the target employee's branchId
+      branchId: adminBranchId || targetUser.branch_id,
       date: today,
       mode: payload.mode ?? 'office',
       status: payload.status,
@@ -160,7 +172,8 @@ export const AttendanceService = {
     db: Pool,
     redis: Redis,
     adminId: string,
-    adminBranchId: string,
+    adminRole: string,
+    adminBranchId: string | null,
     attendanceId: string,
     payload: CorrectionInput
   ): Promise<{ success: boolean }> {
@@ -178,18 +191,23 @@ export const AttendanceService = {
 
     const record = recordResult.rows[0];
 
-    if (record.branch_id !== adminBranchId) {
+    // Scoping Check: 
+    // Branch admins can only correct their own branch.
+    // MDs (who have null adminBranchId) can correct any branch.
+    if (adminRole !== 'md' && record.branch_id !== adminBranchId) {
       throw new ForbiddenError('You can only correct attendance records in your branch');
     }
 
-    // Save audit log
+    // Save audit log — store old data as plain JSON
     await db.query(
       `INSERT INTO attendance_audit (
         attendance_id, changed_by, change_type, old_data, new_data
       ) VALUES (
-        $1, $2, 'correction', row_to_json($3::attendance), $4::jsonb
+        $1, $2, 'correction',
+        (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1),
+        $3::jsonb
       )`,
-      [attendanceId, adminId, record, JSON.stringify(payload)]
+      [attendanceId, adminId, JSON.stringify(payload)]
     );
 
     // Update status
@@ -323,6 +341,7 @@ export const AttendanceService = {
   
   async getAttendanceSummary(
     db: Pool,
+    redis: Redis,
     requesterId: string,
     requesterRole: string,
     requesterBranchId: string | null,
@@ -340,14 +359,24 @@ export const AttendanceService = {
       scopeUserIds = await getSubtreeIds(requesterId);
     }
 
-    const totalEmployees = scopeUserIds.length;
+    // Fetch only non-MD active users inside the subtree or branch scope
+    const filterResult = await db.query(
+      `SELECT id FROM users 
+       WHERE id = ANY($1) 
+       AND role != 'md' 
+       AND is_active = true`,
+      [scopeUserIds]
+    );
+
+    const filteredIds = filterResult.rows.map(r => r.id);
+    const totalEmployees = filteredIds.length;
 
     const result = await db.query(
       `SELECT status, mode, COUNT(*)::int AS count
        FROM attendance
        WHERE user_id = ANY($1) AND date = $2
        GROUP BY status, mode`,
-      [scopeUserIds, date]
+      [filteredIds, date]
     );
 
     let present = 0;
@@ -366,6 +395,26 @@ export const AttendanceService = {
       if (row.mode === 'office') office += row.count;
     }
 
+    // For non-admin employees, fetch their own today record from DB or Redis queue key (worker may not have written yet)
+    let today: any = null;
+    if (requesterRole !== 'branch_admin') {
+      const todayResult = await db.query(
+        `SELECT id, status, mode, check_in_time, field_note, check_in_lat, check_in_lng
+         FROM attendance
+         WHERE user_id = $1 AND date = $2`,
+        [requesterId, date]
+      );
+      if (todayResult.rows.length > 0) {
+        today = todayResult.rows[0];
+      } else {
+        // Fallback: if Redis dedupe key exists, the job is queued but not yet persisted
+        const queued = await redis.exists(`att:${requesterId}:${date}`);
+        if (queued) {
+          today = { status: 'present', mode: 'pending', queued: true };
+        }
+      }
+    }
+
     return {
       date,
       total: totalEmployees,
@@ -375,7 +424,75 @@ export const AttendanceService = {
       field,
       office,
       notMarked: totalEmployees - totalMarked,
+      today,
     };
+  },
+
+  // ─── BRANCH EMPLOYEES (Admin Dashboard) ───
+  
+  async getBranchEmployees(
+    db: Pool,
+    requesterId: string,
+    requesterRole: string,
+    branchId: string | null
+  ): Promise<any[]> {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Build the query starting from a base
+    let query = `
+      SELECT
+        u.id,
+        u.name,
+        u.email,
+        u.role,
+        u.has_smartphone,
+        u.branch_id AS employee_branch_id,
+        a.id        AS attendance_id,
+        a.status,
+        a.mode,
+        a.check_in_time,
+        a.field_note,
+        a.is_corrected,
+        a.photo_key,
+        a.check_in_lat,
+        a.check_in_lng,
+        b.name      AS branch_name
+      FROM users u
+      LEFT JOIN attendance a
+        ON a.user_id = u.id AND a.date = $1
+      LEFT JOIN branches b
+        ON u.branch_id = b.id
+      WHERE u.is_active = true
+    `;
+    const params: any[] = [todayStr];
+
+    // Scoping Logic:
+    // 1. If requester is a Branch Admin, they MUST be restricted to their branch.
+    // 2. If requester is MD/GM and provided a branchId, filter by it.
+    // 3. If requester is MD/GM and branchId is null, show all subordinates (global view).
+    
+    if (requesterRole === 'branch_admin') {
+      // Strict branch scoping for branch admins
+      query += ` AND u.branch_id = $2`;
+      params.push(branchId);
+    } else if (branchId) {
+      // Filtered view for MD/GM
+      query += ` AND u.branch_id = $2`;
+      params.push(branchId);
+    } else {
+      // GLOBAL VIEW for MD/GM: show everyone except them potentially, or just everyone
+      // For peak performance, the MD sees all employees in branches
+      query += ` AND u.role != 'md' AND u.branch_id IS NOT NULL`;
+    }
+
+    query += `
+      ORDER BY
+        CASE WHEN a.id IS NULL THEN 0 ELSE 1 END,
+        u.name ASC
+    `;
+
+    const result = await db.query(query, params);
+    return result.rows;
   },
 
   // ─── S3 PRESIGNED URL ───

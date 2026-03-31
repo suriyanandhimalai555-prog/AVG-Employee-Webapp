@@ -17,11 +17,14 @@ export const AuthService = {
   
   // Authenticate a user by email/password and return their profile data
   async login(db: Pool, redis: Redis, input: LoginInput): Promise<AuthUserResponse> {
-    // Step 1: Look up the user by email in the database
+    // Step 1: Look up the user by email in the database with their branch name
     const userResult = await db.query(
-      `SELECT id, name, email, password_hash, role,
-              branch_id, has_smartphone, is_active
-       FROM users WHERE email = $1`,
+      `SELECT u.id, u.name, u.email, u.password_hash, u.role,
+              u.branch_id, u.has_smartphone, u.is_active,
+              b.name AS branch_name
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE u.email = $1`,
       [input.email]
     );
 
@@ -55,6 +58,7 @@ export const AuthService = {
       email: user.email,
       role: user.role,
       branchId: user.branch_id,
+      branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
       hasSmartphone: user.has_smartphone,
     };
 
@@ -79,9 +83,11 @@ export const AuthService = {
 
     // Step 2: Cache miss — query the database for the full profile
     const result = await db.query(
-      `SELECT id, name, email, role, branch_id,
-              has_smartphone, is_active
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.name, u.email, u.role, u.branch_id,
+              u.has_smartphone, u.is_active, b.name AS branch_name
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE u.id = $1`,
       [userId]
     );
 
@@ -100,6 +106,7 @@ export const AuthService = {
       email: user.email,
       role: user.role,
       branchId: user.branch_id,
+      branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
       hasSmartphone: user.has_smartphone,
     };
 
