@@ -6,7 +6,7 @@ import { UserManagement } from './pages/UserManagement';
 import { Login } from './pages/Login';
 import { UserCircle, ShieldCheck, LogOut, Loader2, Users, LayoutDashboard } from 'lucide-react';
 import { selectCurrentUser, selectIsAuthenticated, clearCredentials } from './store/slices/authSlice';
-import { useGetMeQuery, useLogoutMutation } from './store/api/apiSlice';
+import { apiSlice, useGetMeQuery, useLogoutMutation } from './store/api/apiSlice';
 
 function App() {
   const dispatch = useDispatch();
@@ -29,7 +29,12 @@ function App() {
   const [logoutApi] = useLogoutMutation();
 
   const handleLogout = async () => {
-    try { await logoutApi().unwrap(); } catch {}
+    try {
+      await logoutApi().unwrap();
+    } catch {
+      /* still clear local session */
+    }
+    dispatch(apiSlice.util.resetApiState());
     dispatch(clearCredentials());
   };
 

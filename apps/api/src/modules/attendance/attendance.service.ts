@@ -15,6 +15,10 @@ import {
 } from '../../shared/permissions';
 // Import custom error classes for structured HTTP error responses
 import { NotFoundError, ForbiddenError, ConflictError } from '../../shared/errors';
+import {
+  resolveBranchAdminBranchId,
+  resolveEmployeeDashboardScope,
+} from '../../shared/attendance-scope';
 // Import the TypeScript types inferred from the Zod schemas for type-safe function parameters
 import type {
   SubmitAttendanceInput,
@@ -122,11 +126,22 @@ export const AttendanceService = {
 
     const targetUser = targetResult.rows[0];
 
-    // Scoping Check: 
-    // Branch admins can only mark for their own branch.
-    // MDs can mark for any branch.
-    if (adminRole !== 'md' && targetUser.branch_id !== adminBranchId) {
-      throw new ForbiddenError('You can only mark attendance for employees in your branch');
+    if (adminRole === 'md') {
+      // MD may mark any branch
+    } else if (adminRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(db, adminId, adminBranchId);
+      if (targetUser.branch_id !== branchId) {
+        throw new ForbiddenError('You can only mark attendance for employees in your branch');
+      }
+    } else if (adminBranchId) {
+      if (targetUser.branch_id !== adminBranchId) {
+        throw new ForbiddenError('You can only mark attendance for employees in your branch');
+      }
+    } else {
+      const subtree = await getSubtreeIds(adminId);
+      if (!subtree.includes(targetUser.id)) {
+        throw new ForbiddenError('You can only mark attendance for people in your reporting line');
+      }
     }
 
     if (targetUser.has_smartphone === true) {
@@ -135,6 +150,11 @@ export const AttendanceService = {
 
     if (targetUser.role === 'client') {
       throw new ForbiddenError('Clients do not have attendance');
+    }
+
+    const attendanceBranchId = targetUser.branch_id ?? adminBranchId;
+    if (!attendanceBranchId) {
+      throw new ForbiddenError('Employee has no branch assignment');
     }
 
     const today = new Date().toISOString().split('T')[0];
@@ -148,8 +168,7 @@ export const AttendanceService = {
 
     const jobData = {
       userId: payload.targetUserId,
-      // If admin has no branchId (MD), use the target employee's branchId
-      branchId: adminBranchId || targetUser.branch_id,
+      branchId: attendanceBranchId,
       date: today,
       mode: payload.mode ?? 'office',
       status: payload.status,
@@ -178,7 +197,7 @@ export const AttendanceService = {
     payload: CorrectionInput
   ): Promise<{ success: boolean }> {
     const recordResult = await db.query(
-      `SELECT a.*, u.branch_id
+      `SELECT a.*, u.branch_id, a.user_id AS subject_user_id
        FROM attendance a
        JOIN users u ON a.user_id = u.id
        WHERE a.id = $1`,
@@ -191,11 +210,22 @@ export const AttendanceService = {
 
     const record = recordResult.rows[0];
 
-    // Scoping Check: 
-    // Branch admins can only correct their own branch.
-    // MDs (who have null adminBranchId) can correct any branch.
-    if (adminRole !== 'md' && record.branch_id !== adminBranchId) {
-      throw new ForbiddenError('You can only correct attendance records in your branch');
+    if (adminRole === 'md') {
+      // MD may correct any branch
+    } else if (adminRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(db, adminId, adminBranchId);
+      if (record.branch_id !== branchId) {
+        throw new ForbiddenError('You can only correct attendance records in your branch');
+      }
+    } else if (adminBranchId) {
+      if (record.branch_id !== adminBranchId) {
+        throw new ForbiddenError('You can only correct attendance records in your branch');
+      }
+    } else {
+      const subtree = await getSubtreeIds(adminId);
+      if (!subtree.includes(record.subject_user_id)) {
+        throw new ForbiddenError('You can only correct attendance for people in your reporting line');
+      }
     }
 
     // Save audit log — store old data as plain JSON
@@ -243,9 +273,14 @@ export const AttendanceService = {
     let scopeUserIds: string[];
 
     if (requesterRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(
+        db,
+        requesterId,
+        requesterBranchId
+      );
       const branchUsers = await db.query(
-        'SELECT id FROM users WHERE branch_id = $1',
-        [requesterBranchId]
+        'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
+        [branchId]
       );
       scopeUserIds = branchUsers.rows.map((row: any) => row.id);
     } else {
@@ -350,9 +385,14 @@ export const AttendanceService = {
     let scopeUserIds: string[];
 
     if (requesterRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(
+        db,
+        requesterId,
+        requesterBranchId
+      );
       const branchUsers = await db.query(
         'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
-        [requesterBranchId]
+        [branchId]
       );
       scopeUserIds = branchUsers.rows.map((row: any) => row.id);
     } else {
@@ -438,7 +478,16 @@ export const AttendanceService = {
   ): Promise<any[]> {
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Build the query starting from a base
+    const scope = await resolveEmployeeDashboardScope(db, {
+      id: requesterId,
+      role: requesterRole,
+      branchId,
+    });
+
+    if (scope.kind === 'subtree' && scope.userIds.length === 0) {
+      return [];
+    }
+
     let query = `
       SELECT
         u.id,
@@ -466,22 +515,13 @@ export const AttendanceService = {
     `;
     const params: any[] = [todayStr];
 
-    // Scoping Logic:
-    // 1. If requester is a Branch Admin, they MUST be restricted to their branch.
-    // 2. If requester is MD/GM and provided a branchId, filter by it.
-    // 3. If requester is MD/GM and branchId is null, show all subordinates (global view).
-    
-    if (requesterRole === 'branch_admin') {
-      // Strict branch scoping for branch admins
+    if (scope.kind === 'branch') {
       query += ` AND u.branch_id = $2`;
-      params.push(branchId);
-    } else if (branchId) {
-      // Filtered view for MD/GM
-      query += ` AND u.branch_id = $2`;
-      params.push(branchId);
+      params.push(scope.branchId);
+    } else if (scope.kind === 'subtree') {
+      query += ` AND u.id = ANY($2::uuid[])`;
+      params.push(scope.userIds);
     } else {
-      // GLOBAL VIEW for MD/GM: show everyone except them potentially, or just everyone
-      // For peak performance, the MD sees all employees in branches
       query += ` AND u.role != 'md' AND u.branch_id IS NOT NULL`;
     }
 
@@ -509,10 +549,12 @@ export const AttendanceService = {
     db: Pool,
     redis: Redis,
     adminId: string,
-    adminBranchId: string,
+    adminBranchId: string | null | undefined,
     targetUserId: string,
     hasSmartphone: boolean
   ): Promise<{ success: boolean }> {
+    const branchId = await resolveBranchAdminBranchId(db, adminId, adminBranchId);
+
     const userResult = await db.query(
       'SELECT id, branch_id FROM users WHERE id = $1 AND is_active = true',
       [targetUserId]
@@ -524,7 +566,7 @@ export const AttendanceService = {
 
     const user = userResult.rows[0];
 
-    if (user.branch_id !== adminBranchId) {
+    if (user.branch_id !== branchId) {
       throw new ForbiddenError('You can only manage employees in your branch');
     }
 

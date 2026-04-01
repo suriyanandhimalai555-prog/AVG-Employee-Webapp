@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
-import { useLoginMutation } from '../store/api/apiSlice';
+import { apiSlice, useLoginMutation } from '../store/api/apiSlice';
 import { setCredentials } from '../store/slices/authSlice';
 
 export const Login = () => {
@@ -18,6 +18,7 @@ export const Login = () => {
 
     try {
       const data = await login({ email, password }).unwrap();
+      dispatch(apiSlice.util.resetApiState());
       dispatch(setCredentials({ user: data.user, token: data.token }));
     } catch (err) {
       setError(err?.data?.error?.message || 'Authentication failed. Please check your credentials.');

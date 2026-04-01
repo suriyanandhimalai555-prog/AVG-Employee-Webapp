@@ -3,12 +3,14 @@ import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
 import { CreateUserInput, UserResponse } from './user.schema';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
+import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 
 export const UserService = {
 
   // Create a new user (with password hashing)
   async createUser(
     db: Pool,
+    requesterId: string,
     requesterRole: string,
     requesterBranchId: string | null,
     payload: CreateUserInput
@@ -24,11 +26,8 @@ export const UserService = {
       if (!allowedRoles.includes(payload.role)) {
         throw new ForbiddenError('Branch Admins can only create branch staff or clients');
       }
-      if (!requesterBranchId) {
-        throw new ForbiddenError('Branch Admin is missing a branch assignment');
-      }
-      // Security: Force the new user to belong to the branch admin's branch
-      payload.branchId = requesterBranchId;
+      const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
+      payload.branchId = branchId;
     }
 
     // Step 1: Duplicate check — see if email is already taken
@@ -87,9 +86,10 @@ export const UserService = {
 
   // List users for management table
   async listUsers(
-    db: Pool, 
-    requesterRole: string, 
-    requesterBranchId: string | null, 
+    db: Pool,
+    requesterId: string,
+    requesterRole: string,
+    requesterBranchId: string | null,
     queryParams: { role?: string; branchId?: string }
   ): Promise<UserResponse[]> {
     let sql = `
@@ -107,14 +107,12 @@ export const UserService = {
       params.push(queryParams.role);
     }
 
-    // If requester is a branch admin, forcefully scope them to their own branch
-    if (requesterRole === 'branch_admin' && requesterBranchId) {
+    if (requesterRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
       sql += params.length > 0 ? ' AND' : ' WHERE';
       sql += ` u.branch_id = $${paramIndex++}`;
-      params.push(requesterBranchId);
-    } 
-    // Otherwise, let MDs filter by specific branches if they provided the parameter
-    else if (queryParams.branchId) {
+      params.push(branchId);
+    } else if (queryParams.branchId) {
       sql += params.length > 0 ? ' AND' : ' WHERE';
       sql += ` u.branch_id = $${paramIndex++}`;
       params.push(queryParams.branchId);

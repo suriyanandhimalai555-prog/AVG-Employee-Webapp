@@ -31,8 +31,14 @@ export const AdminDashboard = () => {
   const [correctionNote, setCorrectionNote] = useState('');
 
   // RTK Query hooks — auto-cached, auto-refetch after mutations
-  const { data: employees = [], isLoading: empLoading, refetch: refetchEmployees } = useGetEmployeesQuery();
-  const { data: summary, isLoading: summaryLoading } = useGetSummaryQuery();
+  const { data: employees = [], isLoading: empLoading, refetch: refetchEmployees } = useGetEmployeesQuery(
+    user?.id,
+    { skip: !user?.id }
+  );
+  const { data: summary, isLoading: summaryLoading } = useGetSummaryQuery(
+    { viewerId: user?.id },
+    { skip: !user?.id }
+  );
   const [adminCorrect, { isLoading: correctLoading }] = useAdminCorrectMutation();
   const [adminMark, { isLoading: markLoading }] = useAdminMarkMutation();
 
@@ -243,7 +249,10 @@ export const AdminDashboard = () => {
               ))}
               {filteredEmployees.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="px-8 py-12 text-center text-xs font-bold text-navy/20 uppercase tracking-widest">
+                  <td
+                    colSpan={user?.branchId ? 6 : 7}
+                    className="px-8 py-12 text-center text-xs font-bold text-navy/20 uppercase tracking-widest"
+                  >
                     No employees found
                   </td>
                 </tr>

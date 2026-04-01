@@ -42,6 +42,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       
       const newUser = await UserService.createUser(
         fastify.db,
+        req.user.id,
         req.user.role,
         req.user.branchId,
         payload
@@ -68,7 +69,13 @@ export default async function userRoutes(fastify: FastifyInstance) {
       }
 
       const query = request.query as any;
-      const users = await UserService.listUsers(fastify.db, req.user.role, req.user.branchId, query);
+      const users = await UserService.listUsers(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        req.user.branchId,
+        query
+      );
       
       return reply.send({ success: true, data: users });
     } catch (error) {

@@ -135,7 +135,10 @@ export const AttendanceHome = () => {
   );
 
   // RTK Query hooks
-  const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useGetSummaryQuery();
+  const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useGetSummaryQuery(
+    { viewerId: user?.id },
+    { skip: !user?.id }
+  );
   const [submitAttendance, { isLoading: isSubmitting }] = useSubmitAttendanceMutation();
   const [getUploadUrl] = useLazyGetUploadUrlQuery();
 

@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import bcrypt from 'bcrypt';
 // Import custom error classes for graceful error handling
 import { UnauthorizedError, ForbiddenError, NotFoundError } from '../../shared/errors';
+import { hydrateBranchAdminProfile } from '../../shared/attendance-scope';
 import { AuthUserResponse, LoginInput } from './auth.schema';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -62,6 +63,8 @@ export const AuthService = {
       hasSmartphone: user.has_smartphone,
     };
 
+    await hydrateBranchAdminProfile(db, profile);
+
     // Step 5: Cache the session in Redis for 30 minutes to make subsequent /me lookups instant
     await redis.setex(`user:${user.id}`, 1800, JSON.stringify(profile));
 
@@ -109,6 +112,8 @@ export const AuthService = {
       branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
       hasSmartphone: user.has_smartphone,
     };
+
+    await hydrateBranchAdminProfile(db, profile);
 
     // Step 4: Refresh the Redis cache with the latest database data for 30 minutes
     await redis.setex(`user:${userId}`, 1800, JSON.stringify(profile));

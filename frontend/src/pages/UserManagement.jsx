@@ -32,9 +32,13 @@ export const UserManagement = () => {
   const [roleFilter, setRoleFilter] = useState('');
 
   // API Hooks
-  const { data: users = [], isLoading: isUsersLoading } = useGetUsersQuery({
-    role: roleFilter || undefined
-  });
+  const { data: users = [], isLoading: isUsersLoading } = useGetUsersQuery(
+    {
+      viewerId: user?.id,
+      role: roleFilter || undefined,
+    },
+    { skip: !user?.id }
+  );
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
 

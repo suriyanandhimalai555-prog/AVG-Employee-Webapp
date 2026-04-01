@@ -61,8 +61,14 @@ export const apiSlice = createApi({
       invalidatesTags: ['Summary', 'Attendance', 'Employees'],
     }),
 
+    // viewerId is not sent to the server — it scopes the RTK cache per logged-in user (avoids stale data after account switch).
     getSummary: builder.query({
-      query: (date) => `/attendance/summary${date ? `?date=${date}` : ''}`,
+      query: ({ viewerId: _viewerId, date } = {}) => {
+        const qs = new URLSearchParams();
+        if (date) qs.set('date', date);
+        const suffix = qs.toString() ? `?${qs}` : '';
+        return `/attendance/summary${suffix}`;
+      },
       transformResponse: (response) => response.data,
       providesTags: ['Summary'],
     }),
@@ -75,7 +81,7 @@ export const apiSlice = createApi({
 
     // ─── Admin ───
     getEmployees: builder.query({
-      query: () => '/attendance/employees',
+      query: (_viewerId) => '/attendance/employees',
       transformResponse: (response) => response.data,
       providesTags: ['Employees'],
     }),
@@ -163,8 +169,12 @@ export const apiSlice = createApi({
     // ─── User Management (Staff & Admins) ───
     getUsers: builder.query({
       query: (params = {}) => {
-        const qs = new URLSearchParams(params).toString();
-        return `/users${qs ? `?${qs}` : ''}`;
+        const { viewerId: _viewerId, role, branchId } = params;
+        const qs = new URLSearchParams();
+        if (role) qs.set('role', role);
+        if (branchId) qs.set('branchId', branchId);
+        const s = qs.toString();
+        return `/users${s ? `?${s}` : ''}`;
       },
       transformResponse: (response) => response.data,
       providesTags: ['Users'],
