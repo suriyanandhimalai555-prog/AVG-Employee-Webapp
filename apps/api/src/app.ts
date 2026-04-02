@@ -43,7 +43,7 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Step 2: Register Global CORS policy
   // Allows the frontend to interact with the API securely
   await app.register(fastifyCors, {
-    origin: env.FRONTEND_URL,
+    origin: [env.FRONTEND_URL, /^http:\/\/localhost:\d+$/],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
