@@ -1,5 +1,6 @@
 import { useSelector } from 'react-redux';
-import { AlertCircle, CheckCircle2, ChevronRight, Loader2, UserCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, Loader2, UserCheck, XCircle, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
 import { MarkModal } from './MarkModal';
@@ -38,6 +39,7 @@ export const BranchAdminPanel = () => {
     correctionNote, setCorrectionNote, correctLoading,
     openCorrectionModal, closeCorrectionModal, handleAdminCorrect,
     correctionPhoto, correctionPhotoLoading,
+    adminError, clearAdminError,
   } = useAdminAttendance();
 
   const needsAction = employees.filter((e) => !e.has_smartphone && !e.status);
@@ -56,6 +58,24 @@ export const BranchAdminPanel = () => {
         <div className="px-6 mb-6">
           <h2 className="text-3xl font-bold text-navy tracking-tight">Attendance</h2>
         </div>
+
+        {/* Inline error banner — replaces browser alert for admin actions */}
+        <AnimatePresence>
+          {adminError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3"
+            >
+              <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="flex-1 text-xs font-bold text-red-700">{adminError}</p>
+              <button onClick={clearAdminError} className="text-red-400 hover:text-red-600 transition-colors">
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="px-6 pb-32 space-y-8">
 

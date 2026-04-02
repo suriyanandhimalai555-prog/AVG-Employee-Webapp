@@ -455,6 +455,34 @@ export const AttendanceService = {
       }
     }
 
+    // Per-branch breakdown — only meaningful for roles that oversee multiple branches
+    let branches: any[] = [];
+    if (['gm', 'director', 'md'].includes(requesterRole) && filteredIds.length > 0) {
+      const branchStatsResult = await db.query(
+        `SELECT
+           b.id,
+           b.name,
+           COUNT(u.id)::int                                          AS total,
+           COUNT(CASE WHEN a.status = 'present' THEN 1 END)::int    AS present
+         FROM users u
+         JOIN branches b ON u.branch_id = b.id
+         LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $2
+         WHERE u.id = ANY($1::uuid[])
+         GROUP BY b.id, b.name
+         ORDER BY b.name`,
+        [filteredIds, date]
+      );
+
+      branches = branchStatsResult.rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        total: r.total,
+        present: r.present,
+        // Round to nearest integer; shown as "74%" in the UI
+        presentPercent: r.total > 0 ? Math.round((r.present / r.total) * 100) : 0,
+      }));
+    }
+
     return {
       date,
       total: totalEmployees,
@@ -465,6 +493,7 @@ export const AttendanceService = {
       office,
       notMarked: totalEmployees - totalMarked,
       today,
+      branches,
     };
   },
 

@@ -22,12 +22,17 @@ import { MoneyTab } from './attendance/MoneyTab';
 import { AlertsTab } from './attendance/AlertsTab';
 import { AdminDashboard } from './AdminDashboard';
 import { UserManagement } from './UserManagement';
+import { useAttendanceSocket } from './attendance/hooks/useAttendanceSocket';
 import { selectCurrentUser } from '../store/slices/authSlice';
 
 export const AttendanceHome = () => {
   const user = useSelector(selectCurrentUser);
   const [activeTab, setActiveTab] = useState('home');
   const [showUserManagement, setShowUserManagement] = useState(false);
+
+  // Maintains a live Socket.io connection — invalidates RTK Query cache when
+  // the worker confirms attendance has been persisted to the database
+  useAttendanceSocket();
 
   // ── Full-screen overlay: Staff Management ──
   if (showUserManagement) {

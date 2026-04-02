@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   useAdminMarkMutation,
   useAdminCorrectMutation,
@@ -22,6 +22,10 @@ export const useAdminAttendance = () => {
   const [correctionStatus, setCorrectionStatus] = useState('present');
   const [correctionNote, setCorrectionNote] = useState('');
 
+  // ── Inline error (replaces browser alert) ──
+  const [adminError, setAdminError] = useState(null);
+  const clearAdminError = useCallback(() => setAdminError(null), []);
+
   const [adminMark, { isLoading: markLoading }] = useAdminMarkMutation();
   const [adminCorrect, { isLoading: correctLoading }] = useAdminCorrectMutation();
 
@@ -41,6 +45,7 @@ export const useAdminAttendance = () => {
   const closeMarkModal = () => setMarkModal({ open: false, employee: null });
 
   const handleMarkSubmit = async () => {
+    setAdminError(null);
     try {
       await adminMark({
         targetUserId: markModal.employee?.id,
@@ -49,7 +54,7 @@ export const useAdminAttendance = () => {
       }).unwrap();
       closeMarkModal();
     } catch (err) {
-      alert(err?.data?.error?.message || 'Could not mark attendance');
+      setAdminError(err?.data?.error?.message || 'Could not mark attendance. Please try again.');
     }
   };
 
@@ -62,6 +67,7 @@ export const useAdminAttendance = () => {
   const closeCorrectionModal = () => setCorrectionModal({ open: false, employee: null });
 
   const handleAdminCorrect = async () => {
+    setAdminError(null);
     try {
       await adminCorrect({
         id: correctionModal.employee?.attendance_id,
@@ -70,7 +76,7 @@ export const useAdminAttendance = () => {
       }).unwrap();
       closeCorrectionModal();
     } catch (err) {
-      alert(err?.data?.error?.message || 'Correction failed');
+      setAdminError(err?.data?.error?.message || 'Correction failed. Please try again.');
     }
   };
 
@@ -101,5 +107,8 @@ export const useAdminAttendance = () => {
     // Photo
     correctionPhoto,
     correctionPhotoLoading,
+    // Inline error
+    adminError,
+    clearAdminError,
   };
 };

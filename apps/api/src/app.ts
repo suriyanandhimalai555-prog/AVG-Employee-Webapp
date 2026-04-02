@@ -13,6 +13,7 @@ import dbPlugin from './plugins/db.plugin';
 import redisPlugin from './plugins/redis.plugin';
 import authPlugin from './plugins/auth.plugin';
 import errorHandlerPlugin from './plugins/error-handler.plugin';
+import socketPlugin from './plugins/socket.plugin';
 
 // Feature Modules: encapsulated routes and business logic
 import authRoutes from './modules/auth/auth.routes';
@@ -77,6 +78,9 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // Register the Authentication plugin (decorates instance with 'fastify.authenticate')
   await app.register(authPlugin);
+
+  // Register Socket.io after auth so fastify.jwt is available for socket token verification
+  await app.register(socketPlugin);
 
   // Register the Global Error Handling plugin (handles 404s and all exceptions)
   await app.register(errorHandlerPlugin);

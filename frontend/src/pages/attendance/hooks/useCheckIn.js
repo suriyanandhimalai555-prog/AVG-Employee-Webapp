@@ -24,6 +24,9 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   const fileInputRef = useRef(null);
   const [gpsStatus, setGpsStatus] = useState(null); // null | 'fetching' | { lat, lng } | 'error'
 
+  // Inline error message — replaces browser alert() for production
+  const [checkInError, setCheckInError] = useState(null);
+
   // Optimistic flag: show as marked immediately after submit (worker writes async)
   const [submittedThisSession, setSubmittedThisSession] = useState(false);
 
@@ -64,9 +67,10 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   };
 
   const handleCheckIn = async (mode) => {
+    setCheckInError(null);
     try {
       if (!gpsStatus || gpsStatus === 'error' || gpsStatus === 'fetching') {
-        alert('GPS location is required. Please allow location permissions.');
+        setCheckInError('GPS location is required. Please allow location access and try again.');
         return;
       }
 
@@ -77,7 +81,10 @@ export const useCheckIn = ({ onSuccess } = {}) => {
           checkInLng: gpsStatus.lng,
         }).unwrap();
       } else {
-        if (!fieldPhoto) { alert('A photo must be captured.'); return; }
+        if (!fieldPhoto) {
+          setCheckInError('A photo must be captured before submitting.');
+          return;
+        }
 
         setIsUploading(true);
         const { uploadUrl, photoKey } = await getUploadUrl().unwrap();
@@ -97,11 +104,11 @@ export const useCheckIn = ({ onSuccess } = {}) => {
 
       setSubmittedThisSession(true);
       resetFieldState();
-      // Worker writes asynchronously — refetch after a short delay for fresh DB data
-      setTimeout(() => refetchSummary(), 3000);
+      // Cache invalidation is now handled by useAttendanceSocket when the
+      // worker publishes attendance:confirmed to Redis pub/sub → Socket.io
       onSuccess?.();
     } catch (err) {
-      alert(err?.data?.error?.message || err?.message || 'Submission failed');
+      setCheckInError(err?.data?.error?.message || err?.message || 'Submission failed. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -121,5 +128,7 @@ export const useCheckIn = ({ onSuccess } = {}) => {
     fileInputRef,
     handlePhotoCapture,
     handleCheckIn,
+    checkInError,
+    clearCheckInError: () => setCheckInError(null),
   };
 };

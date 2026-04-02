@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
-import { Home, MapPin, CheckCircle2 } from 'lucide-react';
+import { Home, MapPin, CheckCircle2, XCircle, X } from 'lucide-react';
 import { PageHeader } from '../../components/attendance/PageHeader';
 import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { BranchAdminPanel } from './BranchAdminPanel';
@@ -39,6 +39,8 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
     fileInputRef,
     handlePhotoCapture,
     handleCheckIn,
+    checkInError,
+    clearCheckInError,
   } = useCheckIn({ onSuccess: onCheckInSuccess });
 
   // Branch admin has its own self-contained panel
@@ -54,6 +56,24 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
       exit={{ opacity: 0 }}
       className="flex-1"
     >
+      {/* ── Inline error banner (replaces browser alert) ── */}
+      <AnimatePresence>
+        {checkInError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3"
+          >
+            <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <p className="flex-1 text-xs font-bold text-red-700">{checkInError}</p>
+            <button onClick={clearCheckInError} className="text-red-400 hover:text-red-600 transition-colors">
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
 
         {/* ── List view: entry point ── */}
