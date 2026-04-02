@@ -1,0 +1,4 @@
+[build]
+builder = "RAILPACK"
+installCommand = "npm install"
+buildCommand = "npm run build -w @attendance/shared-types && npm run build -w @attendance/api && npm run build -w @attendance/worker"
