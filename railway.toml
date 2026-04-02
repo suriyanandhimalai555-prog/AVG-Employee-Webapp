@@ -1,0 +1,3 @@
+[build]
+builder = "NIXPACKS"
+installCommand = "npm install"
