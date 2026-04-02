@@ -1,6 +1,3 @@
 [build]
-builder = "NIXPACKS"
-installCommand = "npm ci"
-
-[build.nixpacksPlan.phases.setup]
-nixPkgs = ["nodejs_22"]
+builder = "RAILPACK"
+installCommand = "npm install"
