@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w @attendance/api\" \"npm run dev -w @attendance/worker\" \"npm run dev -w frontend\"",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @attendance/shared-types && npm run build --workspaces --if-present",
     "install:all": "npm install"
   },
   "engines": {
