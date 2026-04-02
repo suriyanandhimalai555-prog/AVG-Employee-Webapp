@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
-    "start": "node dist/apps/api/src/index.js",
+    "start": "node dist/index.js",
     "seed:branches": "ts-node scripts/seed_branches.ts"
   },
   "dependencies": {
@@ -22,7 +22,8 @@
     "socket.io": "latest",
     "@socket.io/redis-adapter": "latest",
     "bcrypt": "latest",
-    "dotenv": "latest"
+    "dotenv": "latest",
+    "@attendance/shared-types": "*"
   },
   "devDependencies": {
     "typescript": "latest",
