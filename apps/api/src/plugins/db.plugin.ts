@@ -1,8 +1,13 @@
 // src/plugins/db.plugin.ts
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { env } from '../config/env';
+
+// Override pg DATE type parser — pg converts DATE columns to JS Date objects by default, which
+// shifts the date back one day when the server runs in IST (+05:30) due to UTC conversion.
+// Returning the raw string keeps '2026-04-04' as '2026-04-04' in all JSON responses.
+types.setTypeParser(1082, (val) => val);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TYPE OVERRIDE FOR FASTIFY

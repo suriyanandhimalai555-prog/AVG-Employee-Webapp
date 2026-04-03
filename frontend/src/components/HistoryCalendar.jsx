@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, MapPin, Camera, FileText, Clock } from 'lucide-react';
+import { getISTToday } from '../lib/date';
 
 // Dot colors mapped to attendance status/mode
 const DOT_CONFIG = {
@@ -19,10 +20,6 @@ const getRecordKey = (record) => {
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-// Returns YYYY-MM-DD using the browser's local timezone (correct for IST users).
-// new Date().toISOString() always returns UTC, which is the previous calendar day
-// for anyone east of UTC — causing today's date to appear as tomorrow.
-const getLocalToday = () => new Date().toLocaleDateString('en-CA');
 
 // Pad a number to 2 digits without converting through Date / UTC
 const pad = (n) => String(n).padStart(2, '0');
@@ -66,7 +63,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
     return rows;
   }, [viewDate, recordsByDate]);
 
-  const [selectedIso, setSelectedIso] = useState(getLocalToday());
+  const [selectedIso, setSelectedIso] = useState(getISTToday());
   const selectedRecord = recordsByDate[selectedIso] || null;
 
   const monthLabel = new Date(viewDate.year, viewDate.month, 1)
@@ -87,7 +84,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
     onDaySelect?.(cell);
   };
 
-  const todayIso = getLocalToday();
+  const todayIso = getISTToday();
 
   // Monthly stats from the calendar data currently viewed
   const monthStats = useMemo(() => {

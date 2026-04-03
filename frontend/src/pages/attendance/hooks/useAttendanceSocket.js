@@ -35,9 +35,10 @@ export const useAttendanceSocket = () => {
     });
 
     // When the worker confirms attendance was persisted to the DB,
-    // force RTK Query to refetch the relevant queries for this user
+    // force RTK Query to refetch the relevant queries for this user.
+    // 'Employees' is included so the branch admin panel reflects the new record.
     socket.on('attendance:confirmed', () => {
-      dispatch(apiSlice.util.invalidateTags(['Summary', 'Attendance']));
+      dispatch(apiSlice.util.invalidateTags(['Summary', 'Attendance', 'Employees']));
     });
 
     // Teardown: disconnect when the component unmounts or the token changes

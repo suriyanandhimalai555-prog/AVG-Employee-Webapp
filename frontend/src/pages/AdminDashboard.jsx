@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Users, CheckCircle2,
   Search, Filter, Download, MapPin,
-  ArrowRight, ChevronLeft, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
+  ArrowRight, ChevronLeft, Clock, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
   UserX, Building2
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
@@ -12,6 +12,7 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
+import { EmployeeHistoryModal } from '../components/attendance/EmployeeHistoryModal';
 import { 
   useGetEmployeesQuery, 
   useGetSummaryQuery, 
@@ -24,6 +25,7 @@ export const AdminDashboard = () => {
   const user = useSelector(selectCurrentUser);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [historyEmployee, setHistoryEmployee] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBranch, setSelectedBranch] = useState(null); // { id, name } or null = all
@@ -118,6 +120,11 @@ export const AdminDashboard = () => {
 
   // Summary branches — shown as clickable cards for MD/Director/GM
   const summaryBranches = summary?.branches ?? [];
+
+  // Stats for the currently selected branch (used in the drill-down header strip)
+  const selectedBranchStats = selectedBranch
+    ? (summaryBranches.find((b) => b.id === selectedBranch.id) ?? null)
+    : null;
 
   if (empLoading) {
     return (
@@ -237,6 +244,26 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
+        {/* Branch stats strip — present/total/not-marked for the selected branch */}
+        {selectedBranch && selectedBranchStats && (
+          <div className="px-6 py-4 border-b border-navy/5 grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-navy font-mono">{selectedBranchStats.total}</p>
+              <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Total</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-emerald font-mono">{selectedBranchStats.present}</p>
+              <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Present</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-amber-500 font-mono">
+                {selectedBranchStats.total - selectedBranchStats.present}
+              </p>
+              <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Not Marked</p>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -314,12 +341,21 @@ export const AdminDashboard = () => {
                     )}
                   </td>
                   <td className="px-8 py-6 text-right">
-                    <button
-                      onClick={() => handleEdit(emp)}
-                      className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
-                    >
-                      <ArrowRight size={18} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => setHistoryEmployee(emp)}
+                        className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
+                        title="View attendance history"
+                      >
+                        <Clock size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(emp)}
+                        className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
+                      >
+                        <ArrowRight size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -361,8 +397,14 @@ export const AdminDashboard = () => {
         )}
       </Card>
 
+      <EmployeeHistoryModal
+        isOpen={!!historyEmployee}
+        onClose={() => setHistoryEmployee(null)}
+        employee={historyEmployee}
+      />
+
       {/* Admin Override Modal */}
-      <GlassModal 
+      <GlassModal
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)}
         title={selectedEmployee?.attendance_id ? 'Correct Attendance' : 'Mark Attendance'}

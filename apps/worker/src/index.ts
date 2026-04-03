@@ -1,7 +1,7 @@
 // apps/worker/src/index.ts
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { Pool } from 'pg';
+import pg, { Pool } from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 import { z } from 'zod';
@@ -37,6 +37,11 @@ const env = parsed.data;
 // CONNECTIONS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Override pg DATE type parser — pg converts DATE columns to JS Date objects by default, which
+// shifts the date back one day when the server runs in IST (+05:30) due to UTC conversion.
+// Returning the raw string keeps '2026-04-04' as '2026-04-04' in all serialised job payloads.
+pg.types.setTypeParser(1082, (val: string) => val);
+
 // Create a PostgreSQL connection pool with max 30 connections for worker throughput
 const db = new Pool({
   connectionString: env.DATABASE_URL,
@@ -49,10 +54,72 @@ const redis = new IORedis(env.REDIS_URL, {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AUTO-ABSENT PROCESSOR
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Runs once daily at 23:30 IST — marks every active employee who has no attendance
+// record for today as absent. ON CONFLICT DO NOTHING makes it safe to run multiple times.
+const processAutoAbsent = async (): Promise<void> => {
+  // IST date string (YYYY-MM-DD) without UTC shift — mirrors getCompanyToday() on the API
+  const todayIST: string = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+  console.log(`🔄 Auto-absent: checking for unmarked employees on ${todayIST}`);
+
+  // Select all active employees (excluding md and client) who have no record today
+  const missing = await db.query(
+    `SELECT u.id, u.branch_id FROM users u
+     WHERE u.is_active = true
+       AND u.role NOT IN ('md', 'client')
+       AND NOT EXISTS (
+         SELECT 1 FROM attendance a
+         WHERE a.user_id = u.id AND a.date = $1
+       )`,
+    [todayIST]
+  );
+
+  if (missing.rows.length === 0) {
+    console.log('✅ Auto-absent: all employees already have records for today');
+    return;
+  }
+
+  // Insert one absent record per missing employee; audit each insertion
+  for (const row of missing.rows as Array<{ id: string; branch_id: string }>) {
+    const insertResult = await db.query(
+      `INSERT INTO attendance (user_id, branch_id, date, mode, status, marked_by, submitted_at)
+       VALUES ($1, $2, $3, 'office', 'absent', $1, NOW())
+       ON CONFLICT (user_id, date) DO NOTHING
+       RETURNING id`,
+      [row.id, row.branch_id, todayIST]
+    );
+
+    // Only audit if the row was actually inserted (not a race-condition duplicate)
+    if (insertResult.rowCount && insertResult.rowCount > 0) {
+      // Use the system user id (the employee themselves) as changed_by for auto records
+      const attendanceId: string = insertResult.rows[0].id;
+      await db.query(
+        `INSERT INTO attendance_audit (attendance_id, changed_by, change_type, old_data, new_data)
+         VALUES ($1, $2, 'auto_absent', NULL,
+           (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1))`,
+        [attendanceId, row.id]
+      );
+    }
+  }
+
+  // Notify connected clients so dashboards refresh automatically
+  await redis.publish('absent:marked', JSON.stringify({ date: todayIST, count: missing.rows.length }));
+  console.log(`✅ Auto-absent: marked ${missing.rows.length} employees as absent for ${todayIST}`);
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // JOB PROCESSOR
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => {
+  // Route auto-absent scheduled jobs to their dedicated processor
+  if (job.name === 'auto-absent') {
+    await processAutoAbsent();
+    return { success: true };
+  }
   console.log(`🔄 Processing attendance job ${job.id} for user ${job.data.userId}`);
 
   const client = await db.connect();
@@ -147,6 +214,10 @@ const worker = new Worker(
   }
 );
 
+// Separate Queue instance used only to register the repeatable auto-absent job on startup.
+// The Worker above processes all jobs from the same 'attendance' queue.
+const schedulerQueue = new Queue('attendance', { connection: redis });
+
 // Worker Lifecycle Logging
 worker.on('completed', (job) => console.log(`✅ Job ${job.id} completed`));
 worker.on('failed', (job, err) => {
@@ -168,6 +239,14 @@ worker.on('stalled', (jobId) => console.warn(`⚠️ Job ${jobId} stalled — re
     console.log('✅ Worker DB connected');
     await redis.ping();
     console.log('✅ Worker Redis connected');
+
+    // Register the daily auto-absent repeatable job (23:30 IST = 18:00 UTC).
+    // BullMQ deduplicates by jobId so restarting the worker never creates duplicates.
+    await schedulerQueue.add('auto-absent', {}, {
+      repeat: { pattern: '0 18 * * *' },
+      jobId: 'auto-absent-daily',
+    });
+    console.log('✅ Auto-absent job scheduled (23:30 IST daily)');
     console.log('✅ Attendance worker started (Waiting for jobs...)');
   } catch (err) {
     console.error('❌ Worker startup failed:', err);
@@ -177,6 +256,7 @@ worker.on('stalled', (jobId) => console.warn(`⚠️ Job ${jobId} stalled — re
 
 const shutdown = async (): Promise<void> => {
   console.log('🔄 Worker shutting down gracefully...');
+  await schedulerQueue.close();
   await worker.close();
   await db.end();
   redis.disconnect();

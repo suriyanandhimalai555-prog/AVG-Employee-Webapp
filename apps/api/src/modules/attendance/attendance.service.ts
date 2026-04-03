@@ -147,10 +147,6 @@ export const AttendanceService = {
       }
     }
 
-    if (targetUser.has_smartphone === true) {
-      throw new ForbiddenError('This employee marks their own attendance');
-    }
-
     if (targetUser.role === 'client') {
       throw new ForbiddenError('Clients do not have attendance');
     }
@@ -255,11 +251,8 @@ export const AttendanceService = {
       [payload.newStatus, adminId, payload.correctionNote, attendanceId]
     );
 
-    // Bust cache
-    const dateStr = record.date instanceof Date
-      ? record.date.toISOString().split('T')[0]
-      : record.date;
-    await redis.del(`att:${record.user_id}:${dateStr}`);
+    // Bust cache — record.date is always a raw YYYY-MM-DD string since pg type 1082 is overridden
+    await redis.del(`att:${record.user_id}:${record.date}`);
 
     return { success: true };
   },
@@ -650,9 +643,10 @@ export const AttendanceService = {
 
   // ─── S3 PRESIGNED URL ───
   
-  async getPresignedUploadUrl(userId: string): Promise<{ uploadUrl: string; photoKey: string; expiresIn: number }> {
+  async getPresignedUploadUrl(userId: string, contentType: string): Promise<{ uploadUrl: string; photoKey: string; expiresIn: number }> {
     const photoKey = generatePhotoKey(userId);
-    const uploadUrl = await generateUploadUrl(photoKey);
+    // Pass contentType so S3 stores the object with the correct MIME type
+    const uploadUrl = await generateUploadUrl(photoKey, contentType);
     return { uploadUrl, photoKey, expiresIn: 300 };
   },
 

@@ -166,7 +166,10 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
         return sendForbidden(reply, 'Clients cannot upload attendance photos');
       }
 
-      const result = await AttendanceService.getPresignedUploadUrl(req.user.id);
+      // contentType from the frontend (e.g. "image/jpeg") is locked into the presigned URL;
+      // S3 will reject the PUT if the browser's Content-Type header doesn't match
+      const { contentType = 'image/jpeg' } = req.query as { contentType?: string };
+      const result = await AttendanceService.getPresignedUploadUrl(req.user.id, contentType);
       return reply.send({ success: true, data: result });
     } catch (error) {
       return handleError(error, reply);

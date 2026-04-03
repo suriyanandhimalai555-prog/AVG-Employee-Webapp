@@ -17,13 +17,17 @@ const s3Client = new S3Client({
 });
 
 // Function to generate a presigned URL that allows a client to upload (PUT) a file directly to S3
-export const generateUploadUrl = async (photoKey: string): Promise<string> => {
+// contentType must match what the browser sends in the PUT request Content-Type header;
+// S3 rejects uploads where the signed ContentType doesn't match the actual header
+export const generateUploadUrl = async (photoKey: string, contentType: string): Promise<string> => {
   // Define the operation to perform on the S3 bucket for the upload
   const command = new PutObjectCommand({
     // Specify the bucket to upload to
     Bucket: env.S3_BUCKET_NAME,
     // Specify the unique key for the photo object
     Key: photoKey,
+    // Lock the content type so S3 stores it correctly and browsers render it as an image
+    ContentType: contentType,
   });
 
   // Generate and return the signed URL that expires after the configured duration
@@ -44,12 +48,14 @@ export const generateDownloadUrl = async (photoKey: string): Promise<string> => 
   return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
 };
 
-// Function to generate a unique S3 key for storing attendance photos
+// Function to generate a unique S3 key for storing attendance photos.
+// Keys are stored flat under attendance/ — no per-user subfolder — so S3 console
+// shows individual files directly instead of virtual "Folder" entries per user.
 export const generatePhotoKey = (userId: string): string => {
   // Create a current timestamp in milliseconds to ensure uniqueness over time
   const timestamp = Date.now();
   // Generate a random string to ensure the key is globally unique
   const random = crypto.randomBytes(4).toString('hex');
-  // Construct the formatted path for the S3 key
-  return `attendance/${userId}/${timestamp}-${random}.jpg`;
+  // userId prefix (without /) keeps user association in the filename for auditing
+  return `attendance/${userId}-${timestamp}-${random}.jpg`;
 };

@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { CreateUserInput, UserResponse } from './user.schema';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
-import { getOversightScopeIds } from '../../shared/hierarchy';
+import { getOversightScopeIds, bustHierarchyCache } from '../../shared/hierarchy';
 
 export const UserService = {
 
@@ -97,6 +97,12 @@ export const UserService = {
         `UPDATE branches SET admin_id = $1 WHERE id = $2`,
         [newUserId, payload.branchId]
       );
+    }
+
+    // Bust the manager's subtree cache so they see the new subordinate immediately
+    // without waiting for the 1-hour TTL to expire
+    if (payload.managerId) {
+      await bustHierarchyCache(newUserId, payload.managerId);
     }
 
     return this.getUserById(db, newUserId);

@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/attendance/PageHeader';
 export const OfficeCheckIn = ({
   user,
   gpsStatus,
+  gpsPermissionDenied,
   isSubmitting,
   todayRecord,
   onCheckIn,
@@ -97,9 +98,9 @@ export const OfficeCheckIn = ({
         </div>
 
         {/* Submit */}
-        <div className="space-y-6 pb-32">
+        <div className="space-y-4 pb-32">
           <button
-            disabled={isSubmitting || !!todayRecord || gpsStatus === 'fetching' || gpsStatus === 'error'}
+            disabled={isSubmitting || !!todayRecord || gpsStatus === 'fetching'}
             onClick={() => onCheckIn('office')}
             className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50 disabled:pointer-events-none"
           >
@@ -107,11 +108,23 @@ export const OfficeCheckIn = ({
               ? <Loader2 className="animate-spin" size={22} />
               : todayRecord
                 ? <><CheckCircle2 size={22} /> Already Checked In</>
-                : <><CheckCircle2 size={22} /> Confirm Office Check-In</>}
+                : gpsStatus === 'error'
+                  ? <><CheckCircle2 size={22} /> Retry Location & Check In</>
+                  : <><CheckCircle2 size={22} /> Confirm Office Check-In</>}
           </button>
-          <p className="text-center text-[10px] leading-relaxed text-navy/40 px-8 font-medium">
-            Your GPS coordinates will be verified for office compliance.
-          </p>
+          {/* Location error hint — clicking the button re-triggers the GPS prompt */}
+          {gpsStatus === 'error' && (
+            <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+              {gpsPermissionDenied
+                ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                : 'Location unavailable — tap the button above to request access again.'}
+            </p>
+          )}
+          {gpsStatus !== 'error' && (
+            <p className="text-center text-[10px] leading-relaxed text-navy/40 px-8 font-medium">
+              Your GPS coordinates will be verified for office compliance.
+            </p>
+          )}
         </div>
       </div>
     </motion.div>

@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { selectCurrentUser } from '../../../store/slices/authSlice';
 import {
   useGetSummaryQuery,
   useSubmitAttendanceMutation,
-  useLazyGetUploadUrlQuery,
+  useGetUploadUrlMutation,
+  apiSlice,
 } from '../../../store/api/apiSlice';
 
 /**
@@ -16,6 +17,7 @@ import {
  */
 export const useCheckIn = ({ onSuccess } = {}) => {
   const user = useSelector(selectCurrentUser);
+  const dispatch = useDispatch();
 
   const [fieldStep, setFieldStep] = useState(1);
   const [fieldNote, setFieldNote] = useState('');
@@ -27,6 +29,11 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   // Inline error message — replaces browser alert() for production
   const [checkInError, setCheckInError] = useState(null);
 
+  // True when the browser has permanently denied location access (error code 1).
+  // Distinguished from a transient failure (no signal, timeout) so the UI can show
+  // "go to browser settings" instead of just "try again".
+  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+
   // Optimistic flag: show as marked immediately after submit (worker writes async)
   const [submittedThisSession, setSubmittedThisSession] = useState(false);
 
@@ -35,18 +42,24 @@ export const useCheckIn = ({ onSuccess } = {}) => {
     { skip: !user?.id },
   );
   const [submitAttendance, { isLoading: isSubmitting }] = useSubmitAttendanceMutation();
-  const [getUploadUrl] = useLazyGetUploadUrlQuery();
+  // Mutation (not lazy query) so each call generates a fresh presigned URL — never a stale cached one
+  const [getUploadUrl] = useGetUploadUrlMutation();
 
   const todayRecord =
     summary?.today || (submittedThisSession ? { status: 'present', mode: 'office' } : null);
 
-  /** Call this when the user enters the office or field check-in view. */
+  /** Call this when the user enters the office or field check-in view, or to re-prompt after error. */
   const fetchGps = () => {
     setGpsStatus('fetching');
+    setGpsPermissionDenied(false); // reset on every attempt
     if (!navigator.geolocation) { setGpsStatus('error'); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => setGpsStatus({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setGpsStatus('error'),
+      (err) => {
+        setGpsStatus('error');
+        // code 1 = PERMISSION_DENIED — user blocked location; must go to browser settings
+        if (err.code === 1) setGpsPermissionDenied(true);
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   };
@@ -69,8 +82,14 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   const handleCheckIn = async (mode) => {
     setCheckInError(null);
     try {
-      if (!gpsStatus || gpsStatus === 'error' || gpsStatus === 'fetching') {
-        setCheckInError('GPS location is required. Please allow location access and try again.');
+      // If GPS errored, re-trigger the request — the browser will re-show the permission
+      // dialog if the user previously chose "Ask again next time" (permission = 'prompt').
+      if (gpsStatus === 'error') {
+        fetchGps();
+        return;
+      }
+      if (!gpsStatus || gpsStatus === 'fetching') {
+        setCheckInError('Waiting for GPS location...');
         return;
       }
 
@@ -87,12 +106,17 @@ export const useCheckIn = ({ onSuccess } = {}) => {
         }
 
         setIsUploading(true);
-        const { uploadUrl, photoKey } = await getUploadUrl().unwrap();
-        await fetch(uploadUrl, {
+        const fileType = fieldPhoto.file.type || 'image/jpeg';
+        // Pass the file's MIME type so the presigned URL is signed for the correct Content-Type
+        const { uploadUrl, photoKey } = await getUploadUrl(fileType).unwrap();
+        const uploadResponse = await fetch(uploadUrl, {
           method: 'PUT',
           body: fieldPhoto.file,
-          headers: { 'Content-Type': fieldPhoto.file.type },
+          headers: { 'Content-Type': fileType },
         });
+        if (!uploadResponse.ok) {
+          throw new Error('Photo upload failed. Please try again.');
+        }
         await submitAttendance({
           mode: 'field',
           fieldNote,
@@ -103,9 +127,15 @@ export const useCheckIn = ({ onSuccess } = {}) => {
       }
 
       setSubmittedThisSession(true);
+      // Immediately refetch summary so HomeTab shows "Checked In" via the server's
+      // Redis fallback check (att:{userId}:{date} key exists → status: 'present').
+      refetchSummary();
+      // 5-second fallback: if the Socket.io confirmation never arrives (e.g. socket
+      // disconnected), invalidate the RTK cache so the UI updates regardless.
+      setTimeout(() => {
+        dispatch(apiSlice.util.invalidateTags(['Summary', 'Attendance', 'Employees']));
+      }, 5000);
       resetFieldState();
-      // Cache invalidation is now handled by useAttendanceSocket when the
-      // worker publishes attendance:confirmed to Redis pub/sub → Socket.io
       onSuccess?.();
     } catch (err) {
       setCheckInError(err?.data?.error?.message || err?.message || 'Submission failed. Please try again.');
@@ -117,6 +147,7 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   return {
     todayRecord,
     gpsStatus,
+    gpsPermissionDenied,
     fetchGps,
     fieldStep,
     setFieldStep,

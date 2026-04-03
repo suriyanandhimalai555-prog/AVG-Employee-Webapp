@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/attendance/PageHeader';
 export const FieldCheckIn = ({
   user,
   gpsStatus,
+  gpsPermissionDenied,
   fieldStep,
   fieldNote,
   fieldPhoto,
@@ -185,9 +186,9 @@ export const FieldCheckIn = ({
               </div>
             </Card>
 
-            <div className="py-8 space-y-6">
+            <div className="py-8 space-y-4">
               <button
-                disabled={isSubmitting || isUploading || !!todayRecord || gpsStatus === 'fetching' || gpsStatus === 'error'}
+                disabled={isSubmitting || isUploading || !!todayRecord || gpsStatus === 'fetching'}
                 onClick={() => onCheckIn('field')}
                 className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
               >
@@ -195,8 +196,18 @@ export const FieldCheckIn = ({
                   ? <Loader2 className="animate-spin" size={22} />
                   : todayRecord
                     ? 'Already Checked In'
-                    : <>Upload & Submit Field Data <ArrowRight size={20} /></>}
+                    : gpsStatus === 'error'
+                      ? <>Retry Location & Submit <ArrowRight size={20} /></>
+                      : <>Upload & Submit Field Data <ArrowRight size={20} /></>}
               </button>
+              {/* Location error hint — tapping button re-triggers the GPS permission prompt */}
+              {gpsStatus === 'error' && (
+                <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+                  {gpsPermissionDenied
+                    ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                    : 'Location unavailable — tap the button above to request access again.'}
+                </p>
+              )}
               {(isSubmitting || isUploading) && (
                 <p className="text-center text-[10px] font-mono text-indigo uppercase font-bold tracking-widest animate-pulse">
                   {isUploading ? 'Transferring visual to AWS S3...' : 'Securing block record...'}

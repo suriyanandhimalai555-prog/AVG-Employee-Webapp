@@ -41,8 +41,13 @@ export const apiSlice = createApi({
     }),
 
     // ─── Attendance (Employee) ───
-    getUploadUrl: builder.query({
-      query: () => '/attendance/upload-url',
+    // Mutation (not query) so RTK Query never caches the result.
+    // Presigned PUT URLs expire in 300s — a cached URL could be stale and cause silent upload failures.
+    getUploadUrl: builder.mutation({
+      query: (contentType = 'image/jpeg') => ({
+        url: `/attendance/upload-url?contentType=${encodeURIComponent(contentType)}`,
+        method: 'GET',
+      }),
       transformResponse: (response) => response.data,
     }),
     
@@ -59,8 +64,10 @@ export const apiSlice = createApi({
         body: data,
       }),
       transformResponse: (response) => response.data,
-      // After submitting, refetch summary + employees list
-      invalidatesTags: ['Summary', 'Attendance', 'Employees'],
+      // No invalidatesTags here — the API returns 202 (queued, not yet in DB).
+      // Cache invalidation happens via useAttendanceSocket when the worker confirms
+      // attendance:confirmed over Socket.io. A 5-second fallback in useCheckIn covers
+      // cases where the socket is unavailable.
     }),
 
     // viewerId is not sent to the server — it scopes the RTK cache per logged-in user (avoids stale data after account switch).
@@ -218,8 +225,7 @@ export const {
   useGetAttendanceListQuery,
   useAdminMarkMutation,
   useAdminCorrectMutation,
-  useGetUploadUrlQuery,
-  useLazyGetUploadUrlQuery,
+  useGetUploadUrlMutation,
   useGetPhotoUrlQuery,
   useGetBranchesQuery,
   useCreateBranchMutation,

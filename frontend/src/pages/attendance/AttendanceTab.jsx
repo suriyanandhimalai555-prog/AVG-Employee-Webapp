@@ -19,6 +19,7 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
   const {
     todayRecord,
     gpsStatus,
+    gpsPermissionDenied,
     fetchGps,
     fieldStep, setFieldStep,
     fieldNote, setFieldNote,
@@ -127,6 +128,7 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
           <OfficeCheckIn
             user={user}
             gpsStatus={gpsStatus}
+            gpsPermissionDenied={gpsPermissionDenied}
             isSubmitting={isSubmitting}
             todayRecord={todayRecord}
             onCheckIn={handleCheckIn}
@@ -141,6 +143,7 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
           <FieldCheckIn
             user={user}
             gpsStatus={gpsStatus}
+            gpsPermissionDenied={gpsPermissionDenied}
             fieldStep={fieldStep}
             fieldNote={fieldNote}
             fieldPhoto={fieldPhoto}

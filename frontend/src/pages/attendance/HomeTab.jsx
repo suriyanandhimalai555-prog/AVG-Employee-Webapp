@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
+import { getISTToday } from '../../lib/date';
 import { ArrowRight, AlertCircle, Building2, Users } from 'lucide-react';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
@@ -61,7 +62,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
   );
 
   const todayRecord = summary?.today ?? null;
-  const todayFormatted = new Date().toLocaleDateString('en-US', {
+  // Use IST date to avoid showing yesterday's date on devices not set to IST
+  const todayFormatted = new Date(getISTToday() + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   });
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { CheckCircle2, ChevronRight, Home, Loader2, MapPin, Search, UserCheck, XCircle, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Clock, Home, Loader2, MapPin, Search, UserCheck, XCircle, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
@@ -8,6 +8,7 @@ import { OfficeCheckIn } from './OfficeCheckIn';
 import { FieldCheckIn } from './FieldCheckIn';
 import { MarkModal } from './MarkModal';
 import { CorrectionModal } from './CorrectionModal';
+import { EmployeeHistoryModal } from '../../components/attendance/EmployeeHistoryModal';
 import { useAdminAttendance } from './hooks/useAdminAttendance';
 import { useCheckIn } from './hooks/useCheckIn';
 import { selectCurrentUser } from '../../store/slices/authSlice';
@@ -48,10 +49,14 @@ export const BranchAdminPanel = () => {
   // employeesResult shape: { data: [...], total, page, limit, totalPages }
   const employees = employeesResult?.data ?? [];
 
+  // Employee whose full history the admin wants to inspect
+  const [historyEmployee, setHistoryEmployee] = useState(null);
+
   // Self check-in hook — branch admin marks their OWN attendance
   const {
     todayRecord,
     gpsStatus,
+    gpsPermissionDenied,
     fetchGps,
     fieldStep, setFieldStep,
     fieldNote, setFieldNote,
@@ -96,6 +101,7 @@ export const BranchAdminPanel = () => {
       <OfficeCheckIn
         user={user}
         gpsStatus={gpsStatus}
+        gpsPermissionDenied={gpsPermissionDenied}
         isSubmitting={isSubmitting}
         todayRecord={todayRecord}
         onCheckIn={handleCheckIn}
@@ -111,6 +117,7 @@ export const BranchAdminPanel = () => {
       <FieldCheckIn
         user={user}
         gpsStatus={gpsStatus}
+        gpsPermissionDenied={gpsPermissionDenied}
         fieldStep={fieldStep}
         fieldNote={fieldNote}
         fieldPhoto={fieldPhoto}
@@ -241,6 +248,13 @@ export const BranchAdminPanel = () => {
                         </p>
                       </div>
                       <button
+                        onClick={() => setHistoryEmployee(emp)}
+                        className="p-2 text-navy/30 hover:text-indigo transition-colors"
+                        title="View attendance history"
+                      >
+                        <Clock size={14} />
+                      </button>
+                      <button
                         onClick={() => openMarkModal(emp)}
                         className="flex items-center gap-1.5 px-3 py-2 bg-indigo text-white rounded-xl text-[10px] font-bold tactile-press"
                       >
@@ -324,6 +338,13 @@ export const BranchAdminPanel = () => {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setHistoryEmployee(emp)}
+                        className="p-2 text-navy/30 hover:text-indigo transition-colors"
+                        title="View attendance history"
+                      >
+                        <Clock size={14} />
+                      </button>
                       {emp.status ? (
                         <>
                           <StatusChip status={emp.status} />
@@ -379,6 +400,12 @@ export const BranchAdminPanel = () => {
         onNoteChange={setCorrectionNote}
         onConfirm={handleAdminCorrect}
         onClose={closeCorrectionModal}
+      />
+
+      <EmployeeHistoryModal
+        isOpen={!!historyEmployee}
+        onClose={() => setHistoryEmployee(null)}
+        employee={historyEmployee}
       />
     </>
   );
