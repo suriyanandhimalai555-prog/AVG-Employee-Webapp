@@ -19,6 +19,8 @@ import {
   resolveBranchAdminBranchId,
   resolveEmployeeDashboardScope,
 } from '../../shared/attendance-scope';
+// Import the timezone-aware date helper so all "today" values use IST, not server UTC
+import { getCompanyToday } from '../../shared/date';
 // Import the TypeScript types inferred from the Zod schemas for type-safe function parameters
 import type {
   SubmitAttendanceInput,
@@ -72,8 +74,8 @@ export const AttendanceService = {
       );
     }
 
-    // Step 3: Duplicate check using Redis atomic SET with NX
-    const today = new Date().toISOString().split('T')[0];
+    // Step 3: Duplicate check using Redis atomic SET with NX — use IST date, not UTC
+    const today = getCompanyToday();
     const dupeKey = `att:${userId}:${today}`;
 
     const result = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
@@ -158,7 +160,7 @@ export const AttendanceService = {
       throw new ForbiddenError('Employee has no branch assignment');
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getCompanyToday();
     const dupeKey = `att:${payload.targetUserId}:${today}`;
 
     const result = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
@@ -550,9 +552,18 @@ export const AttendanceService = {
     db: Pool,
     requesterId: string,
     requesterRole: string,
-    branchId: string | null
-  ): Promise<any[]> {
-    const todayStr = new Date().toISOString().split('T')[0];
+    branchId: string | null,
+    filters: {
+      search?: string;
+      filterBranchId?: string;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<{ data: any[]; total: number; page: number; limit: number; totalPages: number }> {
+    const todayStr = getCompanyToday();
+    const page = Math.max(1, filters.page ?? 1);
+    // Branch-scoped callers (branch_admin) typically have ≤100 staff — allow up to 200
+    const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
 
     const scope = await resolveEmployeeDashboardScope(db, {
       id: requesterId,
@@ -561,10 +572,38 @@ export const AttendanceService = {
     });
 
     if (scope.kind === 'subtree' && scope.userIds.length === 0) {
-      return [];
+      return { data: [], total: 0, page, limit, totalPages: 0 };
     }
 
-    let query = `
+    let baseWhere = `WHERE u.is_active = true AND u.role != 'md'`;
+    const params: any[] = [todayStr];
+    let paramIndex = 2;
+
+    if (scope.kind === 'branch') {
+      baseWhere += ` AND u.branch_id = $${paramIndex++}`;
+      params.push(scope.branchId);
+    } else if (scope.kind === 'subtree') {
+      baseWhere += ` AND u.id = ANY($${paramIndex++}::uuid[])`;
+      params.push(scope.userIds);
+    } else {
+      // global_exclude_md — already excluded above
+      baseWhere += ` AND u.branch_id IS NOT NULL`;
+    }
+
+    // Optional drill-down: MD/Director viewing one specific branch from the branch list
+    if (filters.filterBranchId) {
+      baseWhere += ` AND u.branch_id = $${paramIndex++}`;
+      params.push(filters.filterBranchId);
+    }
+
+    // Full-text search on name or email
+    if (filters.search?.trim()) {
+      baseWhere += ` AND (u.name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`;
+      params.push(`%${filters.search.trim()}%`);
+      paramIndex++;
+    }
+
+    const selectSql = `
       SELECT
         u.id,
         u.name,
@@ -583,32 +622,30 @@ export const AttendanceService = {
         a.check_in_lng,
         b.name      AS branch_name
       FROM users u
-      LEFT JOIN attendance a
-        ON a.user_id = u.id AND a.date = $1
-      LEFT JOIN branches b
-        ON u.branch_id = b.id
-      WHERE u.is_active = true
-    `;
-    const params: any[] = [todayStr];
-
-    if (scope.kind === 'branch') {
-      query += ` AND u.branch_id = $2`;
-      params.push(scope.branchId);
-    } else if (scope.kind === 'subtree') {
-      query += ` AND u.id = ANY($2::uuid[])`;
-      params.push(scope.userIds);
-    } else {
-      query += ` AND u.role != 'md' AND u.branch_id IS NOT NULL`;
-    }
-
-    query += `
-      ORDER BY
-        CASE WHEN a.id IS NULL THEN 0 ELSE 1 END,
-        u.name ASC
+      LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $1
+      LEFT JOIN branches b   ON u.branch_id = b.id
+      ${baseWhere}
     `;
 
-    const result = await db.query(query, params);
-    return result.rows;
+    // Count and data fetched in parallel — both use the same WHERE clause
+    const [countResult, dataResult] = await Promise.all([
+      db.query(`SELECT COUNT(*) FROM (${selectSql}) AS _c`, params),
+      db.query(
+        `${selectSql}
+         ORDER BY CASE WHEN a.id IS NULL THEN 0 ELSE 1 END, u.name ASC
+         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        [...params, limit, (page - 1) * limit]
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0].count, 10);
+    return {
+      data: dataResult.rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   },
 
   // ─── S3 PRESIGNED URL ───
@@ -652,7 +689,7 @@ export const AttendanceService = {
     );
 
     if (hasSmartphone) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getCompanyToday();
       await redis.del(`att:${targetUserId}:${today}`);
     }
 

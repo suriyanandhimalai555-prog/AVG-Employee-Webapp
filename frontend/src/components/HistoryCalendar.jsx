@@ -19,6 +19,14 @@ const getRecordKey = (record) => {
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+// Returns YYYY-MM-DD using the browser's local timezone (correct for IST users).
+// new Date().toISOString() always returns UTC, which is the previous calendar day
+// for anyone east of UTC — causing today's date to appear as tomorrow.
+const getLocalToday = () => new Date().toLocaleDateString('en-CA');
+
+// Pad a number to 2 digits without converting through Date / UTC
+const pad = (n) => String(n).padStart(2, '0');
+
 export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
   const today = new Date();
   const [viewDate, setViewDate] = useState({ month: today.getMonth(), year: today.getFullYear() });
@@ -47,7 +55,8 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
 
     for (let d = 1; d <= lastDay.getDate(); d++) {
       const date = new Date(viewDate.year, viewDate.month, d);
-      const isoStr = date.toISOString().slice(0, 10);
+      // Build isoStr directly from calendar year/month/day — do NOT use toISOString() which shifts to UTC
+      const isoStr = `${viewDate.year}-${pad(viewDate.month + 1)}-${pad(d)}`;
       cells.push({ day: d, isoStr, record: recordsByDate[isoStr] || null, date });
     }
 
@@ -57,7 +66,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
     return rows;
   }, [viewDate, recordsByDate]);
 
-  const [selectedIso, setSelectedIso] = useState(today.toISOString().slice(0, 10));
+  const [selectedIso, setSelectedIso] = useState(getLocalToday());
   const selectedRecord = recordsByDate[selectedIso] || null;
 
   const monthLabel = new Date(viewDate.year, viewDate.month, 1)
@@ -78,7 +87,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
     onDaySelect?.(cell);
   };
 
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = getLocalToday();
 
   // Monthly stats from the calendar data currently viewed
   const monthStats = useMemo(() => {

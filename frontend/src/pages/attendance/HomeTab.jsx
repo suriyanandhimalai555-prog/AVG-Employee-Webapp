@@ -55,8 +55,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
     { skip: !user?.id },
   );
   // Only fetched for branch_admin (needs "needs action" count); skipped for all other roles
-  const { data: employees = [], isLoading: empLoading } = useGetEmployeesQuery(
-    user?.id,
+  const { data: employeesResult, isLoading: empLoading } = useGetEmployeesQuery(
+    { viewerId: user?.id },
     { skip: !user?.id || user?.role !== 'branch_admin' },
   );
 
@@ -65,7 +65,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
     weekday: 'long', month: 'long', day: 'numeric',
   });
 
-  const needsActionCount = employees.filter((e) => !e.has_smartphone && !e.status).length;
+  // employeesResult is { data: [], total, ... } — extract the array before filtering
+  const needsActionCount = (employeesResult?.data ?? []).filter((e) => !e.has_smartphone && !e.status).length;
 
   return (
     <motion.div
@@ -134,6 +135,14 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
             </div>
             <ArrowRight size={16} className="text-navy/30" />
           </button>
+          <HistoryCalendar
+            historyData={historyData}
+            onDaySelect={(cell) => {
+              const [yr, mo] = cell.isoStr.split('-');
+              setCalMonth(parseInt(mo));
+              setCalYear(parseInt(yr));
+            }}
+          />
         </div>
       )}
 
@@ -209,6 +218,14 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
           )}
 
           <StaffCard onOpen={onOpenUserManagement} />
+          <HistoryCalendar
+            historyData={historyData}
+            onDaySelect={(cell) => {
+              const [yr, mo] = cell.isoStr.split('-');
+              setCalMonth(parseInt(mo));
+              setCalYear(parseInt(yr));
+            }}
+          />
         </div>
       )}
     </motion.div>

@@ -3,13 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { Home, MapPin, CheckCircle2, XCircle, X } from 'lucide-react';
 import { PageHeader } from '../../components/attendance/PageHeader';
-import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { BranchAdminPanel } from './BranchAdminPanel';
 import { OfficeCheckIn } from './OfficeCheckIn';
 import { FieldCheckIn } from './FieldCheckIn';
 import { useCheckIn } from './hooks/useCheckIn';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetHistoryQuery } from '../../store/api/apiSlice';
 
 // Subview keys
 const VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
@@ -17,15 +15,6 @@ const VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
 export const AttendanceTab = ({ onCheckInSuccess }) => {
   const user = useSelector(selectCurrentUser);
   const [subView, setSubView] = useState(VIEWS.LIST);
-
-  const nowDate = new Date();
-  const [calMonth, setCalMonth] = useState(nowDate.getMonth() + 1);
-  const [calYear, setCalYear] = useState(nowDate.getFullYear());
-
-  const { data: historyData = [] } = useGetHistoryQuery(
-    { userId: user?.id, month: calMonth, year: calYear },
-    { skip: !user?.id },
-  );
 
   const {
     todayRecord,
@@ -130,20 +119,6 @@ export const AttendanceTab = ({ onCheckInSuccess }) => {
               )}
             </div>
 
-            {/* Own history calendar */}
-            <div className="px-6 pb-32">
-              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-4 font-mono">
-                My History
-              </p>
-              <HistoryCalendar
-                historyData={historyData}
-                onDaySelect={(cell) => {
-                  const [yr, mo] = cell.isoStr.split('-');
-                  setCalMonth(parseInt(mo));
-                  setCalYear(parseInt(yr));
-                }}
-              />
-            </div>
           </motion.div>
         )}
 

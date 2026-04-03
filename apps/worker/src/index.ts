@@ -121,6 +121,8 @@ const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => 
       date: job.data.date,
       status: job.data.status,
       jobId: job.id,
+      // Include markedBy so the socket layer can also notify the admin who marked on behalf of someone else
+      markedBy: job.data.markedBy,
     })
   );
 

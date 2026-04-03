@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Users, Clock, AlertCircle, CheckCircle2, MoreVertical, 
-  Search, Filter, Download, MapPin, 
-  ArrowRight, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
-  UserX, UserCheck
+import {
+  Users, CheckCircle2,
+  Search, Filter, Download, MapPin,
+  ArrowRight, ChevronLeft, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
+  UserX, Building2
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useSelector } from 'react-redux';
@@ -25,16 +25,36 @@ export const AdminDashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedBranch, setSelectedBranch] = useState(null); // { id, name } or null = all
 
   // Admin correction form
   const [newStatus, setNewStatus] = useState('present');
   const [correctionNote, setCorrectionNote] = useState('');
 
+  const PAGE_SIZE = 50;
+
+  // Build query args — branch detail drill-down passes filterBranchId to server
+  const employeeQueryArgs = {
+    viewerId: user?.id,
+    page: currentPage,
+    limit: PAGE_SIZE,
+    search: searchQuery || undefined,
+    branchId: selectedBranch?.id || undefined,
+  };
+
   // RTK Query hooks — auto-cached, auto-refetch after mutations
-  const { data: employees = [], isLoading: empLoading, refetch: refetchEmployees } = useGetEmployeesQuery(
-    user?.id,
+  const { data: employeesResult = {}, isLoading: empLoading, refetch: refetchEmployees } = useGetEmployeesQuery(
+    employeeQueryArgs,
     { skip: !user?.id }
   );
+  const employees = employeesResult.data ?? [];
+  const pagination = {
+    page: employeesResult.page ?? 1,
+    total: employeesResult.total ?? 0,
+    totalPages: employeesResult.totalPages ?? 0,
+  };
+
   const { data: summary, isLoading: summaryLoading } = useGetSummaryQuery(
     { viewerId: user?.id },
     { skip: !user?.id }
@@ -55,6 +75,12 @@ export const AdminDashboard = () => {
     setNewStatus(emp.status || 'present');
     setCorrectionNote('');
     setIsModalOpen(true);
+  };
+
+  const handleBranchSelect = (branch) => {
+    setSelectedBranch(branch);
+    setCurrentPage(1);
+    setSearchQuery('');
   };
 
   const handleApplyChanges = async () => {
@@ -81,22 +107,17 @@ export const AdminDashboard = () => {
     }
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.role !== 'md' &&
-    (emp.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.role?.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  // Compute live stats explicitly excluding the MD role
-  const statEmployees = employees.filter(e => e.role !== 'md');
+  // Stats come from summary (org-wide or branch-wide), not the paginated employee slice
   const stats = {
-    total: statEmployees.length,
-    present: statEmployees.filter(e => e.status === 'present').length,
-    absent: statEmployees.filter(e => e.status === 'absent').length,
-    field: statEmployees.filter(e => e.mode === 'field').length,
-    notMarked: statEmployees.filter(e => !e.status).length,
+    total: summary?.total ?? 0,
+    present: summary?.present ?? 0,
+    absent: summary?.absent ?? 0,
+    field: summary?.field ?? 0,
+    notMarked: summary?.notMarked ?? 0,
   };
+
+  // Summary branches — shown as clickable cards for MD/Director/GM
+  const summaryBranches = summary?.branches ?? [];
 
   if (empLoading) {
     return (
@@ -151,21 +172,67 @@ export const AdminDashboard = () => {
         <StatCard icon={Globe} label="Field Ops" value={stats.field} color="indigo" />
       </div>
 
+      {/* Branch Cards — visible for MD / Director / GM; clicking drills into that branch */}
+      {summaryBranches.length > 0 && !selectedBranch && (
+        <div className="mb-12">
+          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-4 font-mono">Branches</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {summaryBranches.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => handleBranchSelect(b)}
+                className="text-left p-6 bg-white rounded-3xl card-shadow border border-navy/5 hover:border-indigo/30 hover:shadow-xl transition-all group"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2 bg-indigo/5 rounded-xl text-indigo group-hover:bg-indigo group-hover:text-white transition-all">
+                    <Building2 size={18} />
+                  </div>
+                  <span className="text-2xl font-bold text-navy font-mono">{b.presentPercent}%</span>
+                </div>
+                <p className="font-bold text-navy text-sm">{b.name}</p>
+                <p className="text-[10px] text-navy/30 font-bold uppercase tracking-widest mt-1">
+                  {b.present} / {b.total} present
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Employee Table */}
       <Card className="p-0 overflow-hidden bg-white rounded-3xl card-shadow border-none">
         <div className="p-6 border-b border-navy/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {/* Branch detail breadcrumb */}
+            {selectedBranch && (
+              <button
+                onClick={() => { setSelectedBranch(null); setCurrentPage(1); setSearchQuery(''); }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo/5 text-indigo rounded-xl text-[10px] font-bold hover:bg-indigo/10 transition-all"
+              >
+                <ChevronLeft size={14} /> All Branches
+              </button>
+            )}
+            {selectedBranch && (
+              <p className="text-sm font-bold text-navy flex items-center gap-2">
+                <Building2 size={14} className="text-indigo" />
+                {selectedBranch.name}
+              </p>
+            )}
+          </div>
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               placeholder="Search employees..."
               className="w-full pl-12 pr-4 py-3 bg-surface-container-low rounded-xl text-navy font-bold placeholder:text-navy/20 outline-none transition-all focus:ring-2 ring-indigo/10"
             />
           </div>
           <div className="flex gap-2 items-center">
-            <p className="text-[10px] font-bold text-navy/20 uppercase tracking-wider mr-2">{filteredEmployees.length} employees</p>
+            <p className="text-[10px] font-bold text-navy/20 uppercase tracking-wider mr-2">
+              {pagination.total ?? 0} employees
+            </p>
             <button className="p-3 rounded-xl bg-surface-container-low text-navy/40 hover:text-navy transition-colors"><Filter size={18} /></button>
           </div>
         </div>
@@ -186,7 +253,13 @@ export const AdminDashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-navy/5">
-              {filteredEmployees.map((emp) => (
+              {empLoading ? (
+                <tr>
+                  <td colSpan={user?.branchId ? 6 : 7} className="py-16 text-center">
+                    <Loader2 className="animate-spin text-indigo mx-auto" size={24} />
+                  </td>
+                </tr>
+              ) : employees.map((emp) => (
                 <tr key={emp.id} className="hover:bg-surface-container-low/20 transition-colors group">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-3">
@@ -204,9 +277,12 @@ export const AdminDashboard = () => {
                   </td>
                   {!user?.branchId && (
                     <td className="px-8 py-6">
-                      <div className="text-xs font-bold text-navy uppercase tracking-tighter">
+                      <button
+                        onClick={() => !selectedBranch && emp.employee_branch_id && handleBranchSelect({ id: emp.employee_branch_id, name: emp.branch_name })}
+                        className={`text-xs font-bold text-navy uppercase tracking-tighter ${!selectedBranch && emp.employee_branch_id ? 'hover:text-indigo cursor-pointer' : ''}`}
+                      >
                         {emp.branch_name || 'Unassigned'}
-                      </div>
+                      </button>
                     </td>
                   )}
                   <td className="px-8 py-6">
@@ -238,7 +314,7 @@ export const AdminDashboard = () => {
                     )}
                   </td>
                   <td className="px-8 py-6 text-right">
-                    <button 
+                    <button
                       onClick={() => handleEdit(emp)}
                       className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
                     >
@@ -247,7 +323,7 @@ export const AdminDashboard = () => {
                   </td>
                 </tr>
               ))}
-              {filteredEmployees.length === 0 && (
+              {!empLoading && employees.length === 0 && (
                 <tr>
                   <td
                     colSpan={user?.branchId ? 6 : 7}
@@ -260,6 +336,29 @@ export const AdminDashboard = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {pagination.totalPages > 1 && (
+          <div className="p-6 border-t border-navy/5 flex items-center justify-between">
+            <button
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(p => p - 1)}
+              className="px-4 py-2 text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-colors flex items-center gap-1"
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+              Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
+            </p>
+            <button
+              disabled={currentPage >= pagination.totalPages}
+              onClick={() => setCurrentPage(p => p + 1)}
+              className="px-4 py-2 text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-colors flex items-center gap-1"
+            >
+              Next <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
       </Card>
 
       {/* Admin Override Modal */}

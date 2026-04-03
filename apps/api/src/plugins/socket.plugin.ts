@@ -31,8 +31,9 @@ const socketPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstance) => 
       credentials: true,
     },
     path: '/socket.io',
-    // Allow both WebSocket (preferred) and polling (fallback) transports
-    transports: ['websocket', 'polling'],
+    // Polling first so the initial handshake works through Railway's reverse proxy;
+    // Socket.io will automatically upgrade to WebSocket after the handshake succeeds.
+    transports: ['polling', 'websocket'],
   });
 
   // ── JWT Authentication Middleware ──
@@ -82,9 +83,15 @@ const socketPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstance) => 
         date: string;
         status: string;
         jobId: string | undefined;
+        markedBy: string | undefined;
       };
-      // Emit only to the specific user's private room — no broadcast
+      // Notify the employee whose attendance was marked
       io.to(data.userId).emit('attendance:confirmed', data);
+      // Also notify the admin who marked on behalf of someone else — their panel
+      // won't refresh otherwise because the socket room is per-user, not per-session
+      if (data.markedBy && data.markedBy !== data.userId) {
+        io.to(data.markedBy).emit('attendance:confirmed', data);
+      }
       fastify.log.info(`[Socket.io] Emitted attendance:confirmed to user ${data.userId}`);
     } catch (err) {
       fastify.log.error({ err }, '[Socket.io] Failed to parse attendance:confirmed pub/sub message');

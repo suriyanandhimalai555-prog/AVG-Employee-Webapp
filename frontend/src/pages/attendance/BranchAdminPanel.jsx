@@ -1,13 +1,19 @@
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { AlertCircle, CheckCircle2, ChevronRight, Loader2, UserCheck, XCircle, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Home, Loader2, MapPin, Search, UserCheck, XCircle, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
+import { OfficeCheckIn } from './OfficeCheckIn';
+import { FieldCheckIn } from './FieldCheckIn';
 import { MarkModal } from './MarkModal';
 import { CorrectionModal } from './CorrectionModal';
 import { useAdminAttendance } from './hooks/useAdminAttendance';
+import { useCheckIn } from './hooks/useCheckIn';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetEmployeesQuery } from '../../store/api/apiSlice';
+
+const SELF_VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
 
 const FILTERS = [
   { key: 'all',           label: 'All' },
@@ -26,10 +32,38 @@ const EmployeeAvatar = ({ name }) => (
 
 export const BranchAdminPanel = () => {
   const user = useSelector(selectCurrentUser);
-  const { data: employees = [], isLoading: empLoading } = useGetEmployeesQuery(
-    user?.id,
+  const [selfView, setSelfView] = useState(SELF_VIEWS.LIST);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Server-side pagination — branch is typically ≤100 staff so one page is fine for most cases
+  const {
+    data: employeesResult,
+    isLoading: empLoading,
+    isError: empError,
+    error: empErrorDetail,
+  } = useGetEmployeesQuery(
+    { viewerId: user?.id, limit: 100 },
     { skip: !user?.id },
   );
+  // employeesResult shape: { data: [...], total, page, limit, totalPages }
+  const employees = employeesResult?.data ?? [];
+
+  // Self check-in hook — branch admin marks their OWN attendance
+  const {
+    todayRecord,
+    gpsStatus,
+    fetchGps,
+    fieldStep, setFieldStep,
+    fieldNote, setFieldNote,
+    fieldPhoto,
+    isSubmitting,
+    isUploading,
+    fileInputRef,
+    handlePhotoCapture,
+    handleCheckIn,
+    checkInError,
+    clearCheckInError,
+  } = useCheckIn();
 
   const {
     staffFilter, setStaffFilter,
@@ -45,10 +79,54 @@ export const BranchAdminPanel = () => {
   const needsAction = employees.filter((e) => !e.has_smartphone && !e.status);
 
   const filtered = employees.filter((e) => {
-    if (staffFilter === 'smartphone')    return !!e.has_smartphone;
-    if (staffFilter === 'no-smartphone') return !e.has_smartphone;
-    return true;
+    const matchesFilter =
+      staffFilter === 'all' ||
+      (staffFilter === 'smartphone' && !!e.has_smartphone) ||
+      (staffFilter === 'no-smartphone' && !e.has_smartphone);
+    const matchesSearch =
+      !searchTerm.trim() ||
+      e.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesFilter && matchesSearch;
   });
+
+  // Self check-in sub-views (office / field wizard) render full-screen
+  if (selfView === SELF_VIEWS.OFFICE) {
+    return (
+      <OfficeCheckIn
+        user={user}
+        gpsStatus={gpsStatus}
+        isSubmitting={isSubmitting}
+        todayRecord={todayRecord}
+        onCheckIn={handleCheckIn}
+        onBack={() => setSelfView(SELF_VIEWS.LIST)}
+        onSwitchToField={() => { setSelfView(SELF_VIEWS.FIELD); setFieldStep(1); }}
+        onEnter={fetchGps}
+      />
+    );
+  }
+
+  if (selfView === SELF_VIEWS.FIELD) {
+    return (
+      <FieldCheckIn
+        user={user}
+        gpsStatus={gpsStatus}
+        fieldStep={fieldStep}
+        fieldNote={fieldNote}
+        fieldPhoto={fieldPhoto}
+        isSubmitting={isSubmitting}
+        isUploading={isUploading}
+        todayRecord={todayRecord}
+        fileInputRef={fileInputRef}
+        onPhotoCapture={handlePhotoCapture}
+        onCheckIn={handleCheckIn}
+        onBack={() => setSelfView(SELF_VIEWS.OFFICE)}
+        onStepChange={setFieldStep}
+        onNoteChange={setFieldNote}
+        onEnter={fetchGps}
+      />
+    );
+  }
 
   return (
     <>
@@ -57,6 +135,68 @@ export const BranchAdminPanel = () => {
 
         <div className="px-6 mb-6">
           <h2 className="text-3xl font-bold text-navy tracking-tight">Attendance</h2>
+        </div>
+
+        {/* ── Employee fetch error (diagnostic) ── */}
+        {empError && (
+          <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <p className="text-xs font-bold text-red-700">
+              Could not load employees:{' '}
+              {empErrorDetail?.data?.error?.message || empErrorDetail?.status || 'Unknown error'}
+            </p>
+          </div>
+        )}
+
+        {/* ── Self attendance for branch admin ── */}
+        <AnimatePresence>
+          {checkInError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3"
+            >
+              <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="flex-1 text-xs font-bold text-red-700">{checkInError}</p>
+              <button onClick={clearCheckInError} className="text-red-400 hover:text-red-600 transition-colors"><X size={14} /></button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="px-6 mb-6">
+          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Your Attendance</p>
+          {todayRecord ? (
+            <div className="p-4 rounded-2xl bg-emerald/5 border border-emerald/20 flex items-center gap-3">
+              <CheckCircle2 size={20} className="text-emerald shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-navy">Checked In</p>
+                <p className="text-[10px] text-navy/40 mt-0.5">
+                  {todayRecord.mode === 'field' ? 'Field' : 'Office'} · {todayRecord.status}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => { setSelfView(SELF_VIEWS.OFFICE); fetchGps(); }}
+                className="p-5 rounded-2xl bg-white card-shadow border-2 border-indigo flex flex-col items-center gap-2 tactile-press"
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo/10 flex items-center justify-center text-indigo">
+                  <Home size={20} />
+                </div>
+                <p className="text-xs font-bold text-navy">Office</p>
+              </button>
+              <button
+                onClick={() => { setSelfView(SELF_VIEWS.FIELD); setFieldStep(1); fetchGps(); }}
+                className="p-5 rounded-2xl bg-white card-shadow border-2 border-transparent flex flex-col items-center gap-2 tactile-press"
+              >
+                <div className="w-10 h-10 rounded-xl bg-navy/5 flex items-center justify-center text-navy">
+                  <MapPin size={20} />
+                </div>
+                <p className="text-xs font-bold text-navy">Field</p>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Inline error banner — replaces browser alert for admin actions */}
@@ -125,6 +265,18 @@ export const BranchAdminPanel = () => {
             <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
               All Branch Employees
             </p>
+
+            {/* Search */}
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/20" size={14} />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 bg-white rounded-xl text-xs font-bold text-navy placeholder:text-navy/20 card-shadow outline-none focus:ring-2 ring-indigo/10"
+              />
+            </div>
 
             {/* Filter tabs */}
             <div className="flex gap-2 mb-4">

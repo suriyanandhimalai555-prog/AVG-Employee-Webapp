@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  UserPlus, 
-  Shield, 
-  Building2, 
-  Mail, 
-  Key, 
-  Search, 
-  Filter,
+import {
+  Users,
+  UserPlus,
+  Shield,
+  Building2,
+  Mail,
+  Key,
+  Search,
   CheckCircle2,
   XCircle,
   ChevronRight,
+  ChevronLeft,
+  ArrowRight,
   Loader2
 } from 'lucide-react';
 import { 
@@ -30,20 +31,33 @@ export const UserManagement = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
 
-  // API Hooks
-  const { data: users = [], isLoading: isUsersLoading } = useGetUsersQuery(
+  // API Hooks — server-side pagination + search
+  const { data: usersResult = {}, isLoading: isUsersLoading } = useGetUsersQuery(
     {
       viewerId: user?.id,
       role: roleFilter || undefined,
+      search: searchTerm || undefined,
+      page: currentPage,
+      limit: PAGE_SIZE,
     },
     { skip: !user?.id }
   );
+  const users = usersResult.data ?? [];
+  const pagination = {
+    page: usersResult.page ?? 1,
+    total: usersResult.total ?? 0,
+    totalPages: usersResult.totalPages ?? 0,
+  };
   // Separate unfiltered query used to populate the "Reports To" manager dropdown
-  const { data: allUsers = [] } = useGetUsersQuery(
-    { viewerId: user?.id },
+  // Fetch up to 500 so we get all potential managers (MDs and Directors are few)
+  const { data: allUsersResult = {} } = useGetUsersQuery(
+    { viewerId: user?.id, limit: 500 },
     { skip: !user?.id }
   );
+  const allUsers = allUsersResult.data ?? [];
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
 
@@ -117,10 +131,7 @@ export const UserManagement = () => {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Search and role filter are server-side — no client-side filtering needed
 
   // MD is excluded — only one MD may exist (enforced server-side), created via seed/CLI
   const allRoles = [
@@ -183,14 +194,14 @@ export const UserManagement = () => {
             placeholder="Search by name or email..."
             className="w-full pl-12 pr-4 py-3 bg-navy/[0.02] border-none rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 transition-all font-medium"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
           />
         </div>
         
         <select 
           className="px-4 py-3 bg-navy/[0.02] border-none rounded-xl text-navy font-bold text-sm focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer min-w-[160px]"
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
+          onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(1); }}
         >
           <option value="">All Roles</option>
           {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -199,7 +210,7 @@ export const UserManagement = () => {
 
       {/* Users List */}
       <div className="grid gap-4">
-        {filteredUsers.map((user) => (
+        {users.map((user) => (
           <Card 
             key={user.id}
             className="group hover:scale-[1.01] transition-all duration-300 border-none shadow-sm hover:shadow-xl hover:shadow-navy/5"
@@ -237,15 +248,38 @@ export const UserManagement = () => {
           </Card>
         ))}
         
-        {filteredUsers.length === 0 && (
+        {users.length === 0 && (
           <div className="py-20 text-center space-y-4">
             <div className="w-20 h-20 bg-navy/[0.02] rounded-full flex items-center justify-center mx-auto text-navy/10">
               <Users size={40} />
             </div>
-            <p className="text-navy/30 font-bold uppercase tracking-widest text-sm">No users found matching your search</p>
+            <p className="text-navy/30 font-bold uppercase tracking-widest text-sm">No users found</p>
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between py-4">
+          <button
+            disabled={currentPage <= 1}
+            onClick={() => setCurrentPage(p => p - 1)}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all"
+          >
+            <ChevronLeft size={14} /> Previous
+          </button>
+          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+            {pagination.page} / {pagination.totalPages} · {pagination.total} total
+          </p>
+          <button
+            disabled={currentPage >= pagination.totalPages}
+            onClick={() => setCurrentPage(p => p + 1)}
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all"
+          >
+            Next <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Create User Modal */}
       <GlassModal 

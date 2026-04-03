@@ -79,11 +79,21 @@ export const apiSlice = createApi({
       query: ({ userId, month, year }) =>
         `/attendance/${userId}/history?month=${month}&year=${year}`,
       transformResponse: (response) => response.data,
+      providesTags: ['Attendance'],
     }),
 
     // ─── Admin ───
     getEmployees: builder.query({
-      query: (_viewerId) => '/attendance/employees',
+      // viewerId is not sent — it scopes the RTK cache key so two logged-in users don't share data
+      query: ({ viewerId: _viewerId, page = 1, limit = 50, search, branchId } = {}) => {
+        const qs = new URLSearchParams();
+        qs.set('page', String(page));
+        qs.set('limit', String(limit));
+        if (search) qs.set('search', search);
+        if (branchId) qs.set('branchId', branchId);
+        return `/attendance/employees?${qs}`;
+      },
+      // Response shape: { data: [], total, page, limit, totalPages }
       transformResponse: (response) => response.data,
       providesTags: ['Employees'],
     }),
@@ -171,13 +181,16 @@ export const apiSlice = createApi({
     // ─── User Management (Staff & Admins) ───
     getUsers: builder.query({
       query: (params = {}) => {
-        const { viewerId: _viewerId, role, branchId } = params;
+        const { viewerId: _viewerId, role, branchId, search, page = 1, limit = 50 } = params;
         const qs = new URLSearchParams();
         if (role) qs.set('role', role);
         if (branchId) qs.set('branchId', branchId);
-        const s = qs.toString();
-        return `/users${s ? `?${s}` : ''}`;
+        if (search) qs.set('search', search);
+        qs.set('page', String(page));
+        qs.set('limit', String(limit));
+        return `/users?${qs}`;
       },
+      // Response shape: { data: [], total, page, limit, totalPages }
       transformResponse: (response) => response.data,
       providesTags: ['Users'],
     }),

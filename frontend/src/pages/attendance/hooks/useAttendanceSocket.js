@@ -27,8 +27,9 @@ export const useAttendanceSocket = () => {
     const socket = io(SOCKET_URL, {
       // Send JWT in handshake so the server can authenticate before accepting the connection
       auth: { token },
-      // Prefer WebSocket for lowest latency; fall back to polling if needed
-      transports: ['websocket', 'polling'],
+      // Start with polling so the handshake works through Railway's reverse proxy;
+      // Socket.io upgrades to WebSocket automatically once the connection is established.
+      transports: ['polling', 'websocket'],
       reconnectionAttempts: 5,
       reconnectionDelay: 2000,
     });

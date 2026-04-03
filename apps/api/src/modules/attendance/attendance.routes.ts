@@ -14,6 +14,8 @@ import {
 } from './attendance.schema';
 // Import the base error class to check if errors are our custom app errors
 import { AppError } from '../../shared/errors';
+// Import the timezone-aware date helper so the summary default date uses IST, not server UTC
+import { getCompanyToday } from '../../shared/date';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SHARED ERROR HANDLER
@@ -230,15 +232,23 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'branch_admin' && req.user.role !== 'gm' && req.user.role !== 'md') {
+      const allowedRoles = ['branch_admin', 'gm', 'md', 'director', 'branch_manager'];
+      if (!allowedRoles.includes(req.user.role)) {
         return sendForbidden(reply, 'Only admins can view the employee list');
       }
 
+      const q = req.query as any;
       const result = await AttendanceService.getBranchEmployees(
         fastify.db,
         req.user.id,
         req.user.role,
-        req.user.branchId
+        req.user.branchId,
+        {
+          search: q.search || undefined,
+          filterBranchId: q.branchId || undefined,
+          page: q.page ? parseInt(q.page, 10) : 1,
+          limit: q.limit ? parseInt(q.limit, 10) : 50,
+        }
       );
 
       return reply.send({ success: true, data: result });
@@ -257,8 +267,8 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
         return sendForbidden(reply, 'Clients cannot view attendance summaries');
       }
 
-      const date = (req.query as any).date
-        ?? new Date().toISOString().split('T')[0];
+      // Default to IST today when the client doesn't pass an explicit date
+      const date = (req.query as any).date ?? getCompanyToday();
 
       const result = await AttendanceService.getAttendanceSummary(
         fastify.db,

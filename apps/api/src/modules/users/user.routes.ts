@@ -68,16 +68,22 @@ export default async function userRoutes(fastify: FastifyInstance) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
 
-      const query = request.query as any;
-      const users = await UserService.listUsers(
+      const q = request.query as any;
+      const result = await UserService.listUsers(
         fastify.db,
         req.user.id,
         req.user.role,
         req.user.branchId,
-        query
+        {
+          role: q.role || undefined,
+          branchId: q.branchId || undefined,
+          search: q.search || undefined,
+          page: q.page ? parseInt(q.page, 10) : 1,
+          limit: q.limit ? parseInt(q.limit, 10) : 50,
+        }
       );
-      
-      return reply.send({ success: true, data: users });
+
+      return reply.send({ success: true, data: result });
     } catch (error) {
       return handleError(error, reply);
     }

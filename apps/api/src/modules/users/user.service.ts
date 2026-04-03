@@ -121,14 +121,17 @@ export const UserService = {
     return result.rows[0];
   },
 
-  // List users for management table, scoped per role
+  // List users for management table, scoped per role, with pagination and search
   async listUsers(
     db: Pool,
     requesterId: string,
     requesterRole: string,
     requesterBranchId: string | null,
-    queryParams: { role?: string; branchId?: string }
-  ): Promise<UserResponse[]> {
+    queryParams: { role?: string; branchId?: string; search?: string; page?: number; limit?: number }
+  ): Promise<{ data: UserResponse[]; total: number; page: number; limit: number; totalPages: number }> {
+    const page = Math.max(1, queryParams.page ?? 1);
+    const limit = Math.min(100, Math.max(1, queryParams.limit ?? 50));
+
     const base = `
       SELECT u.id, u.name, u.email, u.role, u.branch_id AS "branchId",
              b.name AS "branchName", u.manager_id AS "managerId",
@@ -145,16 +148,21 @@ export const UserService = {
       params.push(queryParams.role);
     }
 
+    if (queryParams.search?.trim()) {
+      conditions.push(`(u.name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`);
+      params.push(`%${queryParams.search.trim()}%`);
+      paramIndex++;
+    }
+
     if (requesterRole === 'md') {
-      // MD sees everyone — no extra condition needed
+      // MD sees everyone — no extra scope condition needed
     } else if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
       conditions.push(`u.branch_id = $${paramIndex++}`);
       params.push(branchId);
     } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      // Subtree + all oversight branch users
       const scopeIds = await getOversightScopeIds(db, requesterId);
-      if (scopeIds.length === 0) return [];
+      if (scopeIds.length === 0) return { data: [], total: 0, page, limit, totalPages: 0 };
       conditions.push(`u.id = ANY($${paramIndex++}::uuid[])`);
       params.push(scopeIds);
     } else if (queryParams.branchId) {
@@ -163,9 +171,22 @@ export const UserService = {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `${base} ${where} ORDER BY u.created_at DESC LIMIT 200`;
 
-    const result = await db.query(sql, params);
-    return result.rows;
+    const [countResult, dataResult] = await Promise.all([
+      db.query(`SELECT COUNT(*) FROM users u ${where}`, params),
+      db.query(
+        `${base} ${where} ORDER BY u.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        [...params, limit, (page - 1) * limit]
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0].count, 10);
+    return {
+      data: dataResult.rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 };
