@@ -20,6 +20,8 @@ export const CreateUserSchema = z.object({
   branchId: z.string().uuid().nullable().optional(),
   managerId: z.string().uuid().nullable().optional(),
   hasSmartphone: z.boolean().default(true),
+  // UUIDs of branches the Director / GM will oversee (multiple branches supported)
+  oversightBranchIds: z.array(z.string().uuid()).optional(),
 });
 
 export const UserResponseSchema = z.object({

@@ -39,6 +39,11 @@ export const UserManagement = () => {
     },
     { skip: !user?.id }
   );
+  // Separate unfiltered query used to populate the "Reports To" manager dropdown
+  const { data: allUsers = [] } = useGetUsersQuery(
+    { viewerId: user?.id },
+    { skip: !user?.id }
+  );
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
 
@@ -49,20 +54,50 @@ export const UserManagement = () => {
     password: '',
     role: 'branch_admin',
     branchId: '',
-    hasSmartphone: true
+    managerId: '',
+    oversightBranchIds: [],
+    hasSmartphone: true,
   });
 
   const [error, setError] = useState('');
 
+  const isOversightRole = (role) => role === 'director' || role === 'gm';
+
+  // Directors report to MD; GMs report to a Director
+  const managerOptions = formData.role === 'director'
+    ? allUsers.filter(u => u.role === 'md')
+    : formData.role === 'gm'
+      ? allUsers.filter(u => u.role === 'director')
+      : [];
+
+  const toggleOversightBranch = (branchId) => {
+    setFormData((prev) => {
+      const ids = prev.oversightBranchIds;
+      return {
+        ...prev,
+        oversightBranchIds: ids.includes(branchId)
+          ? ids.filter((id) => id !== branchId)
+          : [...ids, branchId],
+      };
+    });
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setError('');
-    
-    // Clean up empty strings before sending to ensure Zod validation passes
+
     const submissionData = { ...formData };
-    if (!submissionData.branchId) {
-      delete submissionData.branchId;
+
+    if (isOversightRole(submissionData.role)) {
+      // Set branchId to the first oversight branch so the user appears in oversight scope JOIN queries.
+      // Without a non-null branch_id, the GM/Director is invisible to their own Director/MD.
+      submissionData.branchId = submissionData.oversightBranchIds[0] || null;
+    } else {
+      delete submissionData.oversightBranchIds;
+      if (!submissionData.branchId) delete submissionData.branchId;
     }
+
+    if (!submissionData.managerId) delete submissionData.managerId;
 
     try {
       await createUser(submissionData).unwrap();
@@ -73,7 +108,9 @@ export const UserManagement = () => {
         password: '',
         role: user?.role === 'branch_admin' ? 'branch_manager' : 'branch_admin',
         branchId: '',
-        hasSmartphone: false
+        managerId: '',
+        oversightBranchIds: [],
+        hasSmartphone: true,
       });
     } catch (err) {
       setError(err.data?.error?.message || 'Failed to create user');
@@ -85,19 +122,26 @@ export const UserManagement = () => {
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // MD is excluded — only one MD may exist (enforced server-side), created via seed/CLI
   const allRoles = [
-    { value: 'md', label: 'Managing Director' },
-    { value: 'branch_admin', label: 'Branch Admin' },
+    { value: 'director', label: 'Director' },
     { value: 'gm', label: 'General Manager' },
+    { value: 'branch_admin', label: 'Branch Admin' },
     { value: 'branch_manager', label: 'Branch Manager' },
     { value: 'abm', label: 'Assistant Branch Manager' },
     { value: 'sales_officer', label: 'Sales Officer' },
     { value: 'client', label: 'Client' },
   ];
 
-  const roles = user?.role === 'branch_admin' 
-    ? allRoles.filter(r => ['branch_manager', 'abm', 'sales_officer', 'client'].includes(r.value))
-    : allRoles;
+  const creatableRoles = {
+    md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
+    gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
+    branch_admin: ['branch_manager', 'abm', 'sales_officer', 'client'],
+  };
+
+  const roles = user?.role
+    ? allRoles.filter((r) => (creatableRoles[user.role] ?? []).includes(r.value))
+    : [];
 
   if (isUsersLoading) {
     return (
@@ -248,29 +292,83 @@ export const UserManagement = () => {
               </div>
             </div>
 
-            <div className={`grid ${user?.role === 'branch_admin' ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Role</label>
-                <select 
+                <select
                   className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                   value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value, branchId: '', managerId: '', oversightBranchIds: [] })}
                 >
-                  {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
               </div>
 
-              {user?.role !== 'branch_admin' && (
+              {/* Director / GM: pick their direct manager */}
+              {isOversightRole(formData.role) && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                    Reports To <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    required
+                    className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
+                    value={formData.managerId}
+                    onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                  >
+                    <option value="">Select Manager...</option>
+                    {managerOptions.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                    ))}
+                  </select>
+                  {managerOptions.length === 0 && (
+                    <p className="text-[10px] text-amber-500 font-bold ml-1">
+                      No {formData.role === 'gm' ? 'directors' : 'MD'} found — create one first
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Director / GM: pick multiple oversight branches */}
+              {isOversightRole(formData.role) && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                    Oversight Branches <span className="text-red-400">*</span>
+                  </label>
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+                    {branches.map((b) => (
+                      <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded accent-indigo cursor-pointer"
+                          checked={formData.oversightBranchIds.includes(b.id)}
+                          onChange={() => toggleOversightBranch(b.id)}
+                        />
+                        <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">{b.name}</span>
+                      </label>
+                    ))}
+                    {branches.length === 0 && (
+                      <p className="text-xs text-navy/30 text-center py-2">No branches available</p>
+                    )}
+                  </div>
+                  {formData.oversightBranchIds.length === 0 && (
+                    <p className="text-[10px] text-amber-500 font-bold ml-1">Select at least one branch</p>
+                  )}
+                </div>
+              )}
+
+              {/* All other non-branch_admin roles: single branch dropdown */}
+              {!isOversightRole(formData.role) && user?.role !== 'branch_admin' && (
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Branch Assignment</label>
-                  <select 
-                    required={formData.role !== 'md'}
+                  <select
+                    required
                     className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                     value={formData.branchId}
-                    onChange={(e) => setFormData({...formData, branchId: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
                   >
                     <option value="">Select Branch...</option>
-                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
               )}
@@ -318,10 +416,10 @@ export const UserManagement = () => {
             >
               Cancel
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="flex-1 bg-indigo text-white shadow-lg shadow-indigo/20"
-              disabled={isCreating}
+              disabled={isCreating || (isOversightRole(formData.role) && formData.oversightBranchIds.length === 0)}
             >
               {isCreating ? (
                 <>

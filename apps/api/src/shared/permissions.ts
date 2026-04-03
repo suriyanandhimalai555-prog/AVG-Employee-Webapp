@@ -9,10 +9,10 @@ export const canMarkAttendance = (role: Role): boolean => {
   return role !== 'client';
 };
 
-// Return true if the user's role is permitted to correct attendance records for others
+// Return true if the user's role is permitted to correct/admin-mark attendance records for others
 export const canCorrectAttendance = (role: Role): boolean => {
-  // Only users with the 'branch_admin' role have permission to correct attendance
-  return role === 'branch_admin';
+  // branch_admin, md, and gm may all mark or correct attendance for employees
+  return ['branch_admin', 'md', 'gm'].includes(role);
 };
 
 // Return true if the user's role is permitted to manage smartphone device status
@@ -48,12 +48,12 @@ export const assertCanMarkAttendance = (role: Role): void => {
   }
 };
 
-// Enforce that only branch admins can correct attendance, throwing a ForbiddenError if not
+// Enforce that the role is allowed to correct/admin-mark attendance, throwing a ForbiddenError if not
 export const assertCanCorrectAttendance = (role: Role): void => {
   // Trigger the permission check specifically for correcting attendance
   if (!canCorrectAttendance(role)) {
     // Throw a 403 Forbidden error with a descriptive explanation if the check fails
-    throw new ForbiddenError('Only branch admins can correct attendance');
+    throw new ForbiddenError('Only branch admins, GMs, and MD can correct attendance');
   }
 };
 

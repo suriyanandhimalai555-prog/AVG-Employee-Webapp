@@ -91,7 +91,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement }) => {
             isMarked={todayRecord}
             onAction={onNavigateToAttendance}
           />
-          <StatsGrid summary={summary} isLoading={summaryLoading} />
+          {/* myMonth holds this month's aggregated stats — not just today's */}
+          <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
           <div className="px-6 pb-32">
             <HistoryCalendar
               historyData={historyData}

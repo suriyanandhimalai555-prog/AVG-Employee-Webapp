@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { CreateUserInput, UserResponse } from './user.schema';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
+import { getOversightScopeIds } from '../../shared/hierarchy';
 
 export const UserService = {
 
@@ -15,36 +16,52 @@ export const UserService = {
     requesterBranchId: string | null,
     payload: CreateUserInput
   ): Promise<UserResponse> {
-    // Permission check: MD, GM, and Branch Admins can create users
-    if (requesterRole !== 'md' && requesterRole !== 'gm' && requesterRole !== 'branch_admin') {
+    // ── Permission matrix ──
+    // MD: can create director, gm, branch_manager, abm, sales_officer, branch_admin, client
+    // GM: can create branch_manager, abm, sales_officer, branch_admin, client
+    // Branch Admin: can create branch_manager, abm, sales_officer, client (own branch only)
+    const creatableByRole: Record<string, string[]> = {
+      md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
+      gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
+      branch_admin: ['branch_manager', 'abm', 'sales_officer', 'client'],
+    };
+
+    const allowed = creatableByRole[requesterRole];
+    if (!allowed) {
       throw new ForbiddenError('You do not have permission to create users');
     }
+    if (!allowed.includes(payload.role)) {
+      throw new ForbiddenError(`Your role cannot create a user with role "${payload.role}"`);
+    }
 
-    // Branch Admin Specific Constraints
-    if (requesterRole === 'branch_admin') {
-      const allowedRoles = ['branch_manager', 'abm', 'sales_officer', 'client'];
-      if (!allowedRoles.includes(payload.role)) {
-        throw new ForbiddenError('Branch Admins can only create branch staff or clients');
+    // Only one MD may exist at any time
+    if (payload.role === 'md') {
+      const existing = await db.query(`SELECT id FROM users WHERE role = 'md' LIMIT 1`);
+      if (existing.rows.length > 0) {
+        throw new ConflictError('A Managing Director already exists. Only one MD is allowed.');
       }
+    }
+
+    // Branch Admin can only add users to their own branch
+    if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
       payload.branchId = branchId;
     }
 
-    // Step 1: Duplicate check — see if email is already taken
+    // Duplicate email check
     const emailResult = await db.query(
       'SELECT id FROM users WHERE email = $1',
       [payload.email]
     );
-
     if (emailResult.rows.length > 0) {
       throw new ConflictError('A user with this email already exists');
     }
 
-    // Step 2: Hashing — use bcrypt to secure the raw password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(payload.password, saltRounds);
 
-    // Step 3: Persistence — insert into users table and handle branch join
+    // Insert the user. For Director/GM the primary branchId is the first oversight branch
+    // (or null if none provided — MD assigns them via oversight table).
     const result = await db.query(
       `INSERT INTO users (
         name, email, password_hash, role, branch_id, manager_id, has_smartphone
@@ -61,8 +78,28 @@ export const UserService = {
       ]
     );
 
-    // Error in query: used $3 but also password payload. Fixed below.
-    return this.getUserById(db, result.rows[0].id);
+    const newUserId: string = result.rows[0].id;
+
+    // For Director/GM, insert their oversight branch assignments
+    if (['director', 'gm'].includes(payload.role) && payload.oversightBranchIds?.length) {
+      for (const branchId of payload.oversightBranchIds) {
+        await db.query(
+          `INSERT INTO user_oversight_branches (user_id, branch_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [newUserId, branchId]
+        );
+      }
+    }
+
+    // For branch_admin, link them to their branch so resolveBranchAdminBranchId works without a JWT refresh
+    if (payload.role === 'branch_admin' && payload.branchId) {
+      await db.query(
+        `UPDATE branches SET admin_id = $1 WHERE id = $2`,
+        [newUserId, payload.branchId]
+      );
+    }
+
+    return this.getUserById(db, newUserId);
   },
 
   // Helper to fetch full user info by ID
@@ -84,7 +121,7 @@ export const UserService = {
     return result.rows[0];
   },
 
-  // List users for management table
+  // List users for management table, scoped per role
   async listUsers(
     db: Pool,
     requesterId: string,
@@ -92,33 +129,41 @@ export const UserService = {
     requesterBranchId: string | null,
     queryParams: { role?: string; branchId?: string }
   ): Promise<UserResponse[]> {
-    let sql = `
+    const base = `
       SELECT u.id, u.name, u.email, u.role, u.branch_id AS "branchId",
              b.name AS "branchName", u.manager_id AS "managerId",
              u.is_active AS "isActive", u.created_at AS "createdAt"
       FROM users u
       LEFT JOIN branches b ON u.branch_id = b.id
     `;
+    const conditions: string[] = [];
     const params: any[] = [];
     let paramIndex = 1;
 
     if (queryParams.role) {
-      sql += ` WHERE u.role = $${paramIndex++}`;
+      conditions.push(`u.role = $${paramIndex++}`);
       params.push(queryParams.role);
     }
 
-    if (requesterRole === 'branch_admin') {
+    if (requesterRole === 'md') {
+      // MD sees everyone — no extra condition needed
+    } else if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
-      sql += params.length > 0 ? ' AND' : ' WHERE';
-      sql += ` u.branch_id = $${paramIndex++}`;
+      conditions.push(`u.branch_id = $${paramIndex++}`);
       params.push(branchId);
+    } else if (requesterRole === 'director' || requesterRole === 'gm') {
+      // Subtree + all oversight branch users
+      const scopeIds = await getOversightScopeIds(db, requesterId);
+      if (scopeIds.length === 0) return [];
+      conditions.push(`u.id = ANY($${paramIndex++}::uuid[])`);
+      params.push(scopeIds);
     } else if (queryParams.branchId) {
-      sql += params.length > 0 ? ' AND' : ' WHERE';
-      sql += ` u.branch_id = $${paramIndex++}`;
+      conditions.push(`u.branch_id = $${paramIndex++}`);
       params.push(queryParams.branchId);
     }
 
-    sql += ' ORDER BY u.created_at DESC LIMIT 100';
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `${base} ${where} ORDER BY u.created_at DESC LIMIT 200`;
 
     const result = await db.query(sql, params);
     return result.rows;

@@ -171,8 +171,10 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
-  // ─── GET /photo/:key/url (S3 Download URL) ───
-  fastify.get<{ Params: { key: string } }>('/photo/:key/url', {
+  // ─── GET /photo-url?key=... (S3 Download URL) ───
+  // Key is passed as a query param because S3 keys contain slashes which would
+  // break path-segment param matching (e.g. attendance/userId/timestamp.jpg).
+  fastify.get('/photo-url', {
     onRequest: [fastify.authenticate],
   }, async (request, reply) => {
     try {
@@ -181,7 +183,14 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
         return sendForbidden(reply, 'Clients cannot view attendance photos');
       }
 
-      const { key } = request.params;
+      const { key } = req.query as { key?: string };
+      if (!key) {
+        return reply.code(400).send({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'key query param is required' },
+        });
+      }
+
       const result = await AttendanceService.getPresignedDownloadUrl(key);
       return reply.send({ success: true, data: result });
     } catch (error) {

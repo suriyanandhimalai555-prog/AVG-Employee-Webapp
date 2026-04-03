@@ -5,8 +5,8 @@ import Redis from 'ioredis';
 import { generateUploadUrl, generatePhotoKey, generateDownloadUrl } from '../../config/s3';
 // Import the queue function that pushes attendance jobs to the background worker
 import { addAttendanceJob } from './attendance.queue';
-// Import the hierarchy function that returns all subordinate user IDs
-import { getSubtreeIds } from '../../shared/hierarchy';
+// Import hierarchy helpers for subordinate and oversight-branch scope resolution
+import { getSubtreeIds, getOversightScopeIds } from '../../shared/hierarchy';
 // Import permission assertion functions that throw ForbiddenError on failure
 import {
   assertCanMarkAttendance,
@@ -113,7 +113,8 @@ export const AttendanceService = {
     adminBranchId: string | null,
     payload: AdminMarkInput
   ): Promise<{ queued: boolean; jobId: string }> {
-    assertCanCorrectAttendance('branch_admin');
+    // Pass the actual caller role so the permission check is accurate for gm/md/branch_admin
+    assertCanCorrectAttendance(adminRole as any);
 
     const targetResult = await db.query(
       'SELECT id, branch_id, has_smartphone, role FROM users WHERE id = $1 AND is_active = true',
@@ -272,7 +273,12 @@ export const AttendanceService = {
   ): Promise<{ data: any[]; pagination: object }> {
     let scopeUserIds: string[];
 
-    if (requesterRole === 'branch_admin') {
+    if (requesterRole === 'md') {
+      const allResult = await db.query(
+        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
+      );
+      scopeUserIds = allResult.rows.map((r: any) => r.id);
+    } else if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(
         db,
         requesterId,
@@ -283,6 +289,8 @@ export const AttendanceService = {
         [branchId]
       );
       scopeUserIds = branchUsers.rows.map((row: any) => row.id);
+    } else if (requesterRole === 'director' || requesterRole === 'gm') {
+      scopeUserIds = await getOversightScopeIds(db, requesterId);
     } else {
       scopeUserIds = await getSubtreeIds(requesterId);
     }
@@ -384,7 +392,13 @@ export const AttendanceService = {
   ): Promise<object> {
     let scopeUserIds: string[];
 
-    if (requesterRole === 'branch_admin') {
+    if (requesterRole === 'md') {
+      // MD sees the entire organisation — skip the subtree CTE entirely
+      const allResult = await db.query(
+        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
+      );
+      scopeUserIds = allResult.rows.map((r: any) => r.id);
+    } else if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(
         db,
         requesterId,
@@ -395,57 +409,53 @@ export const AttendanceService = {
         [branchId]
       );
       scopeUserIds = branchUsers.rows.map((row: any) => row.id);
+    } else if (requesterRole === 'director' || requesterRole === 'gm') {
+      // Director / GM see their subtree + all users in oversight branches
+      scopeUserIds = await getOversightScopeIds(db, requesterId);
     } else {
       scopeUserIds = await getSubtreeIds(requesterId);
     }
 
-    // Fetch only non-MD active users inside the subtree or branch scope
-    const filterResult = await db.query(
-      `SELECT id FROM users 
-       WHERE id = ANY($1) 
-       AND role != 'md' 
-       AND is_active = true`,
-      [scopeUserIds]
-    );
+    // Round 1: fetch filtered user list, requester's today record, and monthly stats in parallel.
+    // today and myMonth only depend on requesterId/date — independent of scopeUserIds.
+    const fetchToday = requesterRole !== 'branch_admin';
+    const fetchMyMonth = requesterRole !== 'branch_admin' && requesterRole !== 'md';
 
-    const filteredIds = filterResult.rows.map(r => r.id);
+    const [filterResult, rawTodayResult, rawMonthResult] = await Promise.all([
+      db.query(
+        `SELECT id FROM users WHERE id = ANY($1) AND role != 'md' AND is_active = true`,
+        [scopeUserIds]
+      ),
+      fetchToday
+        ? db.query(
+            `SELECT id, status, mode, check_in_time, field_note, check_in_lat, check_in_lng
+             FROM attendance WHERE user_id = $1 AND date = $2`,
+            [requesterId, date]
+          )
+        : Promise.resolve(null),
+      fetchMyMonth
+        ? db.query(
+            `SELECT
+               COUNT(CASE WHEN status = 'present'  THEN 1 END)::int AS present,
+               COUNT(CASE WHEN status = 'absent'   THEN 1 END)::int AS absent,
+               COUNT(CASE WHEN mode   = 'field'    THEN 1 END)::int AS field
+             FROM attendance
+             WHERE user_id = $1
+               AND date >= date_trunc('month', $2::date)
+               AND date <  date_trunc('month', $2::date) + interval '1 month'`,
+            [requesterId, date]
+          )
+        : Promise.resolve(null),
+    ]);
+
+    const filteredIds = filterResult.rows.map((r: any) => r.id);
     const totalEmployees = filteredIds.length;
 
-    const result = await db.query(
-      `SELECT status, mode, COUNT(*)::int AS count
-       FROM attendance
-       WHERE user_id = ANY($1) AND date = $2
-       GROUP BY status, mode`,
-      [filteredIds, date]
-    );
-
-    let present = 0;
-    let absent = 0;
-    let halfDay = 0;
-    let field = 0;
-    let office = 0;
-    let totalMarked = 0;
-
-    for (const row of result.rows) {
-      totalMarked += row.count;
-      if (row.status === 'present') present += row.count;
-      if (row.status === 'absent') absent += row.count;
-      if (row.status === 'half_day') halfDay += row.count;
-      if (row.mode === 'field') field += row.count;
-      if (row.mode === 'office') office += row.count;
-    }
-
-    // For non-admin employees, fetch their own today record from DB or Redis queue key (worker may not have written yet)
+    // Build today's record — check Redis if DB has no row yet (job may still be in queue)
     let today: any = null;
-    if (requesterRole !== 'branch_admin') {
-      const todayResult = await db.query(
-        `SELECT id, status, mode, check_in_time, field_note, check_in_lat, check_in_lng
-         FROM attendance
-         WHERE user_id = $1 AND date = $2`,
-        [requesterId, date]
-      );
-      if (todayResult.rows.length > 0) {
-        today = todayResult.rows[0];
+    if (fetchToday) {
+      if (rawTodayResult && rawTodayResult.rows.length > 0) {
+        today = rawTodayResult.rows[0];
       } else {
         // Fallback: if Redis dedupe key exists, the job is queued but not yet persisted
         const queued = await redis.exists(`att:${requesterId}:${date}`);
@@ -455,33 +465,69 @@ export const AttendanceService = {
       }
     }
 
-    // Per-branch breakdown — only meaningful for roles that oversee multiple branches
-    let branches: any[] = [];
-    if (['gm', 'director', 'md'].includes(requesterRole) && filteredIds.length > 0) {
-      const branchStatsResult = await db.query(
-        `SELECT
-           b.id,
-           b.name,
-           COUNT(u.id)::int                                          AS total,
-           COUNT(CASE WHEN a.status = 'present' THEN 1 END)::int    AS present
-         FROM users u
-         JOIN branches b ON u.branch_id = b.id
-         LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $2
-         WHERE u.id = ANY($1::uuid[])
-         GROUP BY b.id, b.name
-         ORDER BY b.name`,
-        [filteredIds, date]
-      );
+    // Monthly aggregate for the requester's own record.
+    // Used by the "Your Month at a Glance" stats grid on the employee home tab.
+    // Not computed for branch_admin (they don't have their own attendance record in this context).
+    const myMonth: { present: number; absent: number; field: number } | null =
+      fetchMyMonth && rawMonthResult ? rawMonthResult.rows[0] : null;
 
-      branches = branchStatsResult.rows.map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        total: r.total,
-        present: r.present,
-        // Round to nearest integer; shown as "74%" in the UI
-        presentPercent: r.total > 0 ? Math.round((r.present / r.total) * 100) : 0,
-      }));
+    // Round 2: fetch attendance stats and per-branch breakdown in parallel.
+    // Both depend on filteredIds from Round 1.
+    const fetchBranchStats = ['gm', 'director', 'md'].includes(requesterRole) && filteredIds.length > 0;
+
+    const [attendanceResult, branchStatsResult] = await Promise.all([
+      db.query(
+        `SELECT status, mode, COUNT(*)::int AS count
+         FROM attendance
+         WHERE user_id = ANY($1) AND date = $2
+         GROUP BY status, mode`,
+        [filteredIds, date]
+      ),
+      fetchBranchStats
+        ? db.query(
+            `SELECT
+               b.id,
+               b.name,
+               COUNT(u.id)::int                                          AS total,
+               COUNT(CASE WHEN a.status = 'present' THEN 1 END)::int    AS present
+             FROM users u
+             JOIN branches b ON u.branch_id = b.id
+             LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $2
+             WHERE u.id = ANY($1::uuid[])
+             GROUP BY b.id, b.name
+             ORDER BY b.name`,
+            [filteredIds, date]
+          )
+        : Promise.resolve(null),
+    ]);
+
+    let present = 0;
+    let absent = 0;
+    let halfDay = 0;
+    let field = 0;
+    let office = 0;
+    let totalMarked = 0;
+
+    for (const row of attendanceResult.rows) {
+      totalMarked += row.count;
+      if (row.status === 'present') present += row.count;
+      if (row.status === 'absent') absent += row.count;
+      if (row.status === 'half_day') halfDay += row.count;
+      if (row.mode === 'field') field += row.count;
+      if (row.mode === 'office') office += row.count;
     }
+
+    // Per-branch breakdown — only meaningful for roles that oversee multiple branches
+    const branches: any[] = fetchBranchStats && branchStatsResult
+      ? branchStatsResult.rows.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          total: r.total,
+          present: r.present,
+          // Round to nearest integer; shown as "74%" in the UI
+          presentPercent: r.total > 0 ? Math.round((r.present / r.total) * 100) : 0,
+        }))
+      : [];
 
     return {
       date,
@@ -494,6 +540,7 @@ export const AttendanceService = {
       notMarked: totalEmployees - totalMarked,
       today,
       branches,
+      myMonth,
     };
   },
 

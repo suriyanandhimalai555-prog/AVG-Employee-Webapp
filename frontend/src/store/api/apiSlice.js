@@ -47,7 +47,9 @@ export const apiSlice = createApi({
     }),
     
     getPhotoUrl: builder.query({
-      query: (key) => `/attendance/photo/${key}/url`,
+      // Key is passed as query param — the key contains slashes which would
+      // break path-segment routing (e.g. attendance/userId/timestamp.jpg)
+      query: (key) => `/attendance/photo-url?key=${encodeURIComponent(key)}`,
       transformResponse: (response) => response.data,
     }),
     submitAttendance: builder.mutation({
