@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { ForbiddenError, NotFoundError } from './errors';
-import { getSubtreeIds } from './hierarchy';
+import { getSubtreeIds, getOversightScopeIds } from './hierarchy';
 
 /** Identity needed to compute dashboard / roster visibility (JWT may omit or stale-branch branch_id). */
 export type AttendanceRequester = {
@@ -67,6 +67,14 @@ export async function resolveEmployeeDashboardScope(
 
   if (role === 'md') {
     return { kind: 'global_exclude_md' };
+  }
+
+  // GM / Director always use their full oversight scope (subtree + all oversight branches).
+  // Using jwtBranchId here would restrict them to their own branch only, which breaks
+  // filterBranchId drill-down when the clicked branch differs from their own.
+  if (role === 'gm' || role === 'director') {
+    const userIds = await getOversightScopeIds(db, id);
+    return { kind: 'subtree', userIds };
   }
 
   if (jwtBranchId) {

@@ -1,69 +1,59 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, MapPin, Camera, FileText, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, FileText, Clock } from 'lucide-react';
 import { getISTToday } from '../lib/date';
 
-// Dot colors mapped to attendance status/mode
 const DOT_CONFIG = {
-  present_office: { bg: 'bg-indigo',   ring: 'ring-indigo/20',   label: 'Office' },
-  present_field:  { bg: 'bg-emerald',  ring: 'ring-emerald/20',  label: 'Field' },
-  half_day:       { bg: 'bg-amber-500',ring: 'ring-amber-500/20',label: 'Half Day' },
-  absent:         { bg: 'bg-red-500',  ring: 'ring-red-500/20',  label: 'Absent' },
+  present_office: { bg: 'bg-indigo',    ring: 'ring-indigo/20',    label: 'Office',   text: 'text-indigo' },
+  present_field:  { bg: 'bg-emerald',   ring: 'ring-emerald/20',   label: 'Field',    text: 'text-emerald' },
+  half_day:       { bg: 'bg-amber-500', ring: 'ring-amber-500/20', label: 'Half Day', text: 'text-amber-500' },
+  absent:         { bg: 'bg-red-400',   ring: 'ring-red-400/20',   label: 'Absent',   text: 'text-red-500' },
 };
 
 const getRecordKey = (record) => {
-  if (record.status === 'absent') return 'absent';
+  if (record.status === 'absent')   return 'absent';
   if (record.status === 'half_day') return 'half_day';
-  if (record.mode === 'field') return 'present_field';
+  if (record.mode === 'field')      return 'present_field';
   return 'present_office';
 };
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-
-// Pad a number to 2 digits without converting through Date / UTC
-const pad = (n) => String(n).padStart(2, '0');
+const pad  = (n) => String(n).padStart(2, '0');
 
 export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
   const today = new Date();
-  const [viewDate, setViewDate] = useState({ month: today.getMonth(), year: today.getFullYear() });
+  const [viewDate, setViewDate]   = useState({ month: today.getMonth(), year: today.getFullYear() });
+  const [selectedIso, setSelectedIso] = useState(getISTToday());
 
-  // Build a lookup map: { 'YYYY-MM-DD': record }
   const recordsByDate = useMemo(() => {
     const map = {};
     (historyData || []).forEach((r) => {
-      const key = typeof r.date === 'string' ? r.date.slice(0, 10) : new Date(r.date).toISOString().slice(0, 10);
+      const key = typeof r.date === 'string'
+        ? r.date.slice(0, 10)
+        : new Date(r.date).toISOString().slice(0, 10);
       map[key] = r;
     });
     return map;
   }, [historyData]);
 
-  // Build calendar grid — returns array of { date, dayOfWeek, isoStr, record | null }
   const calendarRows = useMemo(() => {
-    const firstDay = new Date(viewDate.year, viewDate.month, 1);
-    const lastDay  = new Date(viewDate.year, viewDate.month + 1, 0);
-
-    // Monday = 0 ... Sunday = 6
-    const startOffset = (firstDay.getDay() + 6) % 7; 
+    const firstDay   = new Date(viewDate.year, viewDate.month, 1);
+    const lastDay    = new Date(viewDate.year, viewDate.month + 1, 0);
+    const startOffset = (firstDay.getDay() + 6) % 7;
 
     const cells = [];
-    // Pad start
     for (let i = 0; i < startOffset; i++) cells.push(null);
-
     for (let d = 1; d <= lastDay.getDate(); d++) {
-      const date = new Date(viewDate.year, viewDate.month, d);
-      // Build isoStr directly from calendar year/month/day — do NOT use toISOString() which shifts to UTC
+      const date   = new Date(viewDate.year, viewDate.month, d);
       const isoStr = `${viewDate.year}-${pad(viewDate.month + 1)}-${pad(d)}`;
       cells.push({ day: d, isoStr, record: recordsByDate[isoStr] || null, date });
     }
 
-    // Chunk into rows of 7
     const rows = [];
     for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
     return rows;
   }, [viewDate, recordsByDate]);
 
-  const [selectedIso, setSelectedIso] = useState(getISTToday());
   const selectedRecord = recordsByDate[selectedIso] || null;
 
   const monthLabel = new Date(viewDate.year, viewDate.month, 1)
@@ -86,35 +76,41 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
 
   const todayIso = getISTToday();
 
-  // Monthly stats from the calendar data currently viewed
   const monthStats = useMemo(() => {
     const records = Object.values(recordsByDate).filter(r => {
-      const recIso = typeof r.date === 'string' ? r.date.slice(0, 10) : new Date(r.date).toISOString().slice(0, 10);
-      const [yr, mo] = recIso.split('-');
+      const iso = typeof r.date === 'string'
+        ? r.date.slice(0, 10)
+        : new Date(r.date).toISOString().slice(0, 10);
+      const [yr, mo] = iso.split('-');
       return parseInt(yr) === viewDate.year && parseInt(mo) === viewDate.month + 1;
     });
     return {
       present: records.filter(r => r.status === 'present').length,
-      absent: records.filter(r => r.status === 'absent').length,
-      field: records.filter(r => r.mode === 'field').length,
-      total: records.length,
+      absent:  records.filter(r => r.status === 'absent').length,
+      field:   records.filter(r => r.mode === 'field').length,
     };
   }, [recordsByDate, viewDate]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between px-1">
         <div>
           <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Attendance Log</p>
-          <p className="text-base font-bold text-navy">{monthLabel}</p>
+          <p className="text-base font-bold text-navy mt-0.5">{monthLabel}</p>
         </div>
         <div className="flex gap-1">
-          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-navy/5 text-navy/40 hover:text-navy transition-all tactile-press">
-            <ChevronLeft size={18} />
+          <button
+            onClick={prevMonth}
+            className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-navy/6 text-navy/35 hover:text-navy/70 transition-all duration-200 tactile-press"
+          >
+            <ChevronLeft size={16} />
           </button>
-          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-navy/5 text-navy/40 hover:text-navy transition-all tactile-press">
-            <ChevronRight size={18} />
+          <button
+            onClick={nextMonth}
+            className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-navy/6 text-navy/35 hover:text-navy/70 transition-all duration-200 tactile-press"
+          >
+            <ChevronRight size={16} />
           </button>
         </div>
       </div>
@@ -122,53 +118,55 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
       {/* Calendar Card */}
       <div className="bg-white rounded-3xl card-shadow p-5 overflow-hidden">
         {/* Day Headers */}
-        <div className="grid grid-cols-7 mb-3">
+        <div className="grid grid-cols-7 mb-2">
           {DAYS.map((d, i) => (
-            <div key={i} className="text-center text-[10px] font-bold text-navy/25 uppercase tracking-widest py-1">{d}</div>
+            <div key={i} className="text-center text-[9px] font-bold text-navy/20 uppercase tracking-widest py-1">
+              {d}
+            </div>
           ))}
         </div>
 
         {/* Calendar Grid */}
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {calendarRows.map((row, ri) => (
             <div key={ri} className="grid grid-cols-7">
               {Array.from({ length: 7 }).map((_, ci) => {
-                const cell = row[ci];
+                const cell    = row[ci];
                 if (!cell) return <div key={ci} />;
 
-                const isToday = cell.isoStr === todayIso;
+                const isToday    = cell.isoStr === todayIso;
                 const isSelected = cell.isoStr === selectedIso;
-                const isFuture = cell.date > today && !isToday;
-                const dotKey = cell.record ? getRecordKey(cell.record) : null;
-                const dot = dotKey ? DOT_CONFIG[dotKey] : null;
+                const isFuture   = cell.date > today && !isToday;
+                const dotKey     = cell.record ? getRecordKey(cell.record) : null;
+                const dot        = dotKey ? DOT_CONFIG[dotKey] : null;
 
                 return (
                   <button
                     key={ci}
                     onClick={() => handleDayClick(cell)}
                     disabled={isFuture}
-                    className={`flex flex-col items-center py-2 rounded-2xl transition-all duration-200 relative
-                      ${isSelected  ? 'bg-indigo/8' : 'hover:bg-navy/5'}
-                      ${isFuture    ? 'opacity-25 cursor-default' : 'tactile-press'}
+                    className={`flex flex-col items-center py-1.5 rounded-2xl transition-all duration-200
+                      ${isSelected ? 'bg-indigo/6' : 'hover:bg-navy/4'}
+                      ${isFuture   ? 'opacity-20 cursor-default' : 'tactile-press'}
                     `}
                   >
-                    {/* Date Number */}
-                    <span className={`text-xs font-bold leading-none mb-1.5 w-7 h-7 flex items-center justify-center rounded-full transition-all
-                      ${isSelected && isToday  ? 'bg-indigo text-white shadow-lg shadow-indigo/30' : ''}
-                      ${isSelected && !isToday ? 'ring-2 ring-indigo text-indigo' : ''}
-                      ${!isSelected && isToday  ? 'text-indigo font-extrabold' : ''}
-                      ${!isSelected && !isToday ? 'text-navy/60' : ''}
+                    {/* Date circle */}
+                    <span className={`text-[11px] font-bold leading-none w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200
+                      ${isSelected && isToday   ? 'bg-indigo text-white shadow-md shadow-indigo/30'    : ''}
+                      ${isSelected && !isToday  ? 'ring-2 ring-indigo/60 text-indigo'                 : ''}
+                      ${!isSelected && isToday  ? 'text-indigo font-extrabold ring-1 ring-indigo/30'  : ''}
+                      ${!isSelected && !isToday ? 'text-navy/55'                                      : ''}
                     `}>
                       {cell.day}
                     </span>
 
-                    {/* Status Dot */}
+                    {/* Status dot */}
                     {dot ? (
-                      <span className={`w-1.5 h-1.5 rounded-full ${dot.bg} ring-2 ${dot.ring}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full mt-1 ${dot.bg}`} />
                     ) : !isFuture ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-navy/10" />
+                      <span className="w-1.5 h-1.5 rounded-full mt-1 bg-navy/8" />
                     ) : (
-                      <span className="w-1.5 h-1.5" />
+                      <span className="w-1.5 h-1.5 mt-1" />
                     )}
                   </button>
                 );
@@ -178,7 +176,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-4 mt-5 pt-4 border-t border-navy/5 flex-wrap">
+        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-navy/5 flex-wrap">
           {Object.entries(DOT_CONFIG).map(([key, cfg]) => (
             <div key={key} className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${cfg.bg}`} />
@@ -189,80 +187,88 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
       </div>
 
       {/* Monthly Quick Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl p-4 card-shadow text-center">
-          <p className="text-lg font-bold text-indigo font-mono">{monthStats.present}</p>
-          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Present</p>
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="bg-white rounded-2xl p-4 card-shadow text-center border-t-2 border-indigo/20">
+          <p className="text-xl font-bold text-indigo font-mono">{monthStats.present}</p>
+          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-1">Present</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 card-shadow text-center">
-          <p className="text-lg font-bold text-red-500 font-mono">{monthStats.absent}</p>
-          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Absent</p>
+        <div className="bg-white rounded-2xl p-4 card-shadow text-center border-t-2 border-red-400/20">
+          <p className="text-xl font-bold text-red-500 font-mono">{monthStats.absent}</p>
+          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-1">Absent</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 card-shadow text-center">
-          <p className="text-lg font-bold text-emerald font-mono">{monthStats.field}</p>
-          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Field</p>
+        <div className="bg-white rounded-2xl p-4 card-shadow text-center border-t-2 border-emerald/20">
+          <p className="text-xl font-bold text-emerald font-mono">{monthStats.field}</p>
+          <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-1">Field</p>
         </div>
       </div>
 
-      {/* Selected Day Detail Card */}
+      {/* Selected Day Detail */}
       <AnimatePresence mode="wait">
         {selectedRecord ? (
           <motion.div
-            key={selectedIso}
-            initial={{ opacity: 0, y: 8 }}
+            key={selectedIso + '-record'}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-            className="bg-white rounded-3xl card-shadow p-5 space-y-3"
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18 }}
+            className="bg-white rounded-3xl card-shadow overflow-hidden"
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
-                  {new Date(selectedIso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                </p>
-                <p className={`text-sm font-bold mt-0.5 ${
-                  selectedRecord.status === 'absent' ? 'text-red-500' :
-                  selectedRecord.status === 'half_day' ? 'text-amber-500' : 'text-emerald'
-                }`}>
-                  {selectedRecord.status?.replace('_', ' ').toUpperCase()} — {selectedRecord.mode?.toUpperCase()}
-                </p>
+            {/* Colored top strip */}
+            <div className={`h-1 w-full ${DOT_CONFIG[getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'}`} />
+
+            <div className="p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
+                    {new Date(selectedIso + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'long', month: 'long', day: 'numeric',
+                    })}
+                  </p>
+                  <p className={`text-sm font-bold mt-1 ${DOT_CONFIG[getRecordKey(selectedRecord)]?.text ?? 'text-navy'}`}>
+                    {selectedRecord.status?.replace('_', ' ').toUpperCase()}
+                    {' '}<span className="opacity-40">·</span>{' '}
+                    {selectedRecord.mode?.toUpperCase()}
+                  </p>
+                </div>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  DOT_CONFIG[getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'
+                } text-white`}>
+                  {selectedRecord.mode === 'field' ? <MapPin size={16} /> : <Clock size={16} />}
+                </div>
               </div>
-              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                DOT_CONFIG[getRecordKey(selectedRecord)]?.bg
-              } text-white`}>
-                {selectedRecord.mode === 'field' ? <MapPin size={18} /> : <Clock size={18} />}
-              </div>
+
+              {selectedRecord.check_in_time && (
+                <div className="flex items-center gap-2 text-navy/40">
+                  <Clock size={13} />
+                  <p className="text-xs font-bold font-mono">
+                    {new Date(selectedRecord.check_in_time).toLocaleTimeString('en-US', {
+                      hour: 'numeric', minute: '2-digit', hour12: true,
+                    })}
+                  </p>
+                </div>
+              )}
+
+              {selectedRecord.check_in_lat && selectedRecord.check_in_lng && (
+                <a
+                  href={`https://maps.google.com/?q=${selectedRecord.check_in_lat},${selectedRecord.check_in_lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-indigo hover:text-indigo/70 transition-colors duration-200 group"
+                >
+                  <MapPin size={13} />
+                  <p className="text-xs font-bold font-mono group-hover:underline underline-offset-2">
+                    {Number(selectedRecord.check_in_lat).toFixed(5)}, {Number(selectedRecord.check_in_lng).toFixed(5)}
+                  </p>
+                </a>
+              )}
+
+              {selectedRecord.field_note && (
+                <div className="flex items-start gap-2 pt-3 border-t border-navy/5">
+                  <FileText size={13} className="text-navy/25 mt-0.5 shrink-0" />
+                  <p className="text-xs text-navy/45 leading-relaxed">{selectedRecord.field_note}</p>
+                </div>
+              )}
             </div>
-
-            {selectedRecord.check_in_time && (
-              <div className="flex items-center gap-2 text-navy/40">
-                <Clock size={14} />
-                <p className="text-xs font-bold font-mono">
-                  {new Date(selectedRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                </p>
-              </div>
-            )}
-
-            {selectedRecord.check_in_lat && selectedRecord.check_in_lng && (
-              <a
-                href={`https://maps.google.com/?q=${selectedRecord.check_in_lat},${selectedRecord.check_in_lng}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-indigo hover:underline"
-              >
-                <MapPin size={14} />
-                <p className="text-xs font-bold font-mono">
-                  {Number(selectedRecord.check_in_lat).toFixed(5)}, {Number(selectedRecord.check_in_lng).toFixed(5)}
-                </p>
-              </a>
-            )}
-
-            {selectedRecord.field_note && (
-              <div className="flex items-start gap-2 pt-2 border-t border-navy/5">
-                <FileText size={14} className="text-navy/30 mt-0.5 shrink-0" />
-                <p className="text-xs text-navy/50 leading-relaxed">{selectedRecord.field_note}</p>
-              </div>
-            )}
           </motion.div>
         ) : (
           <motion.div

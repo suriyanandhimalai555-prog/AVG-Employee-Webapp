@@ -12,8 +12,12 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowRight,
-  Loader2
+  Loader2,
+  LogOut
 } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
+import { clearCredentials } from '../store/slices/authSlice';
+import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import { 
   useGetUsersQuery, 
   useCreateUserMutation, 
@@ -23,7 +27,6 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
-import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../store/slices/authSlice';
 
 export const UserManagement = () => {
@@ -60,6 +63,17 @@ export const UserManagement = () => {
   const allUsers = allUsersResult.data ?? [];
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
+
+  const dispatch = useDispatch();
+  const [logoutApi] = useLogoutMutation();
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi().unwrap();
+    } catch { /* ignore */ }
+    dispatch(apiSlice.util.resetApiState());
+    dispatch(clearCredentials());
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -163,93 +177,126 @@ export const UserManagement = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-6xl mx-auto px-4 py-8">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h1 className="text-4xl font-bold text-navy tracking-tight flex items-center gap-3">
-            <Users className="text-indigo" size={36} />
-            User Directory
-          </h1>
-          <p className="text-navy/40 mt-1 font-medium tracking-wide uppercase text-xs">
-            Manage organization staff, roles, and branch assignments
-          </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+        <div className="flex items-center gap-5">
+          <div className="w-16 h-16 rounded-[24px] bg-white shadow-premium flex items-center justify-center text-indigo border border-navy/5">
+            <Users size={32} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-[10px] font-bold text-navy/20 uppercase tracking-[0.3em] font-mono truncate">
+                {user?.branchName || 'ORGANIZATION'}
+              </p>
+              <span className="text-navy/10 text-[8px]">•</span>
+              <p className="text-[9px] font-bold text-indigo uppercase tracking-[0.15em] font-mono truncate">
+                {user?.role?.replace(/_/g, ' ')}
+              </p>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold text-navy tracking-tight">
+              Personnel Directory
+            </h1>
+            <p className="text-navy/30 mt-1 font-bold uppercase tracking-widest text-[9px]">
+               {user?.name} · Organization hierarchy
+            </p>
+          </div>
         </div>
 
-        <Button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo text-white shadow-lg shadow-indigo/20 px-6"
-        >
-          <UserPlus size={18} className="mr-2" />
-          Add New User
-        </Button>
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          {user?.role === 'md' && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="gradient-primary text-white shadow-xl shadow-indigo/20 px-8 py-4 rounded-2xl font-bold flex items-center gap-3 tactile-press hover:scale-[1.02] transition-transform"
+            >
+              <UserPlus size={20} />
+              Add New Member
+            </button>
+          )}
+          <button
+            onClick={handleLogout}
+            className="p-4 rounded-2xl bg-white text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all duration-300 card-shadow border border-navy/5 tactile-press group"
+            title="Logout Account"
+          >
+            <LogOut size={20} className="group-hover:rotate-12 transition-transform" />
+          </button>
+        </div>
       </div>
 
       {/* Filters Bar */}
-      <Card className="p-4 flex flex-col md:flex-row gap-4 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-          <input 
+      <div className="flex flex-col sm:flex-row gap-4 items-center bg-white/50 backdrop-blur-md p-2 rounded-[32px] card-shadow border border-white/50">
+        <div className="relative flex-1 w-full group">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-navy/20 group-focus-within:text-indigo transition-colors" size={20} />
+          <input
             type="text"
-            placeholder="Search by name or email..."
-            className="w-full pl-12 pr-4 py-3 bg-navy/[0.02] border-none rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 transition-all font-medium"
+            placeholder="Search personnel by name or email…"
+            className="w-full pl-16 pr-6 py-4 bg-transparent border-none rounded-2xl text-navy font-bold placeholder:text-navy/20 focus:outline-none focus:ring-0 text-base"
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
           />
         </div>
-        
-        <select 
-          className="px-4 py-3 bg-navy/[0.02] border-none rounded-xl text-navy font-bold text-sm focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer min-w-[160px]"
+
+        <div className="w-[1px] h-8 bg-navy/5 hidden sm:block" />
+
+        <select
+          className="bg-transparent px-6 py-4 text-navy font-bold text-sm cursor-pointer outline-none min-w-[180px] w-full sm:w-auto appearance-none text-center"
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(1); }}
         >
-          <option value="">All Roles</option>
+          <option value="">Filter by Role</option>
           {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
-      </Card>
+      </div>
 
       {/* Users List */}
-      <div className="grid gap-4">
-        {users.map((user) => (
-          <Card 
-            key={user.id}
-            className="group hover:scale-[1.01] transition-all duration-300 border-none shadow-sm hover:shadow-xl hover:shadow-navy/5"
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        {users.map((u) => (
+          <Card
+            key={u.id}
+            className="group hover-lift border-white/50 bg-white/70 backdrop-blur-sm cursor-default p-0 overflow-hidden"
           >
-            <div className="p-5 flex items-center justify-between">
-              <div className="flex items-center gap-5">
-                <div className="w-12 h-12 rounded-2xl bg-indigo/5 flex items-center justify-center text-indigo group-hover:bg-indigo group-hover:text-white transition-colors duration-300">
-                  <Shield size={22} />
+            <div className="p-6 flex items-center justify-between gap-5">
+              <div className="flex items-center gap-5 min-w-0">
+                <div className="w-14 h-14 rounded-2xl bg-indigo/5 flex items-center justify-center text-indigo shrink-0 group-hover:scale-110 transition-transform duration-500">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm">
+                    <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=0B1C30&color=fff&size=40`} alt="" />
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-navy leading-none">{user.name}</h3>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-navy/40 uppercase tracking-wider">
-                      <Mail size={12} />
-                      {user.email}
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-navy leading-none truncate group-hover:text-indigo transition-colors">{u.name}</h3>
+                  <div className="flex flex-col gap-1 mt-2">
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+                      <Mail size={12} className="text-indigo/40" />
+                      <span className="truncate">{u.email}</span>
                     </span>
-                    <span className="w-1 h-1 rounded-full bg-navy/10" />
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-navy/40 uppercase tracking-wider">
-                      <Building2 size={12} />
-                      {user.branchName || 'Unassigned'}
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+                      <Building2 size={12} className="text-indigo/40" />
+                      {u.branchName || 'Unassigned'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <StatusChip 
-                  status={user.role} 
-                  label={user.role.replace(/_/g, ' ')}
-                  className="bg-navy/[0.02] border-none"
-                />
-                <ChevronRight size={20} className="text-navy/10 group-hover:text-navy/30 group-hover:translate-x-1 transition-all" />
+              <div className="flex items-center gap-4 shrink-0">
+                <div className="text-right flex flex-col items-end gap-2">
+                   <StatusChip
+                    status={u.role}
+                    label={u.role.replace(/_/g, ' ')}
+                  />
+                  {u.hasSmartphone && (
+                    <span className="text-[8px] font-bold text-emerald uppercase tracking-[0.2em] flex items-center gap-1 bg-emerald/5 px-2 py-0.5 rounded-full">
+                      Mobile Ready
+                    </span>
+                  )}
+                </div>
+                <ChevronRight size={20} className="text-navy/10 group-hover:text-indigo group-hover:translate-x-1 transition-all duration-300" />
               </div>
             </div>
           </Card>
         ))}
-        
+
         {users.length === 0 && (
-          <div className="py-20 text-center space-y-4">
+          <div className="py-20 text-center space-y-4 col-span-full">
             <div className="w-20 h-20 bg-navy/[0.02] rounded-full flex items-center justify-center mx-auto text-navy/10">
               <Users size={40} />
             </div>
@@ -264,19 +311,19 @@ export const UserManagement = () => {
           <button
             disabled={currentPage <= 1}
             onClick={() => setCurrentPage(p => p - 1)}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all"
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all font-mono"
           >
-            <ChevronLeft size={14} /> Previous
+            <ChevronLeft size={14} /> PREV
           </button>
-          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest">
-            {pagination.page} / {pagination.totalPages} · {pagination.total} total
+          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
+            {pagination.page} / {pagination.totalPages} · {pagination.total} TOTAL
           </p>
           <button
             disabled={currentPage >= pagination.totalPages}
             onClick={() => setCurrentPage(p => p + 1)}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all"
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-white card-shadow text-xs font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all font-mono"
           >
-            Next <ArrowRight size={14} />
+            NEXT <ArrowRight size={14} />
           </button>
         </div>
       )}

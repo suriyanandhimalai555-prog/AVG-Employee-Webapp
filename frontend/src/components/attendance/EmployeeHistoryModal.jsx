@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, MapPin, Clock, FileText, AlertCircle } from 'lucide-react';
 import { GlassModal } from '../GlassModal';
 import { HistoryCalendar } from '../HistoryCalendar';
@@ -23,6 +23,10 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
 
   // Selected record is lifted up from HistoryCalendar so we can show photo + audit info
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [photoLoadError, setPhotoLoadError] = useState(false);
+
+  // Reset photo error state whenever the selected record changes
+  useEffect(() => { setPhotoLoadError(false); }, [selectedRecord]);
 
   const { data: historyData = [], isFetching } = useGetHistoryQuery(
     { userId: employee?.id, month, year },
@@ -71,11 +75,12 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
           <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5 relative h-48 flex items-center justify-center">
             {photoLoading ? (
               <Loader2 className="animate-spin text-navy/30" size={24} />
-            ) : photoData?.downloadUrl ? (
+            ) : photoData?.downloadUrl && !photoLoadError ? (
               <img
                 src={photoData.downloadUrl}
                 alt="Field capture"
                 className="w-full h-full object-cover"
+                onError={() => setPhotoLoadError(true)}
               />
             ) : (
               <p className="text-xs font-bold text-navy/30">Photo unavailable</p>

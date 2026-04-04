@@ -347,24 +347,51 @@ export const AttendanceService = {
   },
 
   // ─── USER HISTORY ───
-  
+
   async getUserHistory(
     db: Pool,
     requesterId: string,
+    requesterRole: string,
+    requesterBranchId: string | null,
     targetUserId: string,
     query: UserHistoryQuery
   ): Promise<any[]> {
+    // Permission check — only run when the viewer is not looking at their own record
     if (requesterId !== targetUserId) {
-      const subtreeIds = await getSubtreeIds(requesterId);
-      if (!subtreeIds.includes(targetUserId)) {
-        throw new ForbiddenError('You do not have access to this employee record');
+      if (requesterRole === 'md') {
+        // MD can view any employee record — no subtree query needed
+      } else if (requesterRole === 'branch_admin') {
+        // Branch admin can view employees in their own branch only
+        const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
+        const targetResult = await db.query<{ branch_id: string }>(
+          'SELECT branch_id FROM users WHERE id = $1 AND is_active = true',
+          [targetUserId]
+        );
+        if (
+          targetResult.rows.length === 0 ||
+          targetResult.rows[0].branch_id !== branchId
+        ) {
+          throw new ForbiddenError('You do not have access to this employee record');
+        }
+      } else if (requesterRole === 'director' || requesterRole === 'gm') {
+        // Director / GM see their manager_id subtree + all oversight branch members
+        const scopeIds = await getOversightScopeIds(db, requesterId);
+        if (!scopeIds.includes(targetUserId)) {
+          throw new ForbiddenError('You do not have access to this employee record');
+        }
+      } else {
+        // branch_manager, abm: manager_id subtree only
+        const subtreeIds = await getSubtreeIds(requesterId);
+        if (!subtreeIds.includes(targetUserId)) {
+          throw new ForbiddenError('You do not have access to this employee record');
+        }
       }
     }
 
     const result = await db.query(
       `SELECT a.*, b.name AS branch_name
        FROM attendance a
-       JOIN branches b ON a.branch_id = b.id
+       LEFT JOIN branches b ON a.branch_id = b.id
        WHERE a.user_id = $1
          AND EXTRACT(MONTH FROM a.date) = $2
          AND EXTRACT(YEAR FROM a.date) = $3
@@ -448,6 +475,9 @@ export const AttendanceService = {
 
     // Build today's record — check Redis if DB has no row yet (job may still be in queue)
     let today: any = null;
+    // True when today's job is queued in Redis but not yet persisted to the DB by the worker.
+    // Used below to tentatively adjust myMonth so the UI reflects the pending submission.
+    let pendingToday = false;
     if (fetchToday) {
       if (rawTodayResult && rawTodayResult.rows.length > 0) {
         today = rawTodayResult.rows[0];
@@ -456,6 +486,7 @@ export const AttendanceService = {
         const queued = await redis.exists(`att:${requesterId}:${date}`);
         if (queued) {
           today = { status: 'present', mode: 'pending', queued: true };
+          pendingToday = true;
         }
       }
     }
@@ -463,8 +494,16 @@ export const AttendanceService = {
     // Monthly aggregate for the requester's own record.
     // Used by the "Your Month at a Glance" stats grid on the employee home tab.
     // Not computed for branch_admin (they don't have their own attendance record in this context).
-    const myMonth: { present: number; absent: number; field: number } | null =
+    let myMonth: { present: number; absent: number; field: number } | null =
       fetchMyMonth && rawMonthResult ? rawMonthResult.rows[0] : null;
+
+    // If today's job is pending in Redis but not yet in the DB, the monthly DB query
+    // doesn't include today's submission yet. Tentatively add +1 to present so the
+    // "Your Month at a Glance" stats update immediately after the user submits —
+    // before the worker writes to the DB and the socket/fallback triggers a refetch.
+    if (myMonth && pendingToday) {
+      myMonth = { ...myMonth, present: myMonth.present + 1 };
+    }
 
     // Round 2: fetch attendance stats and per-branch breakdown in parallel.
     // Both depend on filteredIds from Round 1.

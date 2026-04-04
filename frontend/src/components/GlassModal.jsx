@@ -6,30 +6,38 @@ export const GlassModal = ({ isOpen, onClose, title, children }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6">
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0 bg-navy/20 backdrop-blur-sm"
+            className="absolute inset-0 bg-navy/25 backdrop-blur-sm"
           />
+
+          {/* Sheet — slides up on mobile, scales in on desktop */}
           <motion.div
-            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-            className="relative w-full max-w-lg glass rounded-3xl overflow-hidden shadow-2xl"
+            initial={{ opacity: 0, y: 40, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0,  scale: 1 }}
+            exit={{  opacity: 0, y: 40, scale: 0.98 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="relative w-full max-w-lg glass rounded-t-[32px] sm:rounded-[32px] overflow-hidden shadow-2xl shadow-navy/15 max-h-[90vh] flex flex-col"
           >
-            <div className="p-6 border-b border-navy/5 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-navy tracking-tight">{title}</h2>
-              <button 
+            {/* Header */}
+            <div className="px-7 pt-6 pb-5 border-b border-navy/6 flex items-center justify-between shrink-0">
+              <h2 className="text-xl font-bold text-navy tracking-tight">{title}</h2>
+              <button
                 onClick={onClose}
-                className="p-2 rounded-full hover:bg-navy/5 text-navy/60 transition-colors"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-navy/40 hover:text-navy hover:bg-navy/8 transition-all duration-200 tactile-press"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-            <div className="p-8">
+
+            {/* Body — scrollable */}
+            <div className="px-7 py-6 overflow-y-auto">
               {children}
             </div>
           </motion.div>

@@ -2,50 +2,102 @@
 
 @theme {
   --color-navy: #0B1C30;
-  --color-indigo: #4338CA; /* Adjusted to match screenshot */
-  --color-yellow: #FACC15; /* Adjusted to match screenshot */
+  --color-indigo: #4338CA;
+  --color-yellow: #FACC15;
   --color-emerald: #10B981;
   --color-surface: #F8F9FF;
   --color-surface-container: #E5EEFF;
   --color-surface-container-low: #EFF4FF;
   --color-surface-container-lowest: #FFFFFF;
-  
+
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "Berkeley Mono", ui-monospace, monospace;
+
+  /* Premium Shadows */
+  --shadow-premium: 0 10px 15px -3px rgb(11 28 48 / 0.1), 0 4px 6px -4px rgb(11 28 48 / 0.1);
+  --shadow-glass: 0 8px 32px 0 rgba(11, 28, 48, 0.08);
 }
 
 @layer base {
   body {
-    @apply bg-surface text-navy font-sans antialiased;
+    @apply bg-surface text-navy font-sans antialiased overflow-x-hidden;
+  }
+
+  /* Custom Scrollbar for premium feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-navy/10 rounded-full hover:bg-navy/20 transition-colors;
+  }
+
+  /* Smoother font rendering */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    @apply transition-colors duration-200;
   }
 }
 
 @layer utilities {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-xl shadow-navy/5;
+    @apply bg-white/70 backdrop-blur-3xl border border-white/50 shadow-glass;
   }
-  
+
   .glass-dark {
-    @apply bg-navy/70 backdrop-blur-xl border border-navy/20 shadow-lg shadow-black/20;
+    @apply bg-navy/80 backdrop-blur-2xl border border-navy/20 shadow-lg shadow-black/20;
   }
-  
+
   .gradient-primary {
     @apply bg-linear-to-br from-indigo to-[#6366F1];
   }
-  
+
   .gradient-yellow {
     @apply bg-linear-to-br from-yellow to-[#EAB308];
   }
-  
+
   .no-border {
     @apply border-none shadow-none;
   }
-  
+
+  /* Slightly deeper press + shadow collapse for physical feel */
   .tactile-press {
-    @apply active:scale-[0.98] transition-transform duration-100;
+    @apply active:scale-[0.98] transition-all duration-150 cursor-pointer;
   }
-  
+
+  /* Layered shadow: ambient + direct, gives natural lift */
   .card-shadow {
-    @apply shadow-[0_8px_30px_rgb(0,0,0,0.04)];
+    box-shadow:
+      0 1px 2px rgb(11 28 48 / 0.04),
+      0 4px 12px rgb(11 28 48 / 0.06),
+      0 12px 32px rgb(11 28 48 / 0.04);
+  }
+
+  /* Cards that elevate on hover */
+  .hover-lift {
+    @apply transition-all duration-300;
+  }
+  .hover-lift:hover {
+    box-shadow:
+      0 4px 6px rgb(11 28 48 / 0.05),
+      0 12px 24px rgb(11 28 48 / 0.10),
+      0 24px 56px rgb(11 28 48 / 0.06);
+    transform: translateY(-4px);
+  }
+
+  .input-base {
+    @apply transition-all duration-200 outline-none w-full px-4 py-3 bg-white/50 border border-navy/5 rounded-2xl font-medium focus:ring-4 focus:ring-indigo/5 focus:border-indigo/20 focus:bg-white;
+  }
+
+  /* Layout Container */
+  .app-container {
+    @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .app-shell {
+    @apply min-h-screen bg-surface flex flex-col;
   }
 }

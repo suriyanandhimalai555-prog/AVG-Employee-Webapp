@@ -22,6 +22,8 @@ import { MoneyTab } from './attendance/MoneyTab';
 import { AlertsTab } from './attendance/AlertsTab';
 import { AdminDashboard } from './AdminDashboard';
 import { UserManagement } from './UserManagement';
+import { EmployeeCalendarPage } from './EmployeeCalendarPage';
+import { BranchDetailPage } from './BranchDetailPage';
 import { useAttendanceSocket } from './attendance/hooks/useAttendanceSocket';
 import { selectCurrentUser } from '../store/slices/authSlice';
 
@@ -29,10 +31,32 @@ export const AttendanceHome = () => {
   const user = useSelector(selectCurrentUser);
   const [activeTab, setActiveTab] = useState('home');
   const [showUserManagement, setShowUserManagement] = useState(false);
+  const [calendarEmployee, setCalendarEmployee] = useState(null);
+  const [selectedBranch, setSelectedBranch] = useState(null);
 
   // Maintains a live Socket.io connection — invalidates RTK Query cache when
   // the worker confirms attendance has been persisted to the database
   useAttendanceSocket();
+
+  // ── Full-screen overlay: Employee calendar (ABM → Sales Officer) ──
+  if (calendarEmployee) {
+    return (
+      <EmployeeCalendarPage
+        employee={calendarEmployee}
+        onBack={() => setCalendarEmployee(null)}
+      />
+    );
+  }
+
+  // ── Full-screen overlay: Branch detail (MD / GM / Director → branch card) ──
+  if (selectedBranch) {
+    return (
+      <BranchDetailPage
+        branch={selectedBranch}
+        onBack={() => setSelectedBranch(null)}
+      />
+    );
+  }
 
   // ── Full-screen overlay: Staff Management ──
   if (showUserManagement) {
@@ -61,24 +85,28 @@ export const AttendanceHome = () => {
     );
   }
 
-  // ── Standard mobile shell (max 390 px) ──
+  // ── Main Layout Shell ──
   return (
-    <div className="min-h-screen bg-surface flex flex-col max-w-[390px] mx-auto relative shadow-2xl overflow-x-hidden">
-      <AnimatePresence mode="wait">
-        {activeTab === 'home' && (
-          <HomeTab
-            onNavigateToAttendance={() => setActiveTab('attendance')}
-            onOpenUserManagement={() => setShowUserManagement(true)}
-          />
-        )}
-        {activeTab === 'attendance' && (
-          <AttendanceTab onCheckInSuccess={() => setActiveTab('home')} />
-        )}
-        {activeTab === 'money'  && <MoneyTab />}
-        {activeTab === 'alerts' && <AlertsTab />}
-      </AnimatePresence>
+    <div className="app-shell relative">
+      <div className="flex-1 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl mx-auto bg-white/40 md:shadow-2xl md:my-8 md:rounded-[40px] overflow-hidden relative border border-white/20 backdrop-blur-sm min-h-[100dvh] md:min-h-[850px]">
+        <AnimatePresence mode="wait">
+          {activeTab === 'home' && (
+            <HomeTab
+              onNavigateToAttendance={() => setActiveTab('attendance')}
+              onOpenUserManagement={() => setShowUserManagement(true)}
+              onOpenCalendar={(emp) => setCalendarEmployee(emp)}
+              onBranchSelect={(branch) => setSelectedBranch(branch)}
+            />
+          )}
+          {activeTab === 'attendance' && (
+            <AttendanceTab onCheckInSuccess={() => setActiveTab('home')} />
+          )}
+          {activeTab === 'money'  && <MoneyTab />}
+          {activeTab === 'alerts' && <AlertsTab />}
+        </AnimatePresence>
 
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
     </div>
   );
-};
+}

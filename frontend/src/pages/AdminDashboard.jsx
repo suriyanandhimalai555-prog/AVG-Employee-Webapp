@@ -4,15 +4,16 @@ import {
   Users, CheckCircle2,
   Search, Filter, Download, MapPin,
   ArrowRight, ChevronLeft, Clock, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
-  UserX, Building2
+  UserX, Building2, LogOut
 } from 'lucide-react';
-import { selectCurrentUser } from '../store/slices/authSlice';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { clearCredentials, selectCurrentUser } from '../store/slices/authSlice';
+import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
-import { EmployeeHistoryModal } from '../components/attendance/EmployeeHistoryModal';
+import { EmployeeCalendarPage } from './EmployeeCalendarPage';
 import { 
   useGetEmployeesQuery, 
   useGetSummaryQuery, 
@@ -25,7 +26,8 @@ export const AdminDashboard = () => {
   const user = useSelector(selectCurrentUser);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [historyEmployee, setHistoryEmployee] = useState(null);
+  const [calendarEmployee, setCalendarEmployee] = useState(null);
+  const [photoLoadError, setPhotoLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBranch, setSelectedBranch] = useState(null); // { id, name } or null = all
@@ -70,12 +72,24 @@ export const AdminDashboard = () => {
     { skip: !selectedEmployee?.photo_key }
   );
 
+  const dispatch = useDispatch();
+  const [logoutApi] = useLogoutMutation();
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi().unwrap();
+    } catch { /* ignore */ }
+    dispatch(apiSlice.util.resetApiState());
+    dispatch(clearCredentials());
+  };
+
   const isActionLoading = correctLoading || markLoading;
 
   const handleEdit = (emp) => {
     setSelectedEmployee(emp);
     setNewStatus(emp.status || 'present');
     setCorrectionNote('');
+    setPhotoLoadError(false);
     setIsModalOpen(true);
   };
 
@@ -126,6 +140,16 @@ export const AdminDashboard = () => {
     ? (summaryBranches.find((b) => b.id === selectedBranch.id) ?? null)
     : null;
 
+  // Full-screen overlay: individual employee calendar page
+  if (calendarEmployee) {
+    return (
+      <EmployeeCalendarPage
+        employee={calendarEmployee}
+        onBack={() => setCalendarEmployee(null)}
+      />
+    );
+  }
+
   if (empLoading) {
     return (
       <div className="min-h-screen bg-surface flex flex-col items-center justify-center gap-4">
@@ -136,37 +160,54 @@ export const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-surface p-6 lg:p-12 overflow-x-hidden">
+    <div className="min-h-screen bg-surface p-4 md:p-8 lg:p-12 overflow-x-hidden">
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-12">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-indigo/10 text-indigo">
-            <ShieldCheck size={32} />
+        <div className="flex items-center gap-5">
+          <div className="p-4 rounded-[24px] bg-white shadow-premium border border-navy/5 text-indigo relative group">
+            <ShieldCheck size={32} className="relative z-10" />
+            <div className="absolute inset-0 bg-indigo/5 rounded-[24px] scale-0 group-hover:scale-100 transition-transform duration-500" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-1 font-mono">
-              {user?.branchId ? 'Branch Management' : 'Organization Management'}
-            </p>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold text-navy tracking-tight">
-                {user?.branchId ? 'Center Monitor' : 'Organization Monitor'}
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-[10px] font-bold text-navy/20 uppercase tracking-[0.3em] font-mono">
+                {user?.branchId ? 'Center Operations' : 'Global Operations'}
+              </p>
+              <span className="text-navy/10 text-[8px]">•</span>
+              <p className="text-[9px] font-bold text-indigo uppercase tracking-[0.15em] font-mono">
+                {user?.role?.replace(/_/g, ' ')}
+              </p>
+            </div>
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              <h1 className="text-3xl md:text-4xl font-bold text-navy tracking-tight">
+                {user?.branchId ? 'Monitor' : 'Command Center'}
               </h1>
-              {!user?.branchId && (
-                <span className="bg-indigo/10 text-indigo text-[9px] font-bold px-2 py-1 rounded-md uppercase tracking-widest border border-indigo/10">
-                  Global Stats
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {!user?.branchId && (
+                  <span className="bg-indigo/5 text-indigo text-[9px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-widest border border-indigo/10 shadow-sm">
+                    Active
+                  </span>
+                )}
+                <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest ml-1">{user?.name}</p>
+              </div>
             </div>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <button 
             onClick={refetchEmployees}
-            className="p-3 rounded-xl bg-white text-navy/40 hover:text-indigo transition-all card-shadow border border-navy/5"
+            className="p-3.5 rounded-2xl bg-white text-navy/40 hover:text-indigo hover:bg-indigo/5 transition-all card-shadow border border-navy/5 tactile-press"
           >
             <RefreshCw size={20} />
           </button>
-          <button className="px-5 py-3 rounded-xl bg-white text-navy font-bold text-xs card-shadow tactile-press flex items-center gap-2 border border-navy/5">
-            <Download size={16} /> Export
+          <button className="px-6 py-3.5 rounded-2xl bg-white text-navy font-bold text-xs card-shadow tactile-press flex items-center gap-2.5 border border-navy/5 hover:bg-navy/[0.02]">
+            <Download size={16} /> Export Data
+          </button>
+          <button
+            onClick={handleLogout}
+            className="p-3.5 rounded-2xl bg-white text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all duration-300 card-shadow border border-navy/5 tactile-press group"
+            title="Logout Account"
+          >
+            <LogOut size={20} className="group-hover:rotate-12 transition-transform" />
           </button>
         </div>
       </header>
@@ -182,24 +223,33 @@ export const AdminDashboard = () => {
       {/* Branch Cards — visible for MD / Director / GM; clicking drills into that branch */}
       {summaryBranches.length > 0 && !selectedBranch && (
         <div className="mb-12">
-          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-4 font-mono">Branches</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.3em] mb-5 font-mono ml-1">Branch Locations</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {summaryBranches.map((b) => (
               <button
                 key={b.id}
                 onClick={() => handleBranchSelect(b)}
-                className="text-left p-6 bg-white rounded-3xl card-shadow border border-navy/5 hover:border-indigo/30 hover:shadow-xl transition-all group"
+                className="text-left p-7 bg-white rounded-[32px] card-shadow border border-transparent hover:border-indigo/20 hover-lift group relative overflow-hidden"
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2 bg-indigo/5 rounded-xl text-indigo group-hover:bg-indigo group-hover:text-white transition-all">
-                    <Building2 size={18} />
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-110" />
+                <div className="flex items-center justify-between mb-6 relative z-10">
+                  <div className="p-3 bg-indigo/5 rounded-2xl text-indigo group-hover:bg-indigo group-hover:text-white transition-all duration-300">
+                    <Building2 size={20} />
                   </div>
-                  <span className="text-2xl font-bold text-navy font-mono">{b.presentPercent}%</span>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold text-navy font-mono tracking-tighter">{b.presentPercent}%</span>
+                    <p className="text-[8px] font-bold uppercase text-navy/20">Attendance</p>
+                  </div>
                 </div>
-                <p className="font-bold text-navy text-sm">{b.name}</p>
-                <p className="text-[10px] text-navy/30 font-bold uppercase tracking-widest mt-1">
-                  {b.present} / {b.total} present
-                </p>
+                <p className="font-bold text-navy text-lg tracking-tight mb-2 relative z-10">{b.name}</p>
+                <div className="flex items-center gap-2 relative z-10">
+                  <div className="flex-1 h-1.5 bg-navy/5 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo transition-all duration-500" style={{ width: `${b.presentPercent}%` }} />
+                  </div>
+                  <p className="text-[9px] text-navy/40 font-bold uppercase tracking-widest whitespace-nowrap">
+                    {b.present}/{b.total} P
+                  </p>
+                </div>
               </button>
             ))}
           </div>
@@ -207,40 +257,43 @@ export const AdminDashboard = () => {
       )}
 
       {/* Employee Table */}
-      <Card className="p-0 overflow-hidden bg-white rounded-3xl card-shadow border-none">
-        <div className="p-6 border-b border-navy/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <Card className="p-0 overflow-hidden bg-white/70 backdrop-blur-md rounded-[40px] card-shadow border border-white/50 mb-32">
+        <div className="p-8 border-b border-navy/5 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
             {/* Branch detail breadcrumb */}
             {selectedBranch && (
               <button
                 onClick={() => { setSelectedBranch(null); setCurrentPage(1); setSearchQuery(''); }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo/5 text-indigo rounded-xl text-[10px] font-bold hover:bg-indigo/10 transition-all"
+                className="flex items-center gap-2 px-4 py-2.5 bg-indigo/5 text-indigo rounded-2xl text-[10px] font-bold hover:bg-indigo/10 transition-all tactile-press"
               >
-                <ChevronLeft size={14} /> All Branches
+                <ChevronLeft size={16} /> All Regions
               </button>
             )}
-            {selectedBranch && (
-              <p className="text-sm font-bold text-navy flex items-center gap-2">
-                <Building2 size={14} className="text-indigo" />
-                {selectedBranch.name}
+            <div>
+              <h2 className="text-xl font-bold text-navy tracking-tight flex items-center gap-2.5">
+                {selectedBranch ? <Building2 size={20} className="text-indigo/40" /> : <Users size={20} className="text-indigo/40" />}
+                {selectedBranch ? selectedBranch.name : 'Workforce Roster'}
+              </h2>
+              <p className="text-[10px] font-bold text-navy/20 uppercase tracking-widest mt-0.5">
+                Managing {pagination.total ?? 0} active records
               </p>
-            )}
+            </div>
           </div>
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Search employees..."
-              className="w-full pl-12 pr-4 py-3 bg-surface-container-low rounded-xl text-navy font-bold placeholder:text-navy/20 outline-none transition-all focus:ring-2 ring-indigo/10"
-            />
-          </div>
-          <div className="flex gap-2 items-center">
-            <p className="text-[10px] font-bold text-navy/20 uppercase tracking-wider mr-2">
-              {pagination.total ?? 0} employees
-            </p>
-            <button className="p-3 rounded-xl bg-surface-container-low text-navy/40 hover:text-navy transition-colors"><Filter size={18} /></button>
+          
+          <div className="flex flex-1 max-w-xl gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" size={18} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                placeholder="Search by name, ID or role..."
+                className="w-full pl-12 pr-4 py-3.5 bg-surface-container-low/50 rounded-2xl text-navy font-bold placeholder:text-navy/20 outline-none transition-all focus:ring-4 ring-indigo/5 focus:bg-white border border-transparent focus:border-indigo/10"
+              />
+            </div>
+            <button className="p-3.5 rounded-2xl bg-surface-container-low text-navy/40 hover:text-indigo hover:bg-indigo/5 transition-all tactile-press border border-transparent">
+              <Filter size={20} />
+            </button>
           </div>
         </div>
 
@@ -264,19 +317,19 @@ export const AdminDashboard = () => {
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
-              <tr className="bg-surface-container-low/30">
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Employee</th>
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Role</th>
+              <tr className="bg-navy/[0.02]">
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Identity</th>
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Designation</th>
                 {!user?.branchId && (
-                  <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Branch</th>
+                  <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Deployment</th>
                 )}
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Time</th>
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Status</th>
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono">Mode</th>
-                <th className="px-8 py-4 text-[9px] font-bold text-navy/30 uppercase tracking-widest font-mono text-right">Action</th>
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Time Logs</th>
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Live Status</th>
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Operating Mode</th>
+                <th className="px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5 text-right">Controls</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-navy/5">
@@ -343,7 +396,7 @@ export const AdminDashboard = () => {
                   <td className="px-8 py-6 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setHistoryEmployee(emp)}
+                        onClick={() => setCalendarEmployee(emp)}
                         className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
                         title="View attendance history"
                       >
@@ -396,12 +449,6 @@ export const AdminDashboard = () => {
           </div>
         )}
       </Card>
-
-      <EmployeeHistoryModal
-        isOpen={!!historyEmployee}
-        onClose={() => setHistoryEmployee(null)}
-        employee={historyEmployee}
-      />
 
       {/* Admin Override Modal */}
       <GlassModal
@@ -462,8 +509,13 @@ export const AdminDashboard = () => {
               <div className="rounded-3xl overflow-hidden bg-navy/5 border border-navy/5 relative h-48 flex items-center justify-center">
                 {photoLoading ? (
                   <Loader2 className="animate-spin text-navy/30" size={24} />
-                ) : photoData?.downloadUrl ? (
-                  <img src={photoData.downloadUrl} alt="Field Capture" className="w-full h-full object-cover" />
+                ) : photoData?.downloadUrl && !photoLoadError ? (
+                  <img
+                    src={photoData.downloadUrl}
+                    alt="Field Capture"
+                    className="w-full h-full object-cover"
+                    onError={() => setPhotoLoadError(true)}
+                  />
                 ) : (
                   <p className="text-xs font-bold text-navy/30">Photo unavailable</p>
                 )}
@@ -514,18 +566,21 @@ export const AdminDashboard = () => {
 
 const StatCard = ({ icon: Icon, label, value, color }) => {
   const colors = {
-    indigo: "text-indigo bg-indigo/10",
-    emerald: "text-emerald bg-emerald/10",
-    amber: "text-amber-600 bg-amber-500/10",
+    indigo: "text-indigo bg-indigo/5 border-indigo/10",
+    emerald: "text-emerald bg-emerald/5 border-emerald/10",
+    amber: "text-amber-600 bg-amber-500/5 border-amber-500/10",
   };
   
   return (
-    <Card className="hover:scale-[1.02] transition-all duration-300 bg-white card-shadow border-none pb-8">
-      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-6 shadow-sm border border-navy/5 ${colors[color]}`}>
-        <Icon size={24} />
+    <Card className="hover-lift bg-white/70 backdrop-blur-md card-shadow border-white/50 p-7 group">
+      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-sm border ${colors[color]} group-hover:scale-110 transition-transform duration-500`}>
+        <Icon size={26} />
       </div>
-      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.15em] mb-1 font-mono">{label}</p>
-      <p className="text-4xl font-bold text-navy tracking-tight">{value}</p>
+      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.3em] mb-1.5 font-mono">{label}</p>
+      <div className="flex items-baseline gap-2">
+        <p className="text-4xl font-bold text-navy tracking-tight">{value}</p>
+        <div className={`w-1.5 h-1.5 rounded-full ${color === 'emerald' ? 'bg-emerald animate-pulse' : 'bg-navy/10'}`} />
+      </div>
     </Card>
   );
 };

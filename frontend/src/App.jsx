@@ -52,30 +52,6 @@ function App() {
 
   return (
     <div className="relative">
-      {/* Profile — fixed top right, shown on all roles */}
-      <div className="fixed top-4 right-4 z-[100]">
-        <div className="px-4 py-2 bg-white/80 backdrop-blur-md border border-navy/5 rounded-2xl shadow-xl flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-indigo/10 flex items-center justify-center text-indigo">
-            {isAdmin ? <ShieldCheck size={16} /> : <UserCircle size={16} />}
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-navy uppercase tracking-tight leading-none">{user.name}</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-[8px] font-bold text-navy/30 uppercase tracking-[0.1em]">{user.role.replace(/_/g, ' ')}</p>
-              <span className="text-[8px] text-navy/20">•</span>
-              <p className="text-[8px] font-bold text-indigo uppercase tracking-[0.1em]">{user.branchName || 'Unassigned'}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="p-2 text-navy/20 hover:text-red-500 transition-colors ml-2"
-            title="Log Out"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </div>
-
       {/* All authenticated roles land on AttendanceHome — bottom nav controls sub-views */}
       <main>
         <AttendanceHome />
