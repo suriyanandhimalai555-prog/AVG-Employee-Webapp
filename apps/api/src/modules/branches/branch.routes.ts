@@ -23,8 +23,8 @@ const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
 // Zod schemas
 const CreateBranchSchema = z.object({
   name:       z.string().min(2).max(200),
-  shiftStart: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  shiftEnd:   z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  shiftStart: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  shiftEnd:   z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
   timezone:   z.string().max(50).optional(),
 });
 
@@ -32,8 +32,8 @@ const UpdateBranchSchema = z.object({
   name:       z.string().min(2).max(200).optional(),
   gmId:       z.string().uuid().optional().nullable(),
   adminId:    z.string().uuid().optional().nullable(),
-  shiftStart: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  shiftEnd:   z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  shiftStart: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  shiftEnd:   z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
   isActive:   z.boolean().optional(),
 });
 
@@ -81,6 +81,20 @@ export default async function branchRoutes(fastify: FastifyInstance) {
         payload
       );
       return reply.code(201).send({ success: true, data: branch });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── DELETE /api/branches/:id ─── (MD only — soft delete)
+  fastify.delete('/:id', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { id } = request.params as { id: string };
+      await BranchService.deleteBranch(fastify.db, fastify.redis, req.user.role, id);
+      return reply.send({ success: true, data: { message: 'Branch deactivated' } });
     } catch (error) {
       return handleError(error, reply);
     }

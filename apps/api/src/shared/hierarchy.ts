@@ -42,8 +42,14 @@ export const getSubtreeIds = async (userId: string): Promise<string[]> => {
 
 /**
  * Returns all user IDs that a Director or GM can see by combining:
- * 1. Their manager_id subtree (direct reports and below)
- * 2. All active users in any branch listed in user_oversight_branches
+ * 1. Their manager_id subtree (direct reports and below) — may be cached
+ * 2. All active users in any branch listed in user_oversight_branches (always live)
+ * 3. Peer Directors/GMs who share an oversight branch (always live)
+ * 4. GM cascade for Directors: all branch members in branches overseen by any of
+ *    this Director's direct GMs (always live). This makes Directors resilient to a
+ *    stale subtree cache — the same way GMs are resilient via their own oversight rows.
+ *    GMs have user_oversight_branches; Directors do not (seed only puts rows for GMs).
+ *    Without this cascade a Director whose hier:subtree:* cache is stale sees only GMs.
  *
  * Uses the shared db pool passed in — does NOT use the singleton to keep
  * this compatible with dependency-injected service calls.
@@ -52,10 +58,10 @@ export const getOversightScopeIds = async (
   poolDb: Pool,
   userId: string,
 ): Promise<string[]> => {
-  // Subtree from manager_id chain
+  // (1) Subtree from manager_id chain — Redis-cached, may lag by up to 1 hour
   const subtreeIds = await getSubtreeIds(userId);
 
-  // Users who belong to any overseen branch
+  // (2) Users who belong to any branch this user directly oversees (GMs have these rows)
   const oversightResult = await poolDb.query(
     `SELECT DISTINCT u.id
      FROM user_oversight_branches uob
@@ -63,10 +69,9 @@ export const getOversightScopeIds = async (
      WHERE uob.user_id = $1 AND u.is_active = true`,
     [userId]
   );
-
   const oversightIds: string[] = oversightResult.rows.map((r: any) => r.id);
 
-  // Peers: other directors/GMs whose oversight branches overlap with this user's.
+  // (3) Peers: other directors/GMs whose oversight branches overlap with this user's.
   // This ensures a Director can see GMs assigned to the same branches even when
   // manager_id was not set at creation time.
   const peerResult = await poolDb.query(
@@ -76,24 +81,44 @@ export const getOversightScopeIds = async (
      WHERE uob1.user_id = $1 AND uob2.user_id != $1`,
     [userId]
   );
-
   const peerIds: string[] = peerResult.rows.map((r: any) => r.user_id);
 
+  // (4) GM cascade: for Directors who have no direct oversight branch rows of their own,
+  // also include every active user in any branch overseen by a direct GM under this user.
+  // This is always a live query — it fills the gap when the subtree cache is stale and
+  // would otherwise hide BM / ABM / SO who were added after the cache was populated.
+  const gmCascadeResult = await poolDb.query(
+    `SELECT DISTINCT u.id
+     FROM users gm
+     JOIN user_oversight_branches uob ON uob.user_id = gm.id
+     JOIN users u ON u.branch_id = uob.branch_id
+     WHERE gm.manager_id = $1 AND gm.role = 'gm' AND u.is_active = true`,
+    [userId]
+  );
+  const gmCascadeIds: string[] = gmCascadeResult.rows.map((r: any) => r.id);
+
   // Union — deduplicate using Set
-  return [...new Set([...subtreeIds, ...oversightIds, ...peerIds])];
+  return [...new Set([...subtreeIds, ...oversightIds, ...peerIds, ...gmCascadeIds])];
 };
 
-// Function to clear the hierarchy cache records for a user and optionally their manager
-export const bustHierarchyCache = async (
-  userId: string, 
-  managerId?: string
-): Promise<void> => {
-  // Use the 'del' method to remove the user's specific hierarchy from the Redis cache
-  await redis.del(`hier:subtree:${userId}`);
-  
-  // Check if a managerId was provided to determine if their cache also requires invalidation
-  if (managerId) {
-    // Clear the manager's hierarchy cache to ensure organizational data consistency
-    await redis.del(`hier:subtree:${managerId}`);
-  }
+// Walks the manager_id chain upward from userId and busts hier:subtree:{id} for every ancestor.
+// This ensures that directors, GMs, and all levels above see the new subordinate without
+// waiting for the 1-hour TTL — a single-arg replacement for the old two-arg version.
+export const bustHierarchyCache = async (userId: string): Promise<void> => {
+  // Upward recursive CTE: start at userId, follow manager_id until no parent remains
+  const result = await db.query(
+    `WITH RECURSIVE ancestors AS (
+      SELECT id, manager_id FROM users WHERE id = $1
+      UNION ALL
+      SELECT u.id, u.manager_id FROM users u
+      JOIN ancestors a ON u.id = a.manager_id
+    )
+    SELECT id FROM ancestors`,
+    [userId]
+  );
+
+  // Delete all ancestor cache keys in parallel — each row is one level up the tree
+  await Promise.all(
+    result.rows.map((row: { id: string }) => redis.del(`hier:subtree:${row.id}`))
+  );
 };

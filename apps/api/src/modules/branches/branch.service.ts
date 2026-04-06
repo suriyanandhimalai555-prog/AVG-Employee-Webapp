@@ -92,6 +92,30 @@ export const BranchService = {
     return branch;
   },
 
+  // ─── DELETE BRANCH (MD only — soft delete via is_active = false) ───
+  async deleteBranch(
+    db: Pool,
+    redis: Redis,
+    requesterRole: string,
+    branchId: string
+  ): Promise<void> {
+    if (requesterRole !== 'md') {
+      throw new ForbiddenError('Only the MD can delete branches');
+    }
+
+    const result = await db.query(
+      `UPDATE branches SET is_active = false WHERE id = $1 RETURNING id`,
+      [branchId]
+    );
+
+    if (result.rows.length === 0) throw new NotFoundError('Branch not found');
+
+    await Promise.all([
+      redis.del(BRANCHES_CACHE_KEY),
+      redis.del(`cache:branch:${branchId}`),
+    ]);
+  },
+
   // ─── UPDATE BRANCH (MD only) ───
   async updateBranch(
     db: Pool,

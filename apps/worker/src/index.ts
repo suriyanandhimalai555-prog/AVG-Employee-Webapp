@@ -111,6 +111,85 @@ const processAutoAbsent = async (): Promise<void> => {
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SIGN-OFF PROCESSOR
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const processSignOff = async (job: Job): Promise<void> => {
+  console.log(`🔄 Processing sign-off job ${job.id} for user ${job.data.userId}`);
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    // UPDATE only if check_out_time is still NULL — makes the write idempotent
+    const updateResult = await client.query(
+      `UPDATE attendance
+       SET check_out_time = $1, check_out_lat = $2, check_out_lng = $3
+       WHERE user_id = $4 AND date = $5 AND check_out_time IS NULL
+       RETURNING id`,
+      [
+        job.data.checkOutTime,
+        job.data.checkOutLat,
+        job.data.checkOutLng,
+        job.data.userId,
+        job.data.date,
+      ]
+    );
+
+    if (updateResult.rowCount && updateResult.rowCount > 0) {
+      const attendanceId: string = updateResult.rows[0].id;
+
+      // Audit the sign-off in the immutable audit table
+      await client.query(
+        `INSERT INTO attendance_audit (attendance_id, changed_by, change_type, old_data, new_data)
+         VALUES (
+           $1, $2, 'sign_off',
+           (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1),
+           jsonb_build_object(
+             'check_out_time', $3::text,
+             'check_out_lat',  $4::float,
+             'check_out_lng',  $5::float,
+             'signed_off_by',  $6::text
+           )
+         )`,
+        [
+          attendanceId,
+          job.data.signedOffBy,
+          job.data.checkOutTime,
+          job.data.checkOutLat,
+          job.data.checkOutLng,
+          job.data.signedOffBy,
+        ]
+      );
+
+      console.log(`✅ Sign-off saved and audited for user ${job.data.userId}`);
+    } else {
+      console.log(`⏭️  Sign-off duplicate skipped for user ${job.data.userId} on ${job.data.date}`);
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err; // Re-throw so BullMQ retries the job
+  } finally {
+    client.release();
+  }
+
+  // Publish sign-off confirmation to Redis pub/sub for Socket.io relay
+  await redis.publish(
+    'signoff:confirmed',
+    JSON.stringify({
+      userId: job.data.userId,
+      date: job.data.date,
+      jobId: job.id,
+      signedOffBy: job.data.signedOffBy,
+    })
+  );
+
+  console.log(`✅ Sign-off confirmation published for user ${job.data.userId}`);
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // JOB PROCESSOR
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -118,6 +197,12 @@ const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => 
   // Route auto-absent scheduled jobs to their dedicated processor
   if (job.name === 'auto-absent') {
     await processAutoAbsent();
+    return { success: true };
+  }
+
+  // Route sign-off jobs to their dedicated processor
+  if (job.name === 'sign-off') {
+    await processSignOff(job);
     return { success: true };
   }
   console.log(`🔄 Processing attendance job ${job.id} for user ${job.data.userId}`);

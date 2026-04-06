@@ -11,6 +11,8 @@ import {
   CorrectionSchema,
   GetAttendanceQuerySchema,
   UserHistoryQuerySchema,
+  SignOffSchema,
+  AdminSignOffSchema,
 } from './attendance.schema';
 // Import the base error class to check if errors are our custom app errors
 import { AppError } from '../../shared/errors';
@@ -289,6 +291,34 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
+  // ─── GET /team-history?month=&year= (Aggregated team calendar for manager roles) ───
+  // Returns per-date counts (present, absent, field, office, total) instead of single-user rows.
+  // client is the only blocked role; all others that have subordinates get real data.
+  fastify.get('/team-history', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role === 'client') {
+        return sendForbidden(reply, 'Clients cannot view attendance history');
+      }
+
+      const query = UserHistoryQuerySchema.parse(req.query);
+
+      const data = await AttendanceService.getTeamHistory(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        req.user.branchId,
+        query
+      );
+
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   // ─── GET /:userId/history ───
   fastify.get('/:userId/history', {
     onRequest: [fastify.authenticate],
@@ -312,6 +342,68 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
       );
 
       return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /sign-off (Self clock-out) ───
+  fastify.post('/sign-off', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const body = SignOffSchema.parse(req.body);
+
+      const result = await AttendanceService.signOff(
+        fastify.db,
+        fastify.redis,
+        req.user.id,
+        req.user.role,
+        body
+      );
+
+      return reply.code(202).send({
+        success: true,
+        data: {
+          message: 'Sign-off submitted. Confirming shortly...',
+          jobId: result.jobId,
+        },
+      });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /admin-sign-off (Admin clock-out on behalf of employee) ───
+  fastify.post('/admin-sign-off', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const allowedRoles = ['branch_admin', 'md', 'gm'];
+      if (!allowedRoles.includes(req.user.role)) {
+        return sendForbidden(reply, 'You do not have permission to use this endpoint');
+      }
+
+      const body = AdminSignOffSchema.parse(req.body);
+
+      const result = await AttendanceService.adminSignOff(
+        fastify.db,
+        fastify.redis,
+        req.user.id,
+        req.user.role,
+        req.user.branchId,
+        body
+      );
+
+      return reply.code(202).send({
+        success: true,
+        data: {
+          message: 'Sign-off submitted. Confirming shortly...',
+          jobId: result.jobId,
+        },
+      });
     } catch (error) {
       return handleError(error, reply);
     }

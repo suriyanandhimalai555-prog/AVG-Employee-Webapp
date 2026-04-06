@@ -1,7 +1,7 @@
 // apps/api/src/modules/users/user.service.ts
 import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
-import { CreateUserInput, UserResponse } from './user.schema';
+import { CreateUserInput, UserResponse, UpdateOversightBranchesInput } from './user.schema';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { getOversightScopeIds, bustHierarchyCache } from '../../shared/hierarchy';
@@ -60,8 +60,12 @@ export const UserService = {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(payload.password, saltRounds);
 
-    // Insert the user. For Director/GM the primary branchId is the first oversight branch
-    // (or null if none provided — MD assigns them via oversight table).
+    // Director and GM never have a branch_id — their branch access comes entirely from
+    // user_oversight_branches. Nullify here regardless of what the caller sent.
+    if (payload.role === 'director' || payload.role === 'gm') {
+      payload.branchId = null;
+    }
+
     const result = await db.query(
       `INSERT INTO users (
         name, email, password_hash, role, branch_id, manager_id, has_smartphone
@@ -99,10 +103,10 @@ export const UserService = {
       );
     }
 
-    // Bust the manager's subtree cache so they see the new subordinate immediately
-    // without waiting for the 1-hour TTL to expire
+    // Bust the full ancestor chain from newUserId so every level above (ABM → BM → GM → Director)
+    // sees the new subordinate immediately — bustHierarchyCache now walks up the tree itself
     if (payload.managerId) {
-      await bustHierarchyCache(newUserId, payload.managerId);
+      await bustHierarchyCache(newUserId);
     }
 
     return this.getUserById(db, newUserId);
@@ -125,6 +129,75 @@ export const UserService = {
     }
 
     return result.rows[0];
+  },
+
+  // Fetch the oversight branch IDs assigned to a Director or GM
+  async getOversightBranches(
+    db: Pool,
+    _requesterId: string,
+    requesterRole: string,
+    targetUserId: string
+  ): Promise<{ branchIds: string[] }> {
+    if (requesterRole !== 'md') {
+      throw new ForbiddenError('Only MD can view oversight branch assignments');
+    }
+
+    const targetResult = await db.query(
+      `SELECT role FROM users WHERE id = $1`,
+      [targetUserId]
+    );
+    if (targetResult.rows.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+    if (!['director', 'gm'].includes(targetResult.rows[0].role)) {
+      throw new ForbiddenError('Oversight branches only apply to Director and GM roles');
+    }
+
+    const result = await db.query(
+      `SELECT branch_id FROM user_oversight_branches WHERE user_id = $1 ORDER BY branch_id`,
+      [targetUserId]
+    );
+
+    return { branchIds: result.rows.map((r: any) => r.branch_id) };
+  },
+
+  // Replace the full set of oversight branches for a Director or GM (MD only)
+  async updateOversightBranches(
+    db: Pool,
+    _requesterId: string,
+    requesterRole: string,
+    targetUserId: string,
+    payload: UpdateOversightBranchesInput
+  ): Promise<UserResponse> {
+    if (requesterRole !== 'md') {
+      throw new ForbiddenError('Only MD can edit oversight branch assignments');
+    }
+
+    const targetResult = await db.query(
+      `SELECT role FROM users WHERE id = $1`,
+      [targetUserId]
+    );
+    if (targetResult.rows.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+    if (!['director', 'gm'].includes(targetResult.rows[0].role)) {
+      throw new ForbiddenError('Oversight branches only apply to Director and GM roles');
+    }
+
+    // Delete all existing oversight rows then re-insert the new set atomically
+    await db.query(`DELETE FROM user_oversight_branches WHERE user_id = $1`, [targetUserId]);
+
+    for (const branchId of payload.branchIds) {
+      await db.query(
+        `INSERT INTO user_oversight_branches (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [targetUserId, branchId]
+      );
+    }
+
+    // Bust cache so the Director/GM immediately sees their new scope
+    await bustHierarchyCache(targetUserId);
+
+    return this.getUserById(db, targetUserId);
   },
 
   // List users for management table, scoped per role, with pagination and search

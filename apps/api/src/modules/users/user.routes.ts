@@ -2,7 +2,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import { UserService } from './user.service';
-import { CreateUserSchema } from './user.schema';
+import { CreateUserSchema, UpdateOversightBranchesSchema } from './user.schema';
 import { AppError } from '../../shared/errors';
 
 type AuthenticatedRequest = FastifyRequest & {
@@ -49,6 +49,52 @@ export default async function userRoutes(fastify: FastifyInstance) {
       );
       
       return reply.code(201).send({ success: true, data: newUser });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /api/users/:id/oversight-branches ───
+  // Returns the current oversight branch IDs for a Director or GM. MD only.
+  fastify.get('/:id/oversight-branches', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { id } = req.params as { id: string };
+
+      const result = await UserService.getOversightBranches(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        id
+      );
+
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── PATCH /api/users/:id/oversight-branches ───
+  // Replaces the full set of oversight branches for a Director or GM. MD only.
+  fastify.patch('/:id/oversight-branches', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { id } = req.params as { id: string };
+      const payload = UpdateOversightBranchesSchema.parse(req.body);
+
+      const updatedUser = await UserService.updateOversightBranches(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        id,
+        payload
+      );
+
+      return reply.send({ success: true, data: updatedUser });
     } catch (error) {
       return handleError(error, reply);
     }

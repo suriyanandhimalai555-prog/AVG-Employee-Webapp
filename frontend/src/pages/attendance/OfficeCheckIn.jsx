@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Home, MapPin, CheckCircle2, Loader2 } from 'lucide-react';
+import { Home, MapPin, CheckCircle2, Loader2, LogOut } from 'lucide-react';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
 
@@ -14,6 +14,10 @@ export const OfficeCheckIn = ({
   onBack,
   onSwitchToField,
   onEnter, // called on mount to start GPS fetch
+  // Sign-off props — only provided after check-in is complete
+  onSignOff,
+  isSigningOff,
+  signOffError,
 }) => {
   const [currentTime, setCurrentTime] = useState(
     new Date().toLocaleTimeString('en-US', { hour12: false }),
@@ -97,33 +101,84 @@ export const OfficeCheckIn = ({
           </p>
         </div>
 
-        {/* Submit */}
+        {/* Submit / Sign-off */}
         <div className="space-y-4 pb-32">
-          <button
-            disabled={isSubmitting || !!todayRecord || gpsStatus === 'fetching'}
-            onClick={() => onCheckIn('office')}
-            className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50 disabled:pointer-events-none"
-          >
-            {isSubmitting
-              ? <Loader2 className="animate-spin" size={22} />
-              : todayRecord
-                ? <><CheckCircle2 size={22} /> Already Checked In</>
-                : gpsStatus === 'error'
-                  ? <><CheckCircle2 size={22} /> Retry Location & Check In</>
-                  : <><CheckCircle2 size={22} /> Confirm Office Check-In</>}
-          </button>
-          {/* Location error hint — clicking the button re-triggers the GPS prompt */}
-          {gpsStatus === 'error' && (
-            <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
-              {gpsPermissionDenied
-                ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
-                : 'Location unavailable — tap the button above to request access again.'}
-            </p>
-          )}
-          {gpsStatus !== 'error' && (
-            <p className="text-center text-[10px] leading-relaxed text-navy/40 px-8 font-medium">
-              Your GPS coordinates will be verified for office compliance.
-            </p>
+          {/* Show check-in/shift-complete state when already checked in */}
+          {todayRecord?.check_in_time && todayRecord?.check_out_time ? (
+            /* Shift complete — both times recorded */
+            <div className="w-full bg-emerald/5 border border-emerald/20 rounded-2xl p-5 text-center space-y-1">
+              <CheckCircle2 size={22} className="text-emerald mx-auto mb-2" />
+              <p className="text-sm font-bold text-navy">Shift Complete</p>
+              <p className="text-[10px] font-mono text-navy/40">
+                IN {new Date(todayRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                {' '}→{' '}
+                OUT {new Date(todayRecord.check_out_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+              </p>
+            </div>
+          ) : todayRecord?.check_in_time && !todayRecord?.check_out_time ? (
+            /* Checked in but not signed off — show sign-off button */
+            <>
+              <div className="w-full bg-indigo/5 border border-indigo/20 rounded-2xl p-4 flex items-center gap-3">
+                <CheckCircle2 size={18} className="text-indigo shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-navy">Checked In</p>
+                  <p className="text-[10px] font-mono text-navy/40">
+                    {new Date(todayRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                  </p>
+                </div>
+              </div>
+              <button
+                disabled={isSigningOff || gpsStatus === 'fetching'}
+                onClick={onSignOff}
+                className="w-full bg-amber-500 text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-amber-500/20 tactile-press disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {isSigningOff
+                  ? <Loader2 className="animate-spin" size={22} />
+                  : gpsStatus === 'error'
+                    ? <><LogOut size={22} /> Retry Location & Sign Off</>
+                    : <><LogOut size={22} /> Sign Off</>}
+              </button>
+              {signOffError && (
+                <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-red-500">
+                  {signOffError}
+                </p>
+              )}
+              {gpsStatus === 'error' && !signOffError && (
+                <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+                  {gpsPermissionDenied
+                    ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                    : 'Location unavailable — tap the button above to request access again.'}
+                </p>
+              )}
+            </>
+          ) : (
+            /* Not checked in yet */
+            <>
+              <button
+                disabled={isSubmitting || gpsStatus === 'fetching'}
+                onClick={() => onCheckIn('office')}
+                className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {isSubmitting
+                  ? <Loader2 className="animate-spin" size={22} />
+                  : gpsStatus === 'error'
+                    ? <><CheckCircle2 size={22} /> Retry Location & Check In</>
+                    : <><CheckCircle2 size={22} /> Confirm Office Check-In</>}
+              </button>
+              {/* Location error hint — clicking the button re-triggers the GPS prompt */}
+              {gpsStatus === 'error' && (
+                <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+                  {gpsPermissionDenied
+                    ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                    : 'Location unavailable — tap the button above to request access again.'}
+                </p>
+              )}
+              {gpsStatus !== 'error' && (
+                <p className="text-center text-[10px] leading-relaxed text-navy/40 px-8 font-medium">
+                  Your GPS coordinates will be verified for office compliance.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

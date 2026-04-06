@@ -32,8 +32,28 @@ export interface AttendanceJobData {
   targetUserId?: string;
 }
 
-// Initialize a new BullMQ Queue named 'attendance' for background processing tasks
-export const attendanceQueue = new Queue<AttendanceJobData>('attendance', {
+// Define the data structure for sign-off (clock-out) jobs pushed to the attendance queue
+export interface SignOffJobData {
+  // The unique ID of the user who is signing off
+  userId: string;
+  // The date in YYYY-MM-DD format that the sign-off applies to
+  date: string;
+  // ISO string timestamp of when the employee clocked out
+  checkOutTime: string;
+  // Latitude captured at sign-off for location verification
+  checkOutLat: number;
+  // Longitude captured at sign-off for location verification
+  checkOutLng: number;
+  // The user ID who initiated the sign-off (same as userId for self sign-off)
+  signedOffBy: string;
+  // True when a branch admin is signing off on behalf of a no-smartphone employee
+  signedOffByAdmin: boolean;
+}
+
+// Initialize a new BullMQ Queue named 'attendance' for background processing tasks.
+// The union type covers both mark-attendance and sign-off job shapes —
+// the worker discriminates on job.name to route each job to its handler.
+export const attendanceQueue = new Queue<AttendanceJobData | SignOffJobData>('attendance', {
   // Use the shared Redis client configuration to manage the queue connection
   connection: redis,
   // Define default job behavior including retries and backoff strategies
@@ -58,6 +78,14 @@ export const addAttendanceJob = async (data: AttendanceJobData): Promise<void> =
   await attendanceQueue.add('mark-attendance', data);
   // Log the action to the console for tracking and monitoring purposes
   console.log(`✅ Job queued for user: ${data.userId}`);
+};
+
+// Define an asynchronous function to add a sign-off job to the existing attendance queue
+export const addSignOffJob = async (data: SignOffJobData): Promise<void> => {
+  // Push the sign-off data with job name 'sign-off' — the worker branches on job.name
+  await attendanceQueue.add('sign-off', data);
+  // Log for monitoring — mirrors addAttendanceJob logging pattern
+  console.log(`✅ Sign-off job queued for user: ${data.userId}`);
 };
 
 // Define an asynchronous function to capture and return real-time metrics of the queue

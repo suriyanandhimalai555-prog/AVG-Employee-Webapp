@@ -89,6 +89,15 @@ export const apiSlice = createApi({
       providesTags: ['Attendance'],
     }),
 
+    // Aggregated team calendar — returns TeamHistoryDay[] (per-date counts, not single rows)
+    // Used by manager/admin roles so the calendar shows team activity, not just their own record
+    getTeamHistory: builder.query({
+      query: ({ month, year }) =>
+        `/attendance/team-history?month=${month}&year=${year}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['Attendance'],
+    }),
+
     // ─── Admin ───
     getEmployees: builder.query({
       // viewerId is not sent — it scopes the RTK cache key so two logged-in users don't share data
@@ -124,6 +133,27 @@ export const apiSlice = createApi({
       invalidatesTags: ['Attendance', 'Summary', 'Employees'],
     }),
 
+    // Employee self sign-off (clock-out) — returns 202 like submitAttendance
+    // Cache invalidation happens via useAttendanceSocket on signoff:confirmed
+    submitSignOff: builder.mutation({
+      query: (data) => ({
+        url: '/attendance/sign-off',
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+    }),
+
+    // Admin sign-off on behalf of a no-smartphone employee
+    adminSignOff: builder.mutation({
+      query: (data) => ({
+        url: '/attendance/admin-sign-off',
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+    }),
+
     adminCorrect: builder.mutation({
       query: ({ id, ...data }) => ({
         url: `/attendance/${id}/correct`,
@@ -151,6 +181,12 @@ export const apiSlice = createApi({
 
     updateBranch: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/branches/${id}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Branches'],
+    }),
+
+    deleteBranch: builder.mutation({
+      query: (id) => ({ url: `/branches/${id}`, method: 'DELETE' }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['Branches'],
     }),
@@ -211,6 +247,34 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       invalidatesTags: ['Users'],
     }),
+
+    // Returns { branchIds: string[] } for a Director or GM. MD only.
+    getUserOversightBranches: builder.query({
+      query: (userId) => `/users/${userId}/oversight-branches`,
+      transformResponse: (response) => response.data,
+      providesTags: ['Users'],
+    }),
+
+    // Replaces the full oversight branch set for a Director or GM. MD only.
+    updateUserOversightBranches: builder.mutation({
+      query: ({ id, branchIds }) => ({
+        url: `/users/${id}/oversight-branches`,
+        method: 'PATCH',
+        body: { branchIds },
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Users'],
+    }),
+
+    // Change password — requires current password, available to all authenticated users.
+    changePassword: builder.mutation({
+      query: (data) => ({
+        url: '/auth/change-password',
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+    }),
   }),
 });
 
@@ -221,18 +285,26 @@ export const {
   useSubmitAttendanceMutation,
   useGetSummaryQuery,
   useGetHistoryQuery,
+  useGetTeamHistoryQuery,
   useGetEmployeesQuery,
   useGetAttendanceListQuery,
   useAdminMarkMutation,
   useAdminCorrectMutation,
+  useSubmitSignOffMutation,
+  useAdminSignOffMutation,
   useGetUploadUrlMutation,
   useGetPhotoUrlQuery,
   useGetBranchesQuery,
   useCreateBranchMutation,
   useUpdateBranchMutation,
+  useDeleteBranchMutation,
   useGetTransactionsQuery,
   useCreateTransactionMutation,
   useUpdateTransactionStatusMutation,
   useGetUsersQuery,
   useCreateUserMutation,
+  useGetUserOversightBranchesQuery,
+  useLazyGetUserOversightBranchesQuery,
+  useUpdateUserOversightBranchesMutation,
+  useChangePasswordMutation,
 } = apiSlice;

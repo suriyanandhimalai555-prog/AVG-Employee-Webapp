@@ -13,6 +13,7 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetSummaryQuery,
   useGetHistoryQuery,
+  useGetTeamHistoryQuery,
   useGetEmployeesQuery,
 } from '../../store/api/apiSlice';
 
@@ -58,9 +59,16 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
     { viewerId: user?.id },
     { skip: !user?.id, refetchOnMountOrArgChange: true, refetchOnFocus: true },
   );
+  // Self history — only for sales_officer (their own record)
   const { data: historyData = [] } = useGetHistoryQuery(
     { userId: user?.id, month: calMonth, year: calYear },
-    { skip: !user?.id, refetchOnMountOrArgChange: true, refetchOnFocus: true },
+    { skip: !user?.id || user?.role !== 'sales_officer', refetchOnMountOrArgChange: true, refetchOnFocus: true },
+  );
+
+  // Team history — aggregated counts for all manager/admin roles; skipped for sales_officer
+  const { data: teamHistoryData = [] } = useGetTeamHistoryQuery(
+    { month: calMonth, year: calYear },
+    { skip: !user?.id || user?.role === 'sales_officer', refetchOnMountOrArgChange: true, refetchOnFocus: true },
   );
   // Fetched for branch_admin (needs "needs action" count) and abm (team list)
   const { data: employeesResult, isLoading: empLoading } = useGetEmployeesQuery(
@@ -162,7 +170,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
 
           <div className="px-6 pb-32">
             <HistoryCalendar
-              historyData={historyData}
+              historyData={teamHistoryData}
+              mode="team"
               onDaySelect={(cell) => {
                 const [yr, mo] = cell.isoStr.split('-');
                 setCalMonth(parseInt(mo));
@@ -202,7 +211,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             <ArrowRight size={16} className="text-navy/25 transition-all duration-300 group-hover:text-navy/50 group-hover:translate-x-1 shrink-0" />
           </button>
           <HistoryCalendar
-            historyData={historyData}
+            historyData={teamHistoryData}
+            mode="team"
             onDaySelect={(cell) => {
               const [yr, mo] = cell.isoStr.split('-');
               setCalMonth(parseInt(mo));
@@ -261,6 +271,15 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
           )}
 
           <StaffCard onOpen={onOpenUserManagement} />
+          <HistoryCalendar
+            historyData={teamHistoryData}
+            mode="team"
+            onDaySelect={(cell) => {
+              const [yr, mo] = cell.isoStr.split('-');
+              setCalMonth(parseInt(mo));
+              setCalYear(parseInt(yr));
+            }}
+          />
         </div>
       )}
 
@@ -299,7 +318,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
 
           <StaffCard onOpen={onOpenUserManagement} />
           <HistoryCalendar
-            historyData={historyData}
+            historyData={teamHistoryData}
+            mode="team"
             onDaySelect={(cell) => {
               const [yr, mo] = cell.isoStr.split('-');
               setCalMonth(parseInt(mo));

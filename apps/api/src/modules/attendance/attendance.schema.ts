@@ -83,6 +83,20 @@ export const UserHistoryQuerySchema = z.object({
   year: z.coerce.number().min(2024).max(2100).optional().default(() => new Date().getFullYear()),
 });
 
+// Define validation for an employee signing off (clocking out) with GPS coordinates
+export const SignOffSchema = z.object({
+  // Latitude must be within the valid geographic range of -90 to 90
+  checkOutLat: z.number().min(-90).max(90),
+  // Longitude must be within the valid geographic range of -180 to 180
+  checkOutLng: z.number().min(-180).max(180),
+});
+
+// Admin sign-off extends SignOffSchema with a required target employee UUID
+export const AdminSignOffSchema = SignOffSchema.extend({
+  // The UUID of the employee the admin is signing off on behalf of
+  targetUserId: z.string().uuid(),
+});
+
 // Inferred TypeScript Type: Represents the validated data for a user's attendance submission
 export type SubmitAttendanceInput = z.infer<typeof SubmitAttendanceSchema>;
 // Inferred TypeScript Type: Represents the data for an admin manually marking attendance
@@ -93,3 +107,7 @@ export type CorrectionInput = z.infer<typeof CorrectionSchema>;
 export type GetAttendanceQuery = z.infer<typeof GetAttendanceQuerySchema>;
 // Inferred TypeScript Type: Represents the validated parameters for history requests
 export type UserHistoryQuery = z.infer<typeof UserHistoryQuerySchema>;
+// Inferred TypeScript Type: Represents the validated body for a self sign-off submission
+export type SignOffInput = z.infer<typeof SignOffSchema>;
+// Inferred TypeScript Type: Represents the validated body for an admin-initiated sign-off
+export type AdminSignOffInput = z.infer<typeof AdminSignOffSchema>;

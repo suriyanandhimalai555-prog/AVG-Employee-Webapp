@@ -10,6 +10,7 @@ const DOT_CONFIG = {
   absent:         { bg: 'bg-red-400',   ring: 'ring-red-400/20',   label: 'Absent',   text: 'text-red-500' },
 };
 
+// Self mode: key derived from a single attendance record's status + mode fields
 const getRecordKey = (record) => {
   if (record.status === 'absent')   return 'absent';
   if (record.status === 'half_day') return 'half_day';
@@ -17,10 +18,20 @@ const getRecordKey = (record) => {
   return 'present_office';
 };
 
+// Team mode: pick the dominant dot colour from aggregated counts (present wins over half_day wins over absent)
+const getTeamRecordKey = (record) => {
+  if (record.present > 0) return record.field > 0 ? 'present_field' : 'present_office';
+  if (record.halfDay > 0) return 'half_day';
+  if (record.absent  > 0) return 'absent';
+  return null;
+};
+
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const pad  = (n) => String(n).padStart(2, '0');
 
-export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
+// mode='self'  → single-user records (default, Sales Officer behaviour unchanged)
+// mode='team'  → TeamHistoryDay aggregates; dot and detail panel show counts, not IN/OUT
+export const HistoryCalendar = ({ historyData = [], onDaySelect, mode = 'self' }) => {
   const today = new Date();
   const [viewDate, setViewDate]   = useState({ month: today.getMonth(), year: today.getFullYear() });
   const [selectedIso, setSelectedIso] = useState(getISTToday());
@@ -84,12 +95,20 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
       const [yr, mo] = iso.split('-');
       return parseInt(yr) === viewDate.year && parseInt(mo) === viewDate.month + 1;
     });
+    if (mode === 'team') {
+      // Sum the pre-aggregated counts from TeamHistoryDay objects
+      return {
+        present: records.reduce((s, r) => s + (r.present ?? 0), 0),
+        absent:  records.reduce((s, r) => s + (r.absent  ?? 0), 0),
+        field:   records.reduce((s, r) => s + (r.field   ?? 0), 0),
+      };
+    }
     return {
       present: records.filter(r => r.status === 'present').length,
       absent:  records.filter(r => r.status === 'absent').length,
       field:   records.filter(r => r.mode === 'field').length,
     };
-  }, [recordsByDate, viewDate]);
+  }, [recordsByDate, viewDate, mode]);
 
   return (
     <div className="space-y-3">
@@ -137,7 +156,10 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
                 const isToday    = cell.isoStr === todayIso;
                 const isSelected = cell.isoStr === selectedIso;
                 const isFuture   = cell.date > today && !isToday;
-                const dotKey     = cell.record ? getRecordKey(cell.record) : null;
+                // Team mode uses aggregate-aware key; self mode uses the original per-record key
+                const dotKey     = cell.record
+                  ? (mode === 'team' ? getTeamRecordKey(cell.record) : getRecordKey(cell.record))
+                  : null;
                 const dot        = dotKey ? DOT_CONFIG[dotKey] : null;
 
                 return (
@@ -213,60 +235,109 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect }) => {
             transition={{ duration: 0.18 }}
             className="bg-white rounded-3xl card-shadow overflow-hidden"
           >
-            {/* Colored top strip */}
-            <div className={`h-1 w-full ${DOT_CONFIG[getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'}`} />
+            {/* Colored top strip — use mode-appropriate key */}
+            <div className={`h-1 w-full ${DOT_CONFIG[mode === 'team' ? getTeamRecordKey(selectedRecord) : getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'}`} />
 
             <div className="p-5 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
-                    {new Date(selectedIso + 'T00:00:00').toLocaleDateString('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
-                    })}
-                  </p>
-                  <p className={`text-sm font-bold mt-1 ${DOT_CONFIG[getRecordKey(selectedRecord)]?.text ?? 'text-navy'}`}>
-                    {selectedRecord.status?.replace('_', ' ').toUpperCase()}
-                    {' '}<span className="opacity-40">·</span>{' '}
-                    {selectedRecord.mode?.toUpperCase()}
-                  </p>
-                </div>
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                  DOT_CONFIG[getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'
-                } text-white`}>
-                  {selectedRecord.mode === 'field' ? <MapPin size={16} /> : <Clock size={16} />}
-                </div>
-              </div>
+              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
+                {new Date(selectedIso + 'T00:00:00').toLocaleDateString('en-US', {
+                  weekday: 'long', month: 'long', day: 'numeric',
+                })}
+              </p>
 
-              {selectedRecord.check_in_time && (
-                <div className="flex items-center gap-2 text-navy/40">
-                  <Clock size={13} />
-                  <p className="text-xs font-bold font-mono">
-                    {new Date(selectedRecord.check_in_time).toLocaleTimeString('en-US', {
-                      hour: 'numeric', minute: '2-digit', hour12: true,
-                    })}
-                  </p>
+              {mode === 'team' ? (
+                /* Team mode: show aggregate counts for the day */
+                <div className="grid grid-cols-3 gap-3 pt-1">
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-indigo font-mono">{selectedRecord.present ?? 0}</p>
+                    <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Present</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-red-500 font-mono">{selectedRecord.absent ?? 0}</p>
+                    <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Absent</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-emerald font-mono">{selectedRecord.field ?? 0}</p>
+                    <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Field</p>
+                  </div>
+                  <div className="col-span-3 pt-2 border-t border-navy/5 text-center">
+                    <p className="text-[10px] font-bold text-navy/40 font-mono">
+                      {selectedRecord.total ?? 0} total marked
+                      {selectedRecord.halfDay > 0 ? ` · ${selectedRecord.halfDay} half-day` : ''}
+                    </p>
+                  </div>
                 </div>
-              )}
+              ) : (
+                /* Self mode: original IN/OUT/photo/note block */
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className={`text-sm font-bold ${DOT_CONFIG[getRecordKey(selectedRecord)]?.text ?? 'text-navy'}`}>
+                      {selectedRecord.status?.replace('_', ' ').toUpperCase()}
+                      {' '}<span className="opacity-40">·</span>{' '}
+                      {selectedRecord.mode?.toUpperCase()}
+                    </p>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      DOT_CONFIG[getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'
+                    } text-white`}>
+                      {selectedRecord.mode === 'field' ? <MapPin size={16} /> : <Clock size={16} />}
+                    </div>
+                  </div>
 
-              {selectedRecord.check_in_lat && selectedRecord.check_in_lng && (
-                <a
-                  href={`https://maps.google.com/?q=${selectedRecord.check_in_lat},${selectedRecord.check_in_lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-indigo hover:text-indigo/70 transition-colors duration-200 group"
-                >
-                  <MapPin size={13} />
-                  <p className="text-xs font-bold font-mono group-hover:underline underline-offset-2">
-                    {Number(selectedRecord.check_in_lat).toFixed(5)}, {Number(selectedRecord.check_in_lng).toFixed(5)}
-                  </p>
-                </a>
-              )}
+                  {selectedRecord.check_in_time && (
+                    <div className="flex items-center gap-2 text-navy/40">
+                      <Clock size={13} />
+                      <p className="text-xs font-bold font-mono">
+                        IN{' '}
+                        {new Date(selectedRecord.check_in_time).toLocaleTimeString('en-US', {
+                          hour: 'numeric', minute: '2-digit', hour12: true,
+                        })}
+                        {selectedRecord.check_out_time && (
+                          <span className="text-navy/30">
+                            {' '}→{' '}OUT{' '}
+                            {new Date(selectedRecord.check_out_time).toLocaleTimeString('en-US', {
+                              hour: 'numeric', minute: '2-digit', hour12: true,
+                            })}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
 
-              {selectedRecord.field_note && (
-                <div className="flex items-start gap-2 pt-3 border-t border-navy/5">
-                  <FileText size={13} className="text-navy/25 mt-0.5 shrink-0" />
-                  <p className="text-xs text-navy/45 leading-relaxed">{selectedRecord.field_note}</p>
-                </div>
+                  {selectedRecord.check_in_lat && selectedRecord.check_in_lng && (
+                    <a
+                      href={`https://maps.google.com/?q=${selectedRecord.check_in_lat},${selectedRecord.check_in_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-indigo hover:text-indigo/70 transition-colors duration-200 group"
+                    >
+                      <MapPin size={13} />
+                      <p className="text-xs font-bold font-mono group-hover:underline underline-offset-2">
+                        IN {Number(selectedRecord.check_in_lat).toFixed(5)}, {Number(selectedRecord.check_in_lng).toFixed(5)}
+                      </p>
+                    </a>
+                  )}
+
+                  {selectedRecord.check_out_lat && selectedRecord.check_out_lng && (
+                    <a
+                      href={`https://maps.google.com/?q=${selectedRecord.check_out_lat},${selectedRecord.check_out_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-amber-500 hover:text-amber-400 transition-colors duration-200 group"
+                    >
+                      <MapPin size={13} />
+                      <p className="text-xs font-bold font-mono group-hover:underline underline-offset-2">
+                        OUT {Number(selectedRecord.check_out_lat).toFixed(5)}, {Number(selectedRecord.check_out_lng).toFixed(5)}
+                      </p>
+                    </a>
+                  )}
+
+                  {selectedRecord.field_note && (
+                    <div className="flex items-start gap-2 pt-3 border-t border-navy/5">
+                      <FileText size={13} className="text-navy/25 mt-0.5 shrink-0" />
+                      <p className="text-xs text-navy/45 leading-relaxed">{selectedRecord.field_note}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </motion.div>

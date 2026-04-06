@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react';
+import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut } from 'lucide-react';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
 
@@ -21,6 +21,10 @@ export const FieldCheckIn = ({
   onStepChange,
   onNoteChange,
   onEnter, // called on mount to start GPS fetch
+  // Sign-off props — only relevant after check-in is complete
+  onSignOff,
+  isSigningOff,
+  signOffError,
 }) => {
   useEffect(() => {
     onEnter?.();
@@ -187,31 +191,81 @@ export const FieldCheckIn = ({
             </Card>
 
             <div className="py-8 space-y-4">
-              <button
-                disabled={isSubmitting || isUploading || !!todayRecord || gpsStatus === 'fetching'}
-                onClick={() => onCheckIn('field')}
-                className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
-              >
-                {isSubmitting || isUploading
-                  ? <Loader2 className="animate-spin" size={22} />
-                  : todayRecord
-                    ? 'Already Checked In'
-                    : gpsStatus === 'error'
-                      ? <>Retry Location & Submit <ArrowRight size={20} /></>
-                      : <>Upload & Submit Field Data <ArrowRight size={20} /></>}
-              </button>
-              {/* Location error hint — tapping button re-triggers the GPS permission prompt */}
-              {gpsStatus === 'error' && (
-                <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
-                  {gpsPermissionDenied
-                    ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
-                    : 'Location unavailable — tap the button above to request access again.'}
-                </p>
-              )}
-              {(isSubmitting || isUploading) && (
-                <p className="text-center text-[10px] font-mono text-indigo uppercase font-bold tracking-widest animate-pulse">
-                  {isUploading ? 'Transferring visual to AWS S3...' : 'Securing block record...'}
-                </p>
+              {/* Show shift-complete state if both times recorded */}
+              {todayRecord?.check_in_time && todayRecord?.check_out_time ? (
+                <div className="w-full bg-emerald/5 border border-emerald/20 rounded-2xl p-5 text-center space-y-1">
+                  <CheckCircle2 size={22} className="text-emerald mx-auto mb-2" />
+                  <p className="text-sm font-bold text-navy">Shift Complete</p>
+                  <p className="text-[10px] font-mono text-navy/40">
+                    IN {new Date(todayRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                    {' '}→{' '}
+                    OUT {new Date(todayRecord.check_out_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                  </p>
+                </div>
+              ) : todayRecord?.check_in_time && !todayRecord?.check_out_time ? (
+                /* Checked in but not signed off */
+                <>
+                  <div className="w-full bg-indigo/5 border border-indigo/20 rounded-2xl p-4 flex items-center gap-3">
+                    <CheckCircle2 size={18} className="text-indigo shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-navy">Checked In (Field)</p>
+                      <p className="text-[10px] font-mono text-navy/40">
+                        {new Date(todayRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    disabled={isSigningOff || gpsStatus === 'fetching'}
+                    onClick={onSignOff}
+                    className="w-full bg-amber-500 text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-amber-500/20 tactile-press disabled:opacity-50"
+                  >
+                    {isSigningOff
+                      ? <Loader2 className="animate-spin" size={22} />
+                      : gpsStatus === 'error'
+                        ? <><LogOut size={22} /> Retry Location & Sign Off</>
+                        : <><LogOut size={22} /> Sign Off</>}
+                  </button>
+                  {signOffError && (
+                    <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-red-500">
+                      {signOffError}
+                    </p>
+                  )}
+                  {gpsStatus === 'error' && !signOffError && (
+                    <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+                      {gpsPermissionDenied
+                        ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                        : 'Location unavailable — tap the button above to request access again.'}
+                    </p>
+                  )}
+                </>
+              ) : (
+                /* Not checked in — normal submit flow */
+                <>
+                  <button
+                    disabled={isSubmitting || isUploading || gpsStatus === 'fetching'}
+                    onClick={() => onCheckIn('field')}
+                    className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
+                  >
+                    {isSubmitting || isUploading
+                      ? <Loader2 className="animate-spin" size={22} />
+                      : gpsStatus === 'error'
+                        ? <>Retry Location & Submit <ArrowRight size={20} /></>
+                        : <>Upload & Submit Field Data <ArrowRight size={20} /></>}
+                  </button>
+                  {/* Location error hint — tapping button re-triggers the GPS permission prompt */}
+                  {gpsStatus === 'error' && (
+                    <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
+                      {gpsPermissionDenied
+                        ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
+                        : 'Location unavailable — tap the button above to request access again.'}
+                    </p>
+                  )}
+                  {(isSubmitting || isUploading) && (
+                    <p className="text-center text-[10px] font-mono text-indigo uppercase font-bold tracking-widest animate-pulse">
+                      {isUploading ? 'Transferring visual to AWS S3...' : 'Securing block record...'}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>

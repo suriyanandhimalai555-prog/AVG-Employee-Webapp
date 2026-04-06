@@ -34,6 +34,21 @@ export interface AttendanceRecord {
   fieldNote?: string;
   markedBy: string;
   submittedAt: string; // ISO string
+  // Sign-off (clock-out) fields — populated after the employee signs off
+  checkOutTime?: string; // ISO string
+  checkOutLat?: number;
+  checkOutLng?: number;
+}
+
+// Aggregated attendance counts for one calendar day — used by team/manager calendar views
+export interface TeamHistoryDay {
+  date: string; // YYYY-MM-DD
+  present: number;
+  absent: number;
+  halfDay: number;
+  field: number;
+  office: number;
+  total: number;
 }
 
 // Interface for aggregated attendance statistics (used in reporting/dashboard)

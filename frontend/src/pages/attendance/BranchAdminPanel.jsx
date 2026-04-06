@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
-import { CheckCircle2, ChevronRight, Clock, Home, Loader2, MapPin, Search, UserCheck, XCircle, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Clock, Home, Loader2, LogOut, MapPin, Search, UserCheck, XCircle, X, AlertCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
@@ -11,8 +11,9 @@ import { CorrectionModal } from './CorrectionModal';
 import { EmployeeHistoryModal } from '../../components/attendance/EmployeeHistoryModal';
 import { useAdminAttendance } from './hooks/useAdminAttendance';
 import { useCheckIn } from './hooks/useCheckIn';
+import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetEmployeesQuery } from '../../store/api/apiSlice';
+import { useGetEmployeesQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
 
 const SELF_VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
 
@@ -70,6 +71,20 @@ export const BranchAdminPanel = () => {
     clearCheckInError,
   } = useCheckIn();
 
+  // Self sign-off hook — branch admin clocks out for themselves
+  const {
+    gpsStatus: signOffGpsStatus,
+    fetchGps: fetchSignOffGps,
+    isSubmitting: isSigningOff,
+    signOffError,
+    clearSignOffError,
+    handleSignOff,
+  } = useSignOff();
+
+  // Admin sign-off mutation — for signing off no-smartphone employees
+  const [adminSignOff] = useAdminSignOffMutation();
+  const [adminSignOffLoading, setAdminSignOffLoading] = useState(null); // holds targetUserId while loading
+
   const {
     staffFilter, setStaffFilter,
     markModal, markStatus, setMarkStatus, markNote, setMarkNote, markLoading,
@@ -81,7 +96,50 @@ export const BranchAdminPanel = () => {
     adminError, clearAdminError,
   } = useAdminAttendance();
 
-  const needsAction = employees.filter((e) => !e.has_smartphone && !e.status);
+  // Pre-warm sign-off GPS when branch admin is checked in but not yet signed off
+  useEffect(() => {
+    if (todayRecord?.status === 'present' && !todayRecord?.check_out_time && !todayRecord?.signOffPending) {
+      fetchSignOffGps();
+    }
+  }, [todayRecord?.status, todayRecord?.check_out_time, todayRecord?.signOffPending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // No-smartphone employees with no check-in yet — need to be marked
+  const needsMark = employees.filter((e) => !e.has_smartphone && !e.status);
+  // No-smartphone employees who are present but haven't signed off yet
+  const needsSignOff = employees.filter(
+    (e) => !e.has_smartphone && e.status === 'present' && e.check_in_time && !e.check_out_time
+  );
+  // Combined "needs action" count shown in section header
+  const needsAction = [...needsMark, ...needsSignOff.filter((e) => !needsMark.find((m) => m.id === e.id))];
+
+  const handleAdminSignOff = async (emp) => {
+    setAdminSignOffLoading(emp.id);
+    try {
+      // Use a placeholder GPS (0,0) since branch admin is signing off for someone else
+      // The GPS coordinates for admin sign-off come from the admin's own location
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+      });
+      await adminSignOff({
+        targetUserId: emp.id,
+        checkOutLat: pos.coords.latitude,
+        checkOutLng: pos.coords.longitude,
+      }).unwrap();
+    } catch (err) {
+      // Fallback: if GPS fails, use 0,0 — admin is responsible for the sign-off
+      try {
+        await adminSignOff({
+          targetUserId: emp.id,
+          checkOutLat: 0,
+          checkOutLng: 0,
+        }).unwrap();
+      } catch (innerErr) {
+        console.error('Admin sign-off failed:', innerErr?.data?.error?.message || innerErr?.message);
+      }
+    } finally {
+      setAdminSignOffLoading(null);
+    }
+  };
 
   const filtered = employees.filter((e) => {
     const matchesFilter =
@@ -107,7 +165,10 @@ export const BranchAdminPanel = () => {
         onCheckIn={handleCheckIn}
         onBack={() => setSelfView(SELF_VIEWS.LIST)}
         onSwitchToField={() => { setSelfView(SELF_VIEWS.FIELD); setFieldStep(1); }}
-        onEnter={fetchGps}
+        onEnter={() => { fetchGps(); fetchSignOffGps(); }}
+        onSignOff={handleSignOff}
+        isSigningOff={isSigningOff}
+        signOffError={signOffError}
       />
     );
   }
@@ -130,7 +191,10 @@ export const BranchAdminPanel = () => {
         onBack={() => setSelfView(SELF_VIEWS.OFFICE)}
         onStepChange={setFieldStep}
         onNoteChange={setFieldNote}
-        onEnter={fetchGps}
+        onEnter={() => { fetchGps(); fetchSignOffGps(); }}
+        onSignOff={handleSignOff}
+        isSigningOff={isSigningOff}
+        signOffError={signOffError}
       />
     );
   }
@@ -173,14 +237,57 @@ export const BranchAdminPanel = () => {
         <div className="px-6 mb-6">
           <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Your Attendance</p>
           {todayRecord ? (
-            <div className="p-4 rounded-2xl bg-emerald/5 border border-emerald/20 flex items-center gap-3">
-              <CheckCircle2 size={20} className="text-emerald shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-navy">Checked In</p>
-                <p className="text-[10px] text-navy/40 mt-0.5">
-                  {todayRecord.mode === 'field' ? 'Field' : 'Office'} · {todayRecord.status}
-                </p>
+            <div className="space-y-3">
+              <div className={`p-4 rounded-2xl flex items-center gap-3 ${
+                todayRecord.check_out_time
+                  ? 'bg-navy/5 border border-navy/10'
+                  : 'bg-emerald/5 border border-emerald/20'
+              }`}>
+                <CheckCircle2 size={20} className={todayRecord.check_out_time ? 'text-navy/40 shrink-0' : 'text-emerald shrink-0'} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-navy">
+                    {todayRecord.check_out_time ? 'Shift Complete' : 'Checked In'}
+                  </p>
+                  <p className="text-[10px] text-navy/40 mt-0.5 font-mono">
+                    {todayRecord.mode === 'field' ? 'Field' : 'Office'}
+                    {todayRecord.check_in_time && (
+                      <> · IN {new Date(todayRecord.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>
+                    )}
+                    {todayRecord.check_out_time && (
+                      <> → OUT {new Date(todayRecord.check_out_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>
+                    )}
+                  </p>
+                </div>
               </div>
+
+              {/* Sign-off button — same condition as AttendanceTab: status present, not yet out */}
+              {todayRecord.status === 'present' && !todayRecord.check_out_time && !todayRecord.signOffPending && (
+                <>
+                  <button
+                    disabled={isSigningOff}
+                    onClick={handleSignOff}
+                    className="w-full bg-amber-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-amber-500/20 tactile-press disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {isSigningOff
+                      ? <><Loader2 className="animate-spin" size={20} /> Signing Off...</>
+                      : <><LogOut size={20} /> Sign Off</>}
+                  </button>
+                  {signOffError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2">
+                      <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-xs font-bold text-red-700">{signOffError}</p>
+                      <button onClick={clearSignOffError} className="text-red-400 hover:text-red-600 ml-auto"><X size={12} /></button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {todayRecord.signOffPending && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
+                  <p className="text-xs font-bold text-amber-700">Signing off...</p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
@@ -227,10 +334,10 @@ export const BranchAdminPanel = () => {
         <div className="px-6 pb-32 space-y-8">
 
           {/* ── Needs Action ── */}
-          {needsAction.length > 0 && (
+          {(needsMark.length > 0 || needsSignOff.length > 0) && (
             <section>
               <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
-                Needs Action ({needsAction.length})
+                Needs Action ({needsMark.length + needsSignOff.length})
               </p>
               {empLoading ? (
                 <div className="flex justify-center py-6">
@@ -238,7 +345,8 @@ export const BranchAdminPanel = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {needsAction.map((emp) => (
+                  {/* Employees who need check-in marking */}
+                  {needsMark.map((emp) => (
                     <div key={emp.id} className="p-4 bg-white rounded-2xl card-shadow flex items-center gap-3">
                       <EmployeeAvatar name={emp.name} />
                       <div className="flex-1 min-w-0">
@@ -262,12 +370,41 @@ export const BranchAdminPanel = () => {
                       </button>
                     </div>
                   ))}
+                  {/* Employees who need sign-off */}
+                  {needsSignOff.map((emp) => (
+                    <div key={emp.id + '-signoff'} className="p-4 bg-white rounded-2xl card-shadow flex items-center gap-3">
+                      <EmployeeAvatar name={emp.name} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
+                        <p className="text-[9px] font-medium text-amber-600 uppercase tracking-widest mt-0.5">
+                          In · Needs Sign-off
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setHistoryEmployee(emp)}
+                        className="p-2 text-navy/30 hover:text-indigo transition-colors"
+                        title="View attendance history"
+                      >
+                        <Clock size={14} />
+                      </button>
+                      <button
+                        disabled={adminSignOffLoading === emp.id}
+                        onClick={() => handleAdminSignOff(emp)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-bold tactile-press disabled:opacity-50"
+                      >
+                        {adminSignOffLoading === emp.id
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <LogOut size={12} />}
+                        Sign Off
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
           )}
 
-          {needsAction.length === 0 && !empLoading && (
+          {needsMark.length === 0 && needsSignOff.length === 0 && !empLoading && (
             <div className="p-5 bg-emerald/5 border border-emerald/20 rounded-3xl flex items-center gap-3">
               <CheckCircle2 size={20} className="text-emerald shrink-0" />
               <p className="text-xs font-bold text-navy">All no-phone employees marked for today</p>

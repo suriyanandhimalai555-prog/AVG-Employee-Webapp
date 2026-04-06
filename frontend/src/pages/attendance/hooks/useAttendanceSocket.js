@@ -41,6 +41,12 @@ export const useAttendanceSocket = () => {
       dispatch(apiSlice.util.invalidateTags(['Summary', 'Attendance', 'Employees']));
     });
 
+    // When the worker confirms a sign-off was persisted to the DB,
+    // invalidate the same tags so all panels show the updated check-out time.
+    socket.on('signoff:confirmed', () => {
+      dispatch(apiSlice.util.invalidateTags(['Summary', 'Attendance', 'Employees']));
+    });
+
     // Teardown: disconnect when the component unmounts or the token changes
     return () => {
       socket.disconnect();

@@ -24,6 +24,7 @@ import { AdminDashboard } from './AdminDashboard';
 import { UserManagement } from './UserManagement';
 import { EmployeeCalendarPage } from './EmployeeCalendarPage';
 import { BranchDetailPage } from './BranchDetailPage';
+import { BranchManagement } from './BranchManagement';
 import { useAttendanceSocket } from './attendance/hooks/useAttendanceSocket';
 import { selectCurrentUser } from '../store/slices/authSlice';
 
@@ -45,6 +46,16 @@ export const AttendanceHome = () => {
         employee={calendarEmployee}
         onBack={() => setCalendarEmployee(null)}
       />
+    );
+  }
+
+  // ── Full-screen overlay: Branch Management (MD only, via More menu) ──
+  if (activeTab === 'branches') {
+    return (
+      <div className="min-h-screen bg-surface relative">
+        <BranchManagement onBack={() => setActiveTab('home')} />
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
+      </div>
     );
   }
 
@@ -80,7 +91,7 @@ export const AttendanceHome = () => {
     return (
       <div className="min-h-screen bg-surface pb-24">
         <AdminDashboard />
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
       </div>
     );
   }
@@ -105,7 +116,7 @@ export const AttendanceHome = () => {
           {activeTab === 'alerts' && <AlertsTab />}
         </AnimatePresence>
 
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
       </div>
     </div>
   );

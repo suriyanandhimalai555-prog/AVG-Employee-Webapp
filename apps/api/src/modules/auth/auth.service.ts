@@ -5,7 +5,7 @@ import bcrypt from 'bcrypt';
 // Import custom error classes for graceful error handling
 import { UnauthorizedError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { hydrateBranchAdminProfile } from '../../shared/attendance-scope';
-import { AuthUserResponse, LoginInput } from './auth.schema';
+import { AuthUserResponse, LoginInput, ChangePasswordInput } from './auth.schema';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH SERVICE IMPLEMENTATION
@@ -128,5 +128,36 @@ export const AuthService = {
   async logout(redis: Redis, userId: string): Promise<void> {
     // Delete the session key from Redis; future /me calls will now fallback to the database
     await redis.del(`user:${userId}`);
+  },
+
+  // ─── CHANGE PASSWORD ───
+
+  // Verify the current password then replace it and invalidate the session so the user logs in fresh
+  async changePassword(db: Pool, redis: Redis, userId: string, input: ChangePasswordInput): Promise<void> {
+    // Fetch the stored password hash for this user
+    const result = await db.query(
+      'SELECT password_hash FROM users WHERE id = $1 AND is_active = true',
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Verify the caller actually knows their current password before allowing a change
+    const isValid = await bcrypt.compare(input.currentPassword, result.rows[0].password_hash);
+    if (!isValid) {
+      throw new UnauthorizedError('Current password is incorrect', 'INVALID_CREDENTIALS');
+    }
+
+    // Hash the new password with the same cost factor used at registration
+    const newHash = await bcrypt.hash(input.newPassword, 10);
+
+    // Persist the new hash
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
+
+    // Invalidate the Redis session — the user must log in again with their new password
+    await redis.del(`user:${userId}`);
+    await redis.del(`sess:${userId}`);
   },
 };

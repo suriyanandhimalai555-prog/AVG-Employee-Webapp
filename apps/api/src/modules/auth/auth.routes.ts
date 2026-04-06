@@ -2,8 +2,8 @@
 import { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 // Import the core business logic from the AuthService
 import { AuthService } from './auth.service';
-// Import the validation schema for handling login input
-import { LoginSchema } from './auth.schema';
+// Import the validation schemas for login and password change
+import { LoginSchema, ChangePasswordSchema } from './auth.schema';
 // Import the validated environment config for token signing
 import { env } from '../../config/env';
 // Import the Redis client instance for session caching
@@ -83,6 +83,25 @@ const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
     return reply.send({
       success: true,
       data: { message: 'Logged out successfully' },
+    });
+  });
+
+  // ─── PATCH /api/auth/change-password ───
+
+  // Allows any authenticated user to update their own password
+  fastify.patch('/change-password', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = (request as any).user.id;
+
+    // Validate and parse the request body — throws ZodError on failure
+    const body = ChangePasswordSchema.parse(request.body);
+
+    await AuthService.changePassword(fastify.db, redisClient, userId, body);
+
+    return reply.send({
+      success: true,
+      data: { message: 'Password changed successfully. Please log in again.' },
     });
   });
 

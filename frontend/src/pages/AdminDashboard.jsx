@@ -14,9 +14,9 @@ import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
 import { EmployeeCalendarPage } from './EmployeeCalendarPage';
-import { 
-  useGetEmployeesQuery, 
-  useGetSummaryQuery, 
+import {
+  useGetEmployeesQuery,
+  useGetSummaryQuery,
   useAdminCorrectMutation,
   useAdminMarkMutation,
   useGetPhotoUrlQuery
@@ -68,7 +68,7 @@ export const AdminDashboard = () => {
 
   // Photo fetching hook (only fires if they have a photo_key open in modal)
   const { data: photoData, isLoading: photoLoading } = useGetPhotoUrlQuery(
-    selectedEmployee?.photo_key, 
+    selectedEmployee?.photo_key,
     { skip: !selectedEmployee?.photo_key }
   );
 
@@ -367,9 +367,21 @@ export const AdminDashboard = () => {
                   )}
                   <td className="px-8 py-6">
                     {emp.check_in_time ? (
-                      <p className="text-sm font-mono font-bold text-navy tracking-tight">
-                        {new Date(emp.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute:'2-digit' })}
-                      </p>
+                      <div className="space-y-1">
+                        <p className="text-sm font-mono font-bold text-navy tracking-tight">
+                          {new Date(emp.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </p>
+                        {emp.check_out_time ? (
+                          <p className="text-xs font-mono text-navy/40">
+                            → {new Date(emp.check_out_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </p>
+                        ) : emp.status === 'present' ? (
+                          <span className="inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest bg-emerald/10 text-emerald px-2 py-0.5 rounded-full">
+                            <span className="w-1 h-1 rounded-full bg-emerald animate-pulse" />
+                            Active
+                          </span>
+                        ) : null}
+                      </div>
                     ) : (
                       <p className="text-xs font-bold text-navy/20">—</p>
                     )}

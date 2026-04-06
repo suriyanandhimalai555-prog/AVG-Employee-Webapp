@@ -74,27 +74,44 @@ const socketPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstance) => 
     maxRetriesPerRequest: null,
   });
 
-  await subRedis.subscribe('attendance:confirmed');
+  // Subscribe to both check-in and sign-off confirmation channels
+  await subRedis.subscribe('attendance:confirmed', 'signoff:confirmed');
 
-  subRedis.on('message', (_channel, message) => {
+  subRedis.on('message', (channel, message) => {
     try {
-      const data = JSON.parse(message) as {
-        userId: string;
-        date: string;
-        status: string;
-        jobId: string | undefined;
-        markedBy: string | undefined;
-      };
-      // Notify the employee whose attendance was marked
-      io.to(data.userId).emit('attendance:confirmed', data);
-      // Also notify the admin who marked on behalf of someone else — their panel
-      // won't refresh otherwise because the socket room is per-user, not per-session
-      if (data.markedBy && data.markedBy !== data.userId) {
-        io.to(data.markedBy).emit('attendance:confirmed', data);
+      if (channel === 'attendance:confirmed') {
+        const data = JSON.parse(message) as {
+          userId: string;
+          date: string;
+          status: string;
+          jobId: string | undefined;
+          markedBy: string | undefined;
+        };
+        // Notify the employee whose attendance was marked
+        io.to(data.userId).emit('attendance:confirmed', data);
+        // Also notify the admin who marked on behalf of someone else — their panel
+        // won't refresh otherwise because the socket room is per-user, not per-session
+        if (data.markedBy && data.markedBy !== data.userId) {
+          io.to(data.markedBy).emit('attendance:confirmed', data);
+        }
+        fastify.log.info(`[Socket.io] Emitted attendance:confirmed to user ${data.userId}`);
+      } else if (channel === 'signoff:confirmed') {
+        const data = JSON.parse(message) as {
+          userId: string;
+          date: string;
+          jobId: string | undefined;
+          signedOffBy: string | undefined;
+        };
+        // Notify the employee who signed off
+        io.to(data.userId).emit('signoff:confirmed', data);
+        // Also notify the admin who signed off on behalf of an employee
+        if (data.signedOffBy && data.signedOffBy !== data.userId) {
+          io.to(data.signedOffBy).emit('signoff:confirmed', data);
+        }
+        fastify.log.info(`[Socket.io] Emitted signoff:confirmed to user ${data.userId}`);
       }
-      fastify.log.info(`[Socket.io] Emitted attendance:confirmed to user ${data.userId}`);
     } catch (err) {
-      fastify.log.error({ err }, '[Socket.io] Failed to parse attendance:confirmed pub/sub message');
+      fastify.log.error({ err }, '[Socket.io] Failed to parse pub/sub message on channel: ' + channel);
     }
   });
 
@@ -107,7 +124,7 @@ const socketPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstance) => 
 
   // Graceful cleanup when Fastify shuts down
   fastify.addHook('onClose', async () => {
-    await subRedis.unsubscribe('attendance:confirmed');
+    await subRedis.unsubscribe('attendance:confirmed', 'signoff:confirmed');
     subRedis.disconnect();
     io.close();
     fastify.log.info('[Socket.io] Server and Redis subscriber closed');

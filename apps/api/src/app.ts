@@ -49,25 +49,8 @@ const buildApp = async (): Promise<FastifyInstance> => {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
-  // Step 3: Register Rate Limiting
-  // Uses Redis as the backing store to share limits across multiple instances
-  await app.register(fastifyRateLimit, {
-    max: 100,
-    timeWindow: 60000,
-    redis: redisClient,
-    // Rate limit per user (if logged in) or by IP address
-    keyGenerator: (request: any) => request.user?.id ?? request.ip,
-    errorResponseBuilder: () => ({
-      success: false,
-      error: {
-        code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Too many requests. Please slow down.',
-      },
-    }),
-  });
-
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // Step 4: Infrastructure Registration
+  // Step 3: Infrastructure Registration
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   // Register the Database plugin (decorates instance with 'fastify.db')
@@ -78,6 +61,25 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // Register the Authentication plugin (decorates instance with 'fastify.authenticate')
   await app.register(authPlugin);
+
+  // Step 4: Register Rate Limiting AFTER authPlugin so request.user.id is populated when
+  // keyGenerator runs — limits are per authenticated user, not per IP. Dashboard roles
+  // (MD, GM) legitimately fire many requests per minute (branch summaries, photo URLs for
+  // every employee), so the ceiling is raised to 300 to avoid false-positive 429s.
+  await app.register(fastifyRateLimit, {
+    max: 300,
+    timeWindow: 60000,
+    redis: redisClient,
+    // With auth registered first, request.user.id is always available for logged-in requests
+    keyGenerator: (request: any) => request.user?.id ?? request.ip,
+    errorResponseBuilder: () => ({
+      success: false,
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many requests. Please slow down.',
+      },
+    }),
+  });
 
   // Register Socket.io after auth so fastify.jwt is available for socket token verification
   await app.register(socketPlugin);

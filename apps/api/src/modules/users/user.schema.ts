@@ -36,5 +36,11 @@ export const UserResponseSchema = z.object({
   createdAt: z.string(),
 });
 
+// Schema for updating oversight branch assignments for a Director or GM (MD only)
+export const UpdateOversightBranchesSchema = z.object({
+  branchIds: z.array(z.string().uuid()),
+});
+
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UserResponse = z.infer<typeof UserResponseSchema>;
+export type UpdateOversightBranchesInput = z.infer<typeof UpdateOversightBranchesSchema>;

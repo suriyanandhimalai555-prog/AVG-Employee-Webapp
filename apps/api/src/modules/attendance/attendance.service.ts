@@ -3,8 +3,8 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 // Import S3 utilities for generating photo upload URLs, unique keys, and download URLs
 import { generateUploadUrl, generatePhotoKey, generateDownloadUrl } from '../../config/s3';
-// Import the queue function that pushes attendance jobs to the background worker
-import { addAttendanceJob } from './attendance.queue';
+// Import the queue functions that push attendance and sign-off jobs to the background worker
+import { addAttendanceJob, addSignOffJob } from './attendance.queue';
 // Import hierarchy helpers for subordinate and oversight-branch scope resolution
 import { getSubtreeIds, getOversightScopeIds } from '../../shared/hierarchy';
 // Import permission assertion functions that throw ForbiddenError on failure
@@ -14,7 +14,7 @@ import {
   assertCanManageSmartphone,
 } from '../../shared/permissions';
 // Import custom error classes for structured HTTP error responses
-import { NotFoundError, ForbiddenError, ConflictError } from '../../shared/errors';
+import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../shared/errors';
 import {
   resolveBranchAdminBranchId,
   resolveEmployeeDashboardScope,
@@ -28,6 +28,8 @@ import type {
   CorrectionInput,
   GetAttendanceQuery,
   UserHistoryQuery,
+  SignOffInput,
+  AdminSignOffInput,
 } from './attendance.schema';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -52,15 +54,17 @@ export const AttendanceService = {
     redis: Redis,
     userId: string,
     role: string,
-    branchId: string,
+    branchId: string | null,
     payload: SubmitAttendanceInput
   ): Promise<{ queued: boolean; jobId: string }> {
     // Step 1: Permission check — throws ForbiddenError if the role is 'client'
     assertCanMarkAttendance(role as any);
 
-    // Step 2: Smartphone check — query the database to see if the user has a smartphone
+    // Step 2: Smartphone + branch check — one query covers both
+    // Directors/GMs have no branch_id in users table; attendance.branch_id is NOT NULL,
+    // so we must resolve a valid branch before queuing or the worker INSERT will fail.
     const userResult = await db.query(
-      'SELECT has_smartphone FROM users WHERE id = $1',
+      'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
       [userId]
     );
 
@@ -74,6 +78,21 @@ export const AttendanceService = {
       );
     }
 
+    // Prefer JWT branchId → users.branch_id → first oversight branch (director/gm path)
+    let resolvedBranchId: string | null = branchId ?? userResult.rows[0].branch_id ?? null;
+    if (!resolvedBranchId) {
+      const oversightResult = await db.query(
+        'SELECT branch_id FROM user_oversight_branches WHERE user_id = $1 LIMIT 1',
+        [userId]
+      );
+      resolvedBranchId = oversightResult.rows[0]?.branch_id ?? null;
+    }
+    if (!resolvedBranchId) {
+      throw new ValidationError(
+        'No branch assigned to your account. Contact the MD to assign a branch before marking attendance.'
+      );
+    }
+
     // Step 3: Duplicate check using Redis atomic SET with NX — use IST date, not UTC
     const today = getCompanyToday();
     const dupeKey = `att:${userId}:${today}`;
@@ -84,10 +103,10 @@ export const AttendanceService = {
       throw new ConflictError('Attendance already marked for today');
     }
 
-    // Step 4: Build and queue job
+    // Step 4: Build and queue job — use resolvedBranchId so the worker INSERT never hits NOT NULL
     const jobData = {
       userId,
-      branchId,
+      branchId: resolvedBranchId,
       date: today,
       mode: payload.mode,
       status: 'present' as const,
@@ -380,16 +399,31 @@ export const AttendanceService = {
           throw new ForbiddenError('You do not have access to this employee record');
         }
       } else {
-        // branch_manager, abm: manager_id subtree only
-        const subtreeIds = await getSubtreeIds(requesterId);
-        if (!subtreeIds.includes(targetUserId)) {
+        // branch_manager / abm: use the same scope resolveEmployeeDashboardScope uses in
+        // getBranchEmployees so that clicking any employee visible in the list never returns 403.
+        const scope = await resolveEmployeeDashboardScope(db, {
+          id: requesterId,
+          role: requesterRole,
+          branchId: requesterBranchId,
+        });
+        let allowed = false;
+        if (scope.kind === 'branch') {
+          const r = await db.query(
+            'SELECT 1 FROM users WHERE id = $1 AND branch_id = $2',
+            [targetUserId, scope.branchId]
+          );
+          allowed = r.rows.length > 0;
+        } else if (scope.kind === 'subtree') {
+          allowed = scope.userIds.includes(targetUserId);
+        }
+        if (!allowed) {
           throw new ForbiddenError('You do not have access to this employee record');
         }
       }
     }
 
     const result = await db.query(
-      `SELECT a.*, b.name AS branch_name
+      `SELECT a.*, a.check_out_time, a.check_out_lat, a.check_out_lng, b.name AS branch_name
        FROM attendance a
        LEFT JOIN branches b ON a.branch_id = b.id
        WHERE a.user_id = $1
@@ -450,7 +484,8 @@ export const AttendanceService = {
       ),
       fetchToday
         ? db.query(
-            `SELECT id, status, mode, check_in_time, field_note, check_in_lat, check_in_lng
+            `SELECT id, status, mode, check_in_time, field_note, check_in_lat, check_in_lng,
+                    check_out_time, check_out_lat, check_out_lng
              FROM attendance WHERE user_id = $1 AND date = $2`,
             [requesterId, date]
           )
@@ -481,6 +516,14 @@ export const AttendanceService = {
     if (fetchToday) {
       if (rawTodayResult && rawTodayResult.rows.length > 0) {
         today = rawTodayResult.rows[0];
+        // If no DB check_out_time yet, check if a sign-off job is queued in Redis
+        if (today && today.check_out_time === null) {
+          const signoffQueued = await redis.exists(`signoff:${requesterId}:${date}`);
+          if (signoffQueued) {
+            // Optimistically mark sign-off as pending so the UI shows "signing off..."
+            today = { ...today, signOffPending: true };
+          }
+        }
       } else {
         // Fallback: if Redis dedupe key exists, the job is queued but not yet persisted
         const queued = await redis.exists(`att:${requesterId}:${date}`);
@@ -652,6 +695,9 @@ export const AttendanceService = {
         a.photo_key,
         a.check_in_lat,
         a.check_in_lng,
+        a.check_out_time,
+        a.check_out_lat,
+        a.check_out_lng,
         b.name      AS branch_name
       FROM users u
       LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $1
@@ -678,6 +724,245 @@ export const AttendanceService = {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  },
+
+  // ─── SIGN OFF (Employee self clock-out) ───
+
+  async signOff(
+    db: Pool,
+    redis: Redis,
+    userId: string,
+    role: string,
+    payload: SignOffInput
+  ): Promise<{ queued: boolean; jobId: string }> {
+    // Step 1: Permission check — MD and client do not mark attendance
+    assertCanMarkAttendance(role as any);
+
+    // Step 2: Smartphone check — only employees with smartphones sign off themselves
+    const userResult = await db.query(
+      'SELECT has_smartphone FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userResult.rows.length === 0) throw new NotFoundError('User not found');
+    if (userResult.rows[0].has_smartphone === false) {
+      throw new ForbiddenError(
+        'You do not have smartphone access. Ask your branch admin to sign off for you.'
+      );
+    }
+
+    const today = getCompanyToday();
+
+    // Step 3: Prerequisite check — must have checked in before signing off
+    const attendanceResult = await db.query(
+      'SELECT id, check_out_time FROM attendance WHERE user_id = $1 AND date = $2',
+      [userId, today]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      // No DB row — inspect the Redis dupe key to determine what happened
+      const dupeKey = `att:${userId}:${today}`;
+      const ttl = await redis.ttl(dupeKey);
+
+      if (ttl > 0) {
+        // TTL counts down from 86400. Age = 86400 - ttl.
+        // If < 60s old the worker is still processing — ask them to wait.
+        // If >= 60s old the worker failed (exhausted retries, crashed, etc.) —
+        // clear the stale key so the user can re-check in fresh.
+        const ageSeconds = 86400 - ttl;
+        if (ageSeconds < 60) {
+          throw new ConflictError('Check-in is still processing. Please try signing off shortly.');
+        }
+        await redis.del(dupeKey);
+        throw new ConflictError(
+          'Your check-in could not be processed by the server. Please check in again.'
+        );
+      }
+
+      throw new ValidationError('You must check in before signing off.');
+    }
+
+    // DB row exists — check if already signed off
+    if (attendanceResult.rows[0].check_out_time !== null) {
+      throw new ConflictError('You have already signed off for today.');
+    }
+
+    // Step 4: Redis dupe guard — SET signoff:{userId}:{date} NX EX 86400
+    const dupeKey = `signoff:${userId}:${today}`;
+    const dupeResult = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
+    if (dupeResult === null) {
+      throw new ConflictError('Sign-off already submitted for today.');
+    }
+
+    // Step 5: Queue the sign-off job
+    await addSignOffJob({
+      userId,
+      date: today,
+      checkOutTime: new Date().toISOString(),
+      checkOutLat: payload.checkOutLat,
+      checkOutLng: payload.checkOutLng,
+      signedOffBy: userId,
+      signedOffByAdmin: false,
+    });
+
+    return { queued: true, jobId: dupeKey };
+  },
+
+  // ─── ADMIN SIGN OFF (Branch Admin on behalf of no-smartphone employee) ───
+
+  async adminSignOff(
+    db: Pool,
+    redis: Redis,
+    adminId: string,
+    adminRole: string,
+    adminBranchId: string | null,
+    payload: AdminSignOffInput
+  ): Promise<{ queued: boolean; jobId: string }> {
+    // Only roles that can correct attendance may perform admin sign-off
+    assertCanCorrectAttendance(adminRole as any);
+
+    // Verify target employee exists and is in the admin's scope
+    const targetResult = await db.query(
+      'SELECT id, branch_id, has_smartphone, role FROM users WHERE id = $1 AND is_active = true',
+      [payload.targetUserId]
+    );
+    if (targetResult.rows.length === 0) throw new NotFoundError('Employee not found');
+
+    const targetUser = targetResult.rows[0];
+
+    // Branch-scope validation — same logic as adminMark
+    if (adminRole === 'md') {
+      // MD may sign off for any branch
+    } else if (adminRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(db, adminId, adminBranchId);
+      if (targetUser.branch_id !== branchId) {
+        throw new ForbiddenError('You can only sign off employees in your branch');
+      }
+    } else if (adminBranchId) {
+      if (targetUser.branch_id !== adminBranchId) {
+        throw new ForbiddenError('You can only sign off employees in your branch');
+      }
+    } else {
+      const subtree = await getSubtreeIds(adminId);
+      if (!subtree.includes(targetUser.id)) {
+        throw new ForbiddenError('You can only sign off people in your reporting line');
+      }
+    }
+
+    if (targetUser.role === 'client') {
+      throw new ForbiddenError('Clients do not have attendance');
+    }
+
+    const today = getCompanyToday();
+
+    // Prerequisite check — employee must have a DB record for today (checked in)
+    const attendanceResult = await db.query(
+      'SELECT id, check_out_time FROM attendance WHERE user_id = $1 AND date = $2',
+      [payload.targetUserId, today]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      const dupeKey = `att:${payload.targetUserId}:${today}`;
+      const ttl = await redis.ttl(dupeKey);
+      if (ttl > 0) {
+        const ageSeconds = 86400 - ttl;
+        if (ageSeconds < 60) {
+          throw new ConflictError('Check-in is still processing. Please try signing off shortly.');
+        }
+        await redis.del(dupeKey);
+        throw new ConflictError(
+          'Employee check-in could not be processed. Please mark their attendance again.'
+        );
+      }
+      throw new ValidationError('Employee must check in before signing off.');
+    }
+
+    if (attendanceResult.rows[0].check_out_time !== null) {
+      throw new ConflictError('Employee has already signed off for today.');
+    }
+
+    // Redis dupe guard for admin sign-off — same key namespace as self sign-off
+    const dupeKey = `signoff:${payload.targetUserId}:${today}`;
+    const dupeResult = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
+    if (dupeResult === null) {
+      throw new ConflictError('Sign-off already submitted for this employee today.');
+    }
+
+    await addSignOffJob({
+      userId: payload.targetUserId,
+      date: today,
+      checkOutTime: new Date().toISOString(),
+      checkOutLat: payload.checkOutLat,
+      checkOutLng: payload.checkOutLng,
+      signedOffBy: adminId,
+      signedOffByAdmin: true,
+    });
+
+    return { queued: true, jobId: dupeKey };
+  },
+
+  // ─── TEAM HISTORY (Aggregated calendar data for manager roles) ───
+
+  async getTeamHistory(
+    db: Pool,
+    requesterId: string,
+    requesterRole: string,
+    requesterBranchId: string | null,
+    query: UserHistoryQuery
+  ): Promise<any[]> {
+    // Resolve the set of user IDs this requester is allowed to see — same branching as getAttendanceSummary
+    let scopeUserIds: string[];
+
+    if (requesterRole === 'md') {
+      const allResult = await db.query(
+        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
+      );
+      scopeUserIds = allResult.rows.map((r: any) => r.id);
+    } else if (requesterRole === 'branch_admin') {
+      const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
+      const branchUsers = await db.query(
+        'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
+        [branchId]
+      );
+      scopeUserIds = branchUsers.rows.map((row: any) => row.id);
+    } else if (requesterRole === 'director' || requesterRole === 'gm') {
+      scopeUserIds = await getOversightScopeIds(db, requesterId);
+    } else {
+      // branch_manager, abm — subtree only
+      scopeUserIds = await getSubtreeIds(requesterId);
+    }
+
+    // Aggregate attendance counts grouped by date, status, and mode for the given month/year
+    const result = await db.query(
+      `SELECT
+         date::text AS date,
+         status,
+         mode,
+         COUNT(*)::int AS count
+       FROM attendance
+       WHERE user_id = ANY($1)
+         AND EXTRACT(MONTH FROM date) = $2
+         AND EXTRACT(YEAR FROM date) = $3
+       GROUP BY date, status, mode
+       ORDER BY date ASC`,
+      [scopeUserIds, query.month, query.year]
+    );
+
+    // Collapse multiple rows per date (one per status+mode combination) into a single day object
+    const dayMap: Record<string, any> = {};
+    for (const row of result.rows) {
+      const d = row.date;
+      if (!dayMap[d]) {
+        dayMap[d] = { date: d, present: 0, absent: 0, halfDay: 0, field: 0, office: 0, total: 0 };
+      }
+      dayMap[d].total += row.count;
+      if (row.status === 'present')  dayMap[d].present  += row.count;
+      if (row.status === 'absent')   dayMap[d].absent   += row.count;
+      if (row.status === 'half_day') dayMap[d].halfDay  += row.count;
+      if (row.mode   === 'field')    dayMap[d].field    += row.count;
+      if (row.mode   === 'office')   dayMap[d].office   += row.count;
+    }
+
+    return Object.values(dayMap);
   },
 
   // ─── S3 PRESIGNED URL ───

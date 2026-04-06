@@ -18,10 +18,12 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { clearCredentials } from '../store/slices/authSlice';
 import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
-import { 
-  useGetUsersQuery, 
-  useCreateUserMutation, 
-  useGetBranchesQuery 
+import {
+  useGetUsersQuery,
+  useCreateUserMutation,
+  useGetBranchesQuery,
+  useLazyGetUserOversightBranchesQuery,
+  useUpdateUserOversightBranchesMutation,
 } from '../store/api/apiSlice';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -63,6 +65,13 @@ export const UserManagement = () => {
   const allUsers = allUsersResult.data ?? [];
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
+  const [fetchOversightBranches] = useLazyGetUserOversightBranchesQuery();
+  const [updateOversightBranches, { isLoading: isUpdatingBranches }] = useUpdateUserOversightBranchesMutation();
+
+  // Oversight branch editor state (MD editing Director/GM assignments)
+  const [editOversightUser, setEditOversightUser] = useState(null);
+  const [editBranchIds, setEditBranchIds] = useState([]);
+  const [editBranchError, setEditBranchError] = useState('');
 
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
@@ -117,9 +126,8 @@ export const UserManagement = () => {
     const submissionData = { ...formData };
 
     if (isOversightRole(submissionData.role)) {
-      // Set branchId to the first oversight branch so the user appears in oversight scope JOIN queries.
-      // Without a non-null branch_id, the GM/Director is invisible to their own Director/MD.
-      submissionData.branchId = submissionData.oversightBranchIds[0] || null;
+      // Director/GM have no branch_id — their branch access is through user_oversight_branches only.
+      delete submissionData.branchId;
     } else {
       delete submissionData.oversightBranchIds;
       if (!submissionData.branchId) delete submissionData.branchId;
@@ -142,6 +150,34 @@ export const UserManagement = () => {
       });
     } catch (err) {
       setError(err.data?.error?.message || 'Failed to create user');
+    }
+  };
+
+  const openOversightEditor = async (targetUser) => {
+    setEditBranchError('');
+    setEditOversightUser(targetUser);
+    try {
+      const result = await fetchOversightBranches(targetUser.id).unwrap();
+      setEditBranchIds(result.branchIds ?? []);
+    } catch {
+      setEditBranchIds([]);
+    }
+  };
+
+  const toggleEditBranch = (branchId) => {
+    setEditBranchIds((prev) =>
+      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId]
+    );
+  };
+
+  const handleOversightUpdate = async (e) => {
+    e.preventDefault();
+    setEditBranchError('');
+    try {
+      await updateOversightBranches({ id: editOversightUser.id, branchIds: editBranchIds }).unwrap();
+      setEditOversightUser(null);
+    } catch (err) {
+      setEditBranchError(err.data?.error?.message || 'Failed to update branch assignments');
     }
   };
 
@@ -277,7 +313,17 @@ export const UserManagement = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 shrink-0">
+              <div className="flex items-center gap-3 shrink-0">
+                {user?.role === 'md' && (u.role === 'director' || u.role === 'gm') && (
+                  <button
+                    onClick={() => openOversightEditor(u)}
+                    title="Edit branch assignments"
+                    className="p-2 rounded-xl bg-indigo/5 text-indigo hover:bg-indigo hover:text-white transition-all text-[10px] font-bold flex items-center gap-1.5 tactile-press"
+                  >
+                    <Building2 size={14} />
+                    Branches
+                  </button>
+                )}
                 <div className="text-right flex flex-col items-end gap-2">
                    <StatusChip
                     status={u.role}
@@ -328,9 +374,65 @@ export const UserManagement = () => {
         </div>
       )}
 
+      {/* Oversight Branch Editor Modal (MD only — for Director / GM) */}
+      <GlassModal
+        isOpen={!!editOversightUser}
+        onClose={() => setEditOversightUser(null)}
+        title={`Branch Assignments — ${editOversightUser?.name ?? ''}`}
+      >
+        <form onSubmit={handleOversightUpdate} className="space-y-5 pt-4">
+          {editBranchError && (
+            <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold flex items-center gap-x-2">
+              <XCircle size={18} />
+              {editBranchError}
+            </div>
+          )}
+          <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">
+            {editOversightUser?.role?.replace(/_/g, ' ')} · select all branches this person oversees
+          </p>
+          <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+            {branches.map((b) => (
+              <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded accent-indigo cursor-pointer"
+                  checked={editBranchIds.includes(b.id)}
+                  onChange={() => toggleEditBranch(b.id)}
+                />
+                <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">{b.name}</span>
+              </label>
+            ))}
+            {branches.length === 0 && (
+              <p className="text-xs text-navy/30 text-center py-2">No branches available</p>
+            )}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 border-navy/5 text-navy/40 hover:bg-navy/5"
+              onClick={() => setEditOversightUser(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1 bg-indigo text-white shadow-lg shadow-indigo/20"
+              disabled={isUpdatingBranches}
+            >
+              {isUpdatingBranches ? (
+                <><Loader2 className="animate-spin mr-2" size={18} />Saving...</>
+              ) : (
+                <><CheckCircle2 className="mr-2" size={18} />Save Assignments</>
+              )}
+            </Button>
+          </div>
+        </form>
+      </GlassModal>
+
       {/* Create User Modal */}
-      <GlassModal 
-        isOpen={isModalOpen} 
+      <GlassModal
+        isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Create New User Account"
       >

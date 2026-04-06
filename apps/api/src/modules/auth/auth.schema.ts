@@ -17,6 +17,27 @@ export const LoginSchema = z.object({
 export type LoginInput = z.infer<typeof LoginSchema>;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CHANGE PASSWORD SCHEMA
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Validates the change-password request body — all three fields are required
+export const ChangePasswordSchema = z.object({
+  // The user must prove identity by supplying their current password
+  currentPassword: z.string().min(1, 'Current password is required'),
+  // New password with the same minimum length as the registration constraint
+  newPassword: z.string().min(6, 'New password must be at least 6 characters').max(100),
+  // Repeat field — must match newPassword (validated with .refine below)
+  confirmPassword: z.string().min(6).max(100),
+}).refine((d) => d.newPassword === d.confirmPassword, {
+  // Report the error on the confirmPassword field so the UI can highlight it
+  message: 'New passwords do not match',
+  path: ['confirmPassword'],
+});
+
+// TypeScript type inferred from the Zod schema for use in the service layer
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH RESPONSE INTERFACE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
