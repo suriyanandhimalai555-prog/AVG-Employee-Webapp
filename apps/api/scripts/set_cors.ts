@@ -25,7 +25,7 @@ async function configureCors() {
           {
             AllowedHeaders: ['*'],
             AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-            // Replace with specific production domains when deploying to production
+            // Frontend domains that can access the S3 bucket
             AllowedOrigins: [
               'http://localhost:5173',
               'http://localhost:5174',
@@ -35,8 +35,16 @@ async function configureCors() {
               'http://localhost:5178',
               'http://localhost:5179',
               'http://localhost:4173',
+              'https://ems.avgprimetech.com',
             ],
-            ExposeHeaders: ['ETag'],
+            // Expose these headers so the browser can read S3 responses
+            // ETag is needed for upload confirmations; checksum headers are added by AWS SDK v3
+            ExposeHeaders: [
+              'ETag',
+              'x-amz-checksum-crc32',
+              'x-amz-checksum-sha1',
+              'x-amz-checksum-sha256',
+            ],
             MaxAgeSeconds: 3000,
           },
         ],

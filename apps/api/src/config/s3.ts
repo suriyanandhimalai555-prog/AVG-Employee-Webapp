@@ -28,6 +28,9 @@ export const generateUploadUrl = async (photoKey: string, contentType: string): 
     Key: photoKey,
     // Lock the content type so S3 stores it correctly and browsers render it as an image
     ContentType: contentType,
+    // AWS SDK v3 automatically adds checksums; include SHA256 in the presigned URL
+    // so S3 accepts it when the browser sends the checksum headers
+    ChecksumAlgorithm: 'SHA256',
   });
 
   // Generate and return the signed URL that expires after the configured duration
