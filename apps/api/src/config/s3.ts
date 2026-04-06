@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+  import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from './env';
 import crypto from 'crypto';
@@ -14,6 +14,11 @@ const s3Client = new S3Client({
     // Provide the secret access key from the config
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   },
+  // SDK v3.540+ defaults to WHEN_SUPPORTED which embeds a checksum requirement
+  // into presigned URLs; browsers cannot compute CRC32 so S3 rejects the PUT with 403.
+  // WHEN_REQUIRED disables this for presigned upload URLs used by the frontend.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 });
 
 // Function to generate a presigned URL that allows a client to upload (PUT) a file directly to S3
@@ -28,9 +33,6 @@ export const generateUploadUrl = async (photoKey: string, contentType: string): 
     Key: photoKey,
     // Lock the content type so S3 stores it correctly and browsers render it as an image
     ContentType: contentType,
-    // AWS SDK v3 automatically adds checksums; include SHA256 in the presigned URL
-    // so S3 accepts it when the browser sends the checksum headers
-    ChecksumAlgorithm: 'SHA256',
   });
 
   // Generate and return the signed URL that expires after the configured duration

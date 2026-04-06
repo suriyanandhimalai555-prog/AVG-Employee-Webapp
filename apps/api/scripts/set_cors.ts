@@ -3,10 +3,10 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Load environment variables from the api root
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const region = process.env.AWS_REGION || 'ap-south-2';
-const bucket = process.env.AWS_S3_BUCKET_NAME || 'avg-employee-management-bucket';
+const bucket = process.env.S3_BUCKET_NAME || 'avg-employee-management-bucket';
 
 // Check for required AWS environment variables
 if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {

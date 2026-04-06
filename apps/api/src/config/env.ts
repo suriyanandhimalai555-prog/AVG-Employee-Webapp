@@ -34,7 +34,7 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string(),
   AWS_REGION: z.string(),
   S3_BUCKET_NAME: z.string(),
-  S3_PRESIGN_EXPIRES: z.preprocess((val) => Number(val), z.number().default(300)),
+  S3_PRESIGN_EXPIRES: z.preprocess((val) => Number(val), z.number().default(3600)),
 
   // Server Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
