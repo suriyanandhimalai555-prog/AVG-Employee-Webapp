@@ -445,7 +445,11 @@ export const AttendanceService = {
 
     const [filterResult, rawTodayResult, rawMonthResult] = await Promise.all([
       db.query(
-        `SELECT id FROM users WHERE id = ANY($1) AND role != 'md' AND is_active = true`,
+        `SELECT id
+         FROM users
+         WHERE id = ANY($1)
+           AND role NOT IN ('md', 'client')
+           AND is_active = true`,
         [scopeUserIds]
       ),
       fetchToday
@@ -605,23 +609,32 @@ export const AttendanceService = {
     const page = Math.max(1, filters.page ?? 1);
     // Branch-scoped callers (branch_admin) typically have ≤100 staff — allow up to 200
     const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
+    let baseWhere = `WHERE u.is_active = true AND u.role NOT IN ('md', 'client')`;
+    const params: any[] = [todayStr];
+    let paramIndex = 2;
 
-    const scopeUserIds = await getHierarchyVisibleUserIds(db, {
-      id: requesterId,
-      role: requesterRole,
-      branchId,
-    }, {
-      includeSelf: false,
-      allowAbmBranchFallback: true,
-    });
+    // Branch admin is outside hierarchy visibility; always scope by their resolved branch.
+    if (requesterRole === 'branch_admin') {
+      const resolvedBranchId = await resolveBranchAdminBranchId(db, requesterId, branchId);
+      baseWhere += ` AND u.branch_id = $${paramIndex++}`;
+      params.push(resolvedBranchId);
+    } else {
+      const scopeUserIds = await getHierarchyVisibleUserIds(db, {
+        id: requesterId,
+        role: requesterRole,
+        branchId,
+      }, {
+        includeSelf: false,
+        allowAbmBranchFallback: true,
+      });
 
-    if (scopeUserIds.length === 0) {
-      return { data: [], total: 0, page, limit, totalPages: 0 };
+      if (scopeUserIds.length === 0) {
+        return { data: [], total: 0, page, limit, totalPages: 0 };
+      }
+
+      baseWhere += ` AND u.id = ANY($${paramIndex++}::uuid[])`;
+      params.push(scopeUserIds);
     }
-
-    let baseWhere = `WHERE u.is_active = true AND u.role != 'md' AND u.id = ANY($2::uuid[])`;
-    const params: any[] = [todayStr, scopeUserIds];
-    let paramIndex = 3;
 
     // Optional drill-down: MD/Director viewing one specific branch from the branch list
     if (filters.filterBranchId) {

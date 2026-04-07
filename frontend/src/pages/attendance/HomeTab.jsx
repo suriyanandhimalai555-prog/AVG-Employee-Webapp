@@ -72,12 +72,18 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
-              <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${
-                emp.status === 'present' ? 'text-emerald' :
-                emp.status === 'absent'  ? 'text-red-400'  : 'text-navy/30'
-              }`}>
-                {emp.status ? emp.status.replace('_', ' ') : 'Not marked'}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-navy/35">
+                  {(emp.role ?? '').replace(/_/g, ' ')}
+                </p>
+                <span className="text-[8px] text-navy/20">•</span>
+                <p className={`text-[9px] font-bold uppercase tracking-widest ${
+                  emp.status === 'present' ? 'text-emerald' :
+                  emp.status === 'absent'  ? 'text-red-400'  : 'text-navy/30'
+                }`}>
+                  {emp.status ? emp.status.replace('_', ' ') : 'Not marked'}
+                </p>
+              </div>
             </div>
             <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0" />
           </button>
@@ -326,6 +332,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             </button>
           )}
 
+          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
           <StaffCard onOpen={onOpenUserManagement} />
           <HistoryCalendar
             historyData={teamHistoryData}
