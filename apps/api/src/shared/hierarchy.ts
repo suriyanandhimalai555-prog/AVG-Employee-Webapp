@@ -44,12 +44,11 @@ export const getSubtreeIds = async (userId: string): Promise<string[]> => {
  * Returns all user IDs that a Director or GM can see by combining:
  * 1. Their manager_id subtree (direct reports and below) — may be cached
  * 2. All active users in any branch listed in user_oversight_branches (always live)
- * 3. Peer Directors/GMs who share an oversight branch (always live)
- * 4. GM cascade for Directors: all branch members in branches overseen by any of
- *    this Director's direct GMs (always live). This makes Directors resilient to a
- *    stale subtree cache — the same way GMs are resilient via their own oversight rows.
- *    GMs have user_oversight_branches; Directors do not (seed only puts rows for GMs).
- *    Without this cascade a Director whose hier:subtree:* cache is stale sees only GMs.
+ * 3. GM cascade for Directors: all branch members in branches overseen by any of
+ *    this Director's direct GMs (always live), to stay resilient against stale subtree cache.
+ *
+ * IMPORTANT: peers at the same/higher hierarchy level are explicitly excluded.
+ * Visibility is descendants-only.
  *
  * Uses the shared db pool passed in — does NOT use the singleton to keep
  * this compatible with dependency-injected service calls.
@@ -58,6 +57,24 @@ export const getOversightScopeIds = async (
   poolDb: Pool,
   userId: string,
 ): Promise<string[]> => {
+  const requesterResult = await poolDb.query<{ role: string }>(
+    'SELECT role FROM users WHERE id = $1',
+    [userId]
+  );
+  if (requesterResult.rows.length === 0) {
+    return [];
+  }
+  const requesterRole = requesterResult.rows[0].role;
+
+  // Directors can see roles below director; GMs can see roles below gm.
+  // This prevents visibility of peers (e.g., Director -> Director, GM -> GM).
+  const blockedRoles =
+    requesterRole === 'director'
+      ? ['md', 'director']
+      : requesterRole === 'gm'
+      ? ['md', 'director', 'gm']
+      : ['md'];
+
   // (1) Subtree from manager_id chain — Redis-cached, may lag by up to 1 hour
   const subtreeIds = await getSubtreeIds(userId);
 
@@ -66,24 +83,14 @@ export const getOversightScopeIds = async (
     `SELECT DISTINCT u.id
      FROM user_oversight_branches uob
      JOIN users u ON u.branch_id = uob.branch_id
-     WHERE uob.user_id = $1 AND u.is_active = true`,
-    [userId]
+     WHERE uob.user_id = $1
+       AND u.is_active = true
+       AND u.role != ALL($2::text[])`,
+    [userId, blockedRoles]
   );
   const oversightIds: string[] = oversightResult.rows.map((r: any) => r.id);
 
-  // (3) Peers: other directors/GMs whose oversight branches overlap with this user's.
-  // This ensures a Director can see GMs assigned to the same branches even when
-  // manager_id was not set at creation time.
-  const peerResult = await poolDb.query(
-    `SELECT DISTINCT uob2.user_id
-     FROM user_oversight_branches uob1
-     JOIN user_oversight_branches uob2 ON uob1.branch_id = uob2.branch_id
-     WHERE uob1.user_id = $1 AND uob2.user_id != $1`,
-    [userId]
-  );
-  const peerIds: string[] = peerResult.rows.map((r: any) => r.user_id);
-
-  // (4) GM cascade: for Directors who have no direct oversight branch rows of their own,
+  // (3) GM cascade: for Directors who have no direct oversight branch rows of their own,
   // also include every active user in any branch overseen by a direct GM under this user.
   // This is always a live query — it fills the gap when the subtree cache is stale and
   // would otherwise hide BM / ABM / SO who were added after the cache was populated.
@@ -92,13 +99,16 @@ export const getOversightScopeIds = async (
      FROM users gm
      JOIN user_oversight_branches uob ON uob.user_id = gm.id
      JOIN users u ON u.branch_id = uob.branch_id
-     WHERE gm.manager_id = $1 AND gm.role = 'gm' AND u.is_active = true`,
-    [userId]
+     WHERE gm.manager_id = $1
+       AND gm.role = 'gm'
+       AND u.is_active = true
+       AND u.role != ALL($2::text[])`,
+    [userId, blockedRoles]
   );
   const gmCascadeIds: string[] = gmCascadeResult.rows.map((r: any) => r.id);
 
   // Union — deduplicate using Set
-  return [...new Set([...subtreeIds, ...oversightIds, ...peerIds, ...gmCascadeIds])];
+  return [...new Set([...subtreeIds, ...oversightIds, ...gmCascadeIds])];
 };
 
 // Walks the manager_id chain upward from userId and busts hier:subtree:{id} for every ancestor.

@@ -99,13 +99,20 @@ export const UserManagement = () => {
   const [error, setError] = useState('');
 
   const isOversightRole = (role) => role === 'director' || role === 'gm';
+  const managerRoleMap = {
+    director: ['md'],
+    gm: ['director'],
+    branch_manager: ['gm', 'director'],
+    abm: ['branch_manager'],
+    sales_officer: ['abm', 'branch_manager'],
+    client: ['sales_officer', 'abm', 'branch_manager'],
+  };
+  const needsManager = (role) => Array.isArray(managerRoleMap[role]);
+  const managerRequiredRoles = new Set(['director', 'gm', 'abm', 'sales_officer', 'client']);
 
-  // Directors report to MD; GMs report to a Director
-  const managerOptions = formData.role === 'director'
-    ? allUsers.filter(u => u.role === 'md')
-    : formData.role === 'gm'
-      ? allUsers.filter(u => u.role === 'director')
-      : [];
+  const managerOptions = needsManager(formData.role)
+    ? allUsers.filter(u => managerRoleMap[formData.role].includes(u.role))
+    : [];
 
   const toggleOversightBranch = (branchId) => {
     setFormData((prev) => {
@@ -204,6 +211,17 @@ export const UserManagement = () => {
     ? allRoles.filter((r) => (creatableRoles[user.role] ?? []).includes(r.value))
     : [];
 
+  // Filter options should follow visible directory data, not create permissions.
+  const filterRoles = Array.from(
+    new Set((allUsers ?? []).map((u) => u.role).filter(Boolean))
+  )
+    .filter((role) => role !== 'md')
+    .sort()
+    .map((role) => ({
+      value: role,
+      label: role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    }));
+
   if (isUsersLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -280,7 +298,7 @@ export const UserManagement = () => {
           onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(1); }}
         >
           <option value="">Filter by Role</option>
-          {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          {filterRoles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
       </div>
 
@@ -487,14 +505,14 @@ export const UserManagement = () => {
                 </select>
               </div>
 
-              {/* Director / GM: pick their direct manager */}
-              {isOversightRole(formData.role) && (
+              {/* Roles in reporting chain: pick direct manager */}
+              {needsManager(formData.role) && (
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Reports To <span className="text-red-400">*</span>
                   </label>
                   <select
-                    required
+                    required={managerRequiredRoles.has(formData.role)}
                     className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                     value={formData.managerId}
                     onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
@@ -506,7 +524,7 @@ export const UserManagement = () => {
                   </select>
                   {managerOptions.length === 0 && (
                     <p className="text-[10px] text-amber-500 font-bold ml-1">
-                      No {formData.role === 'gm' ? 'directors' : 'MD'} found — create one first
+                      No valid manager found for this role in your visible hierarchy
                     </p>
                   )}
                 </div>

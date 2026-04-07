@@ -73,15 +73,27 @@ export async function resolveEmployeeDashboardScope(
   // Using jwtBranchId here would restrict them to their own branch only, which breaks
   // filterBranchId drill-down when the clicked branch differs from their own.
   if (role === 'gm' || role === 'director') {
-    const userIds = await getOversightScopeIds(db, id);
+    const userIds = (await getOversightScopeIds(db, id)).filter((userId) => userId !== id);
     return { kind: 'subtree', userIds };
   }
 
-  if (jwtBranchId) {
-    return { kind: 'branch', branchId: jwtBranchId };
+  // ABM should primarily see strict descendants via manager_id hierarchy.
+  // If hierarchy links are not yet wired for their team, fallback to branch scope;
+  // the caller applies a role guard so ABM only sees roles below ABM.
+  if (role === 'abm') {
+    const userIds = (await getSubtreeIds(id)).filter((userId) => userId !== id);
+    if (userIds.length > 0) {
+      return { kind: 'subtree', userIds };
+    }
+    if (jwtBranchId) {
+      return { kind: 'branch', branchId: jwtBranchId };
+    }
+    return { kind: 'subtree', userIds: [] };
   }
 
-  const userIds = await getSubtreeIds(id);
+  // For branch_manager / abm / sales_officer / client use strict descendants-only subtree.
+  // Do not widen to full branch by JWT branchId, which can expose managers/peers.
+  const userIds = (await getSubtreeIds(id)).filter((userId) => userId !== id);
   return { kind: 'subtree', userIds };
 }
 

@@ -5,8 +5,8 @@ import Redis from 'ioredis';
 import { generateUploadUrl, generatePhotoKey, generateDownloadUrl } from '../../config/s3';
 // Import the queue functions that push attendance and sign-off jobs to the background worker
 import { addAttendanceJob, addSignOffJob } from './attendance.queue';
-// Import hierarchy helpers for subordinate and oversight-branch scope resolution
-import { getSubtreeIds, getOversightScopeIds } from '../../shared/hierarchy';
+// Import hierarchy helpers for subordinate checks in admin actions
+import { getSubtreeIds } from '../../shared/hierarchy';
 // Import permission assertion functions that throw ForbiddenError on failure
 import {
   assertCanMarkAttendance,
@@ -17,8 +17,8 @@ import {
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../shared/errors';
 import {
   resolveBranchAdminBranchId,
-  resolveEmployeeDashboardScope,
 } from '../../shared/attendance-scope';
+import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 // Import the timezone-aware date helper so all "today" values use IST, not server UTC
 import { getCompanyToday } from '../../shared/date';
 // Import the TypeScript types inferred from the Zod schemas for type-safe function parameters
@@ -285,29 +285,14 @@ export const AttendanceService = {
     requesterBranchId: string | null,
     query: GetAttendanceQuery
   ): Promise<{ data: any[]; pagination: object }> {
-    let scopeUserIds: string[];
-
-    if (requesterRole === 'md') {
-      const allResult = await db.query(
-        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
-      );
-      scopeUserIds = allResult.rows.map((r: any) => r.id);
-    } else if (requesterRole === 'branch_admin') {
-      const branchId = await resolveBranchAdminBranchId(
-        db,
-        requesterId,
-        requesterBranchId
-      );
-      const branchUsers = await db.query(
-        'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
-        [branchId]
-      );
-      scopeUserIds = branchUsers.rows.map((row: any) => row.id);
-    } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      scopeUserIds = await getOversightScopeIds(db, requesterId);
-    } else {
-      scopeUserIds = await getSubtreeIds(requesterId);
-    }
+    const scopeUserIds = await getHierarchyVisibleUserIds(db, {
+      id: requesterId,
+      role: requesterRole,
+      branchId: requesterBranchId,
+    }, {
+      includeSelf: requesterRole === 'sales_officer',
+      allowAbmBranchFallback: true,
+    });
 
     const params: any[] = [scopeUserIds];
     let paramIndex = 2;
@@ -393,29 +378,27 @@ export const AttendanceService = {
           throw new ForbiddenError('You do not have access to this employee record');
         }
       } else if (requesterRole === 'director' || requesterRole === 'gm') {
-        // Director / GM see their manager_id subtree + all oversight branch members
-        const scopeIds = await getOversightScopeIds(db, requesterId);
+        const scopeIds = await getHierarchyVisibleUserIds(db, {
+          id: requesterId,
+          role: requesterRole,
+          branchId: requesterBranchId,
+        }, {
+          includeSelf: false,
+          allowAbmBranchFallback: true,
+        });
         if (!scopeIds.includes(targetUserId)) {
           throw new ForbiddenError('You do not have access to this employee record');
         }
       } else {
-        // branch_manager / abm: use the same scope resolveEmployeeDashboardScope uses in
-        // getBranchEmployees so that clicking any employee visible in the list never returns 403.
-        const scope = await resolveEmployeeDashboardScope(db, {
+        const scopeUserIds = await getHierarchyVisibleUserIds(db, {
           id: requesterId,
           role: requesterRole,
           branchId: requesterBranchId,
+        }, {
+          includeSelf: false,
+          allowAbmBranchFallback: true,
         });
-        let allowed = false;
-        if (scope.kind === 'branch') {
-          const r = await db.query(
-            'SELECT 1 FROM users WHERE id = $1 AND branch_id = $2',
-            [targetUserId, scope.branchId]
-          );
-          allowed = r.rows.length > 0;
-        } else if (scope.kind === 'subtree') {
-          allowed = scope.userIds.includes(targetUserId);
-        }
+        const allowed = scopeUserIds.includes(targetUserId);
         if (!allowed) {
           throw new ForbiddenError('You do not have access to this employee record');
         }
@@ -446,31 +429,14 @@ export const AttendanceService = {
     requesterBranchId: string | null,
     date: string
   ): Promise<object> {
-    let scopeUserIds: string[];
-
-    if (requesterRole === 'md') {
-      // MD sees the entire organisation — skip the subtree CTE entirely
-      const allResult = await db.query(
-        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
-      );
-      scopeUserIds = allResult.rows.map((r: any) => r.id);
-    } else if (requesterRole === 'branch_admin') {
-      const branchId = await resolveBranchAdminBranchId(
-        db,
-        requesterId,
-        requesterBranchId
-      );
-      const branchUsers = await db.query(
-        'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
-        [branchId]
-      );
-      scopeUserIds = branchUsers.rows.map((row: any) => row.id);
-    } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      // Director / GM see their subtree + all users in oversight branches
-      scopeUserIds = await getOversightScopeIds(db, requesterId);
-    } else {
-      scopeUserIds = await getSubtreeIds(requesterId);
-    }
+    const scopeUserIds = await getHierarchyVisibleUserIds(db, {
+      id: requesterId,
+      role: requesterRole,
+      branchId: requesterBranchId,
+    }, {
+      includeSelf: requesterRole === 'sales_officer',
+      allowAbmBranchFallback: true,
+    });
 
     // Round 1: fetch filtered user list, requester's today record, and monthly stats in parallel.
     // today and myMonth only depend on requesterId/date — independent of scopeUserIds.
@@ -640,30 +606,22 @@ export const AttendanceService = {
     // Branch-scoped callers (branch_admin) typically have ≤100 staff — allow up to 200
     const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
 
-    const scope = await resolveEmployeeDashboardScope(db, {
+    const scopeUserIds = await getHierarchyVisibleUserIds(db, {
       id: requesterId,
       role: requesterRole,
       branchId,
+    }, {
+      includeSelf: false,
+      allowAbmBranchFallback: true,
     });
 
-    if (scope.kind === 'subtree' && scope.userIds.length === 0) {
+    if (scopeUserIds.length === 0) {
       return { data: [], total: 0, page, limit, totalPages: 0 };
     }
 
-    let baseWhere = `WHERE u.is_active = true AND u.role != 'md'`;
-    const params: any[] = [todayStr];
-    let paramIndex = 2;
-
-    if (scope.kind === 'branch') {
-      baseWhere += ` AND u.branch_id = $${paramIndex++}`;
-      params.push(scope.branchId);
-    } else if (scope.kind === 'subtree') {
-      baseWhere += ` AND u.id = ANY($${paramIndex++}::uuid[])`;
-      params.push(scope.userIds);
-    } else {
-      // global_exclude_md — already excluded above
-      baseWhere += ` AND u.branch_id IS NOT NULL`;
-    }
+    let baseWhere = `WHERE u.is_active = true AND u.role != 'md' AND u.id = ANY($2::uuid[])`;
+    const params: any[] = [todayStr, scopeUserIds];
+    let paramIndex = 3;
 
     // Optional drill-down: MD/Director viewing one specific branch from the branch list
     if (filters.filterBranchId) {
@@ -910,26 +868,14 @@ export const AttendanceService = {
     query: UserHistoryQuery
   ): Promise<any[]> {
     // Resolve the set of user IDs this requester is allowed to see — same branching as getAttendanceSummary
-    let scopeUserIds: string[];
-
-    if (requesterRole === 'md') {
-      const allResult = await db.query(
-        `SELECT id FROM users WHERE role != 'md' AND is_active = true`
-      );
-      scopeUserIds = allResult.rows.map((r: any) => r.id);
-    } else if (requesterRole === 'branch_admin') {
-      const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
-      const branchUsers = await db.query(
-        'SELECT id FROM users WHERE branch_id = $1 AND is_active = true',
-        [branchId]
-      );
-      scopeUserIds = branchUsers.rows.map((row: any) => row.id);
-    } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      scopeUserIds = await getOversightScopeIds(db, requesterId);
-    } else {
-      // branch_manager, abm — subtree only
-      scopeUserIds = await getSubtreeIds(requesterId);
-    }
+    const scopeUserIds = await getHierarchyVisibleUserIds(db, {
+      id: requesterId,
+      role: requesterRole,
+      branchId: requesterBranchId,
+    }, {
+      includeSelf: requesterRole === 'sales_officer',
+      allowAbmBranchFallback: true,
+    });
 
     // Aggregate attendance counts grouped by date, status, and mode for the given month/year
     const result = await db.query(

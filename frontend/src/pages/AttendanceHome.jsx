@@ -115,9 +115,9 @@ export const AttendanceHome = () => {
           {activeTab === 'money'  && <MoneyTab />}
           {activeTab === 'alerts' && <AlertsTab />}
         </AnimatePresence>
-
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
       </div>
+
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
     </div>
   );
 }

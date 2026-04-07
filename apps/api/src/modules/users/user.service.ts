@@ -4,7 +4,9 @@ import bcrypt from 'bcrypt';
 import { CreateUserInput, UserResponse, UpdateOversightBranchesInput } from './user.schema';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
-import { getOversightScopeIds, bustHierarchyCache } from '../../shared/hierarchy';
+import { bustHierarchyCache } from '../../shared/hierarchy';
+import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
+import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
 
 export const UserService = {
 
@@ -65,6 +67,16 @@ export const UserService = {
     if (payload.role === 'director' || payload.role === 'gm') {
       payload.branchId = null;
     }
+
+    // Centralized hierarchy validation for manager_id assignment.
+    payload.managerId = await resolveAndValidateManagerId(db, {
+      id: requesterId,
+      role: requesterRole,
+    }, {
+      role: payload.role,
+      managerId: payload.managerId ?? null,
+      branchId: payload.branchId ?? null,
+    });
 
     const result = await db.query(
       `INSERT INTO users (
@@ -240,13 +252,29 @@ export const UserService = {
       conditions.push(`u.branch_id = $${paramIndex++}`);
       params.push(branchId);
     } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      const scopeIds = await getOversightScopeIds(db, requesterId);
+      const scopeIds = await getHierarchyVisibleUserIds(db, {
+        id: requesterId,
+        role: requesterRole,
+        branchId: requesterBranchId,
+      }, {
+        includeSelf: false,
+        allowAbmBranchFallback: true,
+      });
       if (scopeIds.length === 0) return { data: [], total: 0, page, limit, totalPages: 0 };
       conditions.push(`u.id = ANY($${paramIndex++}::uuid[])`);
       params.push(scopeIds);
-    } else if (queryParams.branchId) {
-      conditions.push(`u.branch_id = $${paramIndex++}`);
-      params.push(queryParams.branchId);
+    } else {
+      const scopeIds = await getHierarchyVisibleUserIds(db, {
+        id: requesterId,
+        role: requesterRole,
+        branchId: requesterBranchId,
+      }, {
+        includeSelf: false,
+        allowAbmBranchFallback: true,
+      });
+      if (scopeIds.length === 0) return { data: [], total: 0, page, limit, totalPages: 0 };
+      conditions.push(`u.id = ANY($${paramIndex++}::uuid[])`);
+      params.push(scopeIds);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

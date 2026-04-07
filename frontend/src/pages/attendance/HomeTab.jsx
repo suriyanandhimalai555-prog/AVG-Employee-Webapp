@@ -48,6 +48,45 @@ const TeamStatsCard = ({ summary, isLoading, thirdStat }) => (
   </Card>
 );
 
+const TEAM_LIST_ROLES = ['abm', 'branch_manager'];
+
+const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) => {
+  if (!members.length) return null;
+  return (
+    <div className="px-6 pb-4">
+      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
+        {title}
+      </p>
+      <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
+        {members.map((emp) => (
+          <button
+            key={emp.id}
+            onClick={() => onOpenCalendar?.(emp)}
+            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
+          >
+            <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
+              <img
+                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=0B1C30&color=fff&size=32`}
+                alt=""
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
+              <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${
+                emp.status === 'present' ? 'text-emerald' :
+                emp.status === 'absent'  ? 'text-red-400'  : 'text-navy/30'
+              }`}>
+                {emp.status ? emp.status.replace('_', ' ') : 'Not marked'}
+              </p>
+            </div>
+            <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCalendar, onBranchSelect }) => {
   const user = useSelector(selectCurrentUser);
 
@@ -73,7 +112,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
   // Fetched for branch_admin (needs "needs action" count) and abm (team list)
   const { data: employeesResult, isLoading: empLoading } = useGetEmployeesQuery(
     { viewerId: user?.id },
-    { skip: !user?.id || !['branch_admin', 'abm'].includes(user?.role) },
+    { skip: !user?.id || !['branch_admin', ...TEAM_LIST_ROLES].includes(user?.role) },
   );
 
   const todayRecord = summary?.today ?? null;
@@ -84,6 +123,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
 
   // employeesResult is { data: [], total, ... } — extract the array before filtering
   const needsActionCount = (employeesResult?.data ?? []).filter((e) => !e.has_smartphone && !e.status).length;
+  const teamMembers = employeesResult?.data ?? [];
 
   return (
     <motion.div
@@ -134,39 +174,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
           <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
 
           {/* Team list — Sales Officers under this ABM */}
-          {(employeesResult?.data?.length > 0) && (
-            <div className="px-6 pb-4">
-              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
-                My Team
-              </p>
-              <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
-                {(employeesResult?.data ?? []).map((emp) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => onOpenCalendar?.(emp)}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
-                      <img
-                        src={`https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=0B1C30&color=fff&size=32`}
-                        alt=""
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
-                      <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${
-                        emp.status === 'present' ? 'text-emerald' :
-                        emp.status === 'absent'  ? 'text-red-400'  : 'text-navy/30'
-                      }`}>
-                        {emp.status ? emp.status.replace('_', ' ') : 'Not marked'}
-                      </p>
-                    </div>
-                    <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
 
           <div className="px-6 pb-32">
             <HistoryCalendar
@@ -210,6 +218,8 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             </div>
             <ArrowRight size={16} className="text-navy/25 transition-all duration-300 group-hover:text-navy/50 group-hover:translate-x-1 shrink-0" />
           </button>
+
+          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"
