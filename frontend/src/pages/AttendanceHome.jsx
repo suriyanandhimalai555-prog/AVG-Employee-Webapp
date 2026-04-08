@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { AnimatePresence } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { BottomNav } from '../components/attendance/BottomNav';
 import { HomeTab } from './attendance/HomeTab';
@@ -30,6 +31,7 @@ import { selectCurrentUser } from '../store/slices/authSlice';
 
 export const AttendanceHome = () => {
   const user = useSelector(selectCurrentUser);
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('home');
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [calendarEmployee, setCalendarEmployee] = useState(null);
@@ -107,6 +109,7 @@ export const AttendanceHome = () => {
               onOpenUserManagement={() => setShowUserManagement(true)}
               onOpenCalendar={(emp) => setCalendarEmployee(emp)}
               onBranchSelect={(branch) => setSelectedBranch(branch)}
+              onOpenLeadershipList={(kind) => navigate(`/leadership/${kind}`)}
             />
           )}
           {activeTab === 'attendance' && (

@@ -96,13 +96,67 @@ export const UserService = {
 
     const newUserId: string = result.rows[0].id;
 
-    // For Director/GM, insert their oversight branch assignments
-    if (['director', 'gm'].includes(payload.role) && payload.oversightBranchIds?.length) {
+    // GM gets direct oversight branch assignments.
+    if (payload.role === 'gm' && payload.oversightBranchIds?.length) {
       for (const branchId of payload.oversightBranchIds) {
         await db.query(
           `INSERT INTO user_oversight_branches (user_id, branch_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING`,
           [newUserId, branchId]
+        );
+      }
+    }
+
+    // If a GM reports to a Director via manager_id, persist the explicit GM↔Director link too.
+    // This keeps MD assignment UI (which reads gm_director_links) in sync with hierarchy creation.
+    if (payload.role === 'gm' && payload.managerId) {
+      const managerRoleResult = await db.query<{ role: string }>(
+        `SELECT role FROM users WHERE id = $1`,
+        [payload.managerId]
+      );
+      if (managerRoleResult.rows[0]?.role === 'director') {
+        await db.query(
+          `INSERT INTO gm_director_links (gm_id, director_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [newUserId, payload.managerId]
+        );
+      }
+    }
+
+    // Director gets assigned to selected GMs, then inherits the combined GM branch scope.
+    if (payload.role === 'director' && payload.oversightGmIds?.length) {
+      const gmValidation = await db.query<{ id: string }>(
+        `SELECT id
+         FROM users
+         WHERE id = ANY($1::uuid[])
+           AND role = 'gm'
+           AND is_active = true`,
+        [payload.oversightGmIds]
+      );
+      if (gmValidation.rows.length !== payload.oversightGmIds.length) {
+        throw new NotFoundError('One or more selected GMs were not found');
+      }
+
+      for (const gmId of payload.oversightGmIds) {
+        await db.query(
+          `INSERT INTO gm_director_links (gm_id, director_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [gmId, newUserId]
+        );
+      }
+
+      const gmBranches = await db.query<{ branch_id: string }>(
+        `SELECT DISTINCT branch_id
+         FROM user_oversight_branches
+         WHERE user_id = ANY($1::uuid[])
+           AND branch_id IS NOT NULL`,
+        [payload.oversightGmIds]
+      );
+      for (const row of gmBranches.rows) {
+        await db.query(
+          `INSERT INTO user_oversight_branches (user_id, branch_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [newUserId, row.branch_id]
         );
       }
     }
@@ -149,7 +203,7 @@ export const UserService = {
     _requesterId: string,
     requesterRole: string,
     targetUserId: string
-  ): Promise<{ branchIds: string[] }> {
+  ): Promise<{ branchIds: string[]; gmIds: string[] }> {
     if (requesterRole !== 'md') {
       throw new ForbiddenError('Only MD can view oversight branch assignments');
     }
@@ -165,12 +219,32 @@ export const UserService = {
       throw new ForbiddenError('Oversight branches only apply to Director and GM roles');
     }
 
-    const result = await db.query(
+    const branchResult = await db.query(
       `SELECT branch_id FROM user_oversight_branches WHERE user_id = $1 ORDER BY branch_id`,
       [targetUserId]
     );
 
-    return { branchIds: result.rows.map((r: any) => r.branch_id) };
+    const gmResult = await db.query(
+      `SELECT DISTINCT gm_id
+       FROM (
+         SELECT gdl.gm_id
+         FROM gm_director_links gdl
+         WHERE gdl.director_id = $1
+         UNION
+         SELECT u.id AS gm_id
+         FROM users u
+         WHERE u.role = 'gm'
+           AND u.manager_id = $1
+           AND u.is_active = true
+       ) x
+       ORDER BY gm_id`,
+      [targetUserId]
+    );
+
+    return {
+      branchIds: branchResult.rows.map((r: any) => r.branch_id),
+      gmIds: gmResult.rows.map((r: any) => r.gm_id),
+    };
   },
 
   // Replace the full set of oversight branches for a Director or GM (MD only)
@@ -196,14 +270,62 @@ export const UserService = {
       throw new ForbiddenError('Oversight branches only apply to Director and GM roles');
     }
 
-    // Delete all existing oversight rows then re-insert the new set atomically
-    await db.query(`DELETE FROM user_oversight_branches WHERE user_id = $1`, [targetUserId]);
+    const targetRole = targetResult.rows[0].role;
 
-    for (const branchId of payload.branchIds) {
-      await db.query(
-        `INSERT INTO user_oversight_branches (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [targetUserId, branchId]
-      );
+    // GM keeps direct branch assignments.
+    if (targetRole === 'gm') {
+      await db.query(`DELETE FROM user_oversight_branches WHERE user_id = $1`, [targetUserId]);
+      for (const branchId of payload.branchIds) {
+        await db.query(
+          `INSERT INTO user_oversight_branches (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [targetUserId, branchId]
+        );
+      }
+    }
+
+    // Director uses GM links and inherited branch scope from those GMs.
+    if (targetRole === 'director') {
+      const gmIds = payload.gmIds ?? [];
+      if (gmIds.length > 0) {
+        const gmValidation = await db.query<{ id: string }>(
+          `SELECT id
+           FROM users
+           WHERE id = ANY($1::uuid[])
+             AND role = 'gm'
+             AND is_active = true`,
+          [gmIds]
+        );
+        if (gmValidation.rows.length !== gmIds.length) {
+          throw new NotFoundError('One or more selected GMs were not found');
+        }
+      }
+
+      await db.query(`DELETE FROM gm_director_links WHERE director_id = $1`, [targetUserId]);
+      await db.query(`DELETE FROM user_oversight_branches WHERE user_id = $1`, [targetUserId]);
+
+      for (const gmId of gmIds) {
+        await db.query(
+          `INSERT INTO gm_director_links (gm_id, director_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [gmId, targetUserId]
+        );
+      }
+
+      if (gmIds.length > 0) {
+        const gmBranches = await db.query<{ branch_id: string }>(
+          `SELECT DISTINCT branch_id
+           FROM user_oversight_branches
+           WHERE user_id = ANY($1::uuid[])
+             AND branch_id IS NOT NULL`,
+          [gmIds]
+        );
+
+        for (const row of gmBranches.rows) {
+          await db.query(
+            `INSERT INTO user_oversight_branches (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [targetUserId, row.branch_id]
+          );
+        }
+      }
     }
 
     // Bust cache so the Director/GM immediately sees their new scope

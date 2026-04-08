@@ -1,10 +1,13 @@
 import { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { AttendanceHome } from './pages/AttendanceHome';
+import { PersonAttendancePage } from './pages/PersonAttendancePage';
+import { LeadershipListPage } from './pages/LeadershipListPage';
 import { Login } from './pages/Login';
-import { UserCircle, ShieldCheck, LogOut, Loader2 } from 'lucide-react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { selectCurrentUser, selectIsAuthenticated, clearCredentials } from './store/slices/authSlice';
-import { apiSlice, useGetMeQuery, useLogoutMutation } from './store/api/apiSlice';
+import { useGetMeQuery } from './store/api/apiSlice';
 
 function App() {
   const dispatch = useDispatch();
@@ -23,18 +26,6 @@ function App() {
     }
   }, [isMeError, dispatch]);
 
-  const [logoutApi] = useLogoutMutation();
-
-  const handleLogout = async () => {
-    try {
-      await logoutApi().unwrap();
-    } catch {
-      /* still clear local session */
-    }
-    dispatch(apiSlice.util.resetApiState());
-    dispatch(clearCredentials());
-  };
-
   // Show spinner only while verifying an existing token
   if (isAuthenticated && isMeLoading) {
     return (
@@ -48,15 +39,13 @@ function App() {
     return <Login />;
   }
 
-  const isAdmin = ['branch_admin', 'gm', 'md', 'director', 'branch_manager'].includes(user.role);
-
   return (
-    <div className="relative">
-      {/* All authenticated roles land on AttendanceHome — bottom nav controls sub-views */}
-      <main>
-        <AttendanceHome />
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={<AttendanceHome />} />
+      <Route path="/leadership/:kind" element={<LeadershipListPage />} />
+      <Route path="/people/:userId" element={<PersonAttendancePage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

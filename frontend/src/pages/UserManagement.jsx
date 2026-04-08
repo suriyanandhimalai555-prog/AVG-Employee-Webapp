@@ -71,6 +71,7 @@ export const UserManagement = () => {
   // Oversight branch editor state (MD editing Director/GM assignments)
   const [editOversightUser, setEditOversightUser] = useState(null);
   const [editBranchIds, setEditBranchIds] = useState([]);
+  const [editGmIds, setEditGmIds] = useState([]);
   const [editBranchError, setEditBranchError] = useState('');
 
   const dispatch = useDispatch();
@@ -93,6 +94,7 @@ export const UserManagement = () => {
     branchId: '',
     managerId: '',
     oversightBranchIds: [],
+    oversightGmIds: [],
     hasSmartphone: true,
   });
 
@@ -111,8 +113,25 @@ export const UserManagement = () => {
   const managerRequiredRoles = new Set(['director', 'gm', 'abm', 'sales_officer', 'client']);
 
   const managerOptions = needsManager(formData.role)
-    ? allUsers.filter(u => managerRoleMap[formData.role].includes(u.role))
+    ? (() => {
+        const allowedRoles = managerRoleMap[formData.role] ?? [];
+        const visible = allUsers.filter((u) => allowedRoles.includes(u.role));
+        // Fallback: include the logged-in user when they are a valid manager role
+        // but not present in the fetched list (pagination/cache timing edge cases).
+        if (user?.id && user?.name && allowedRoles.includes(user.role) && !visible.some((u) => u.id === user.id)) {
+          return [
+            ...visible,
+            {
+              id: user.id,
+              name: user.name,
+              role: user.role,
+            },
+          ];
+        }
+        return visible;
+      })()
     : [];
+  const gmOptions = allUsers.filter((u) => u.role === 'gm');
 
   const toggleOversightBranch = (branchId) => {
     setFormData((prev) => {
@@ -126,6 +145,18 @@ export const UserManagement = () => {
     });
   };
 
+  const toggleOversightGm = (gmId) => {
+    setFormData((prev) => {
+      const ids = prev.oversightGmIds;
+      return {
+        ...prev,
+        oversightGmIds: ids.includes(gmId)
+          ? ids.filter((id) => id !== gmId)
+          : [...ids, gmId],
+      };
+    });
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setError('');
@@ -133,10 +164,16 @@ export const UserManagement = () => {
     const submissionData = { ...formData };
 
     if (isOversightRole(submissionData.role)) {
-      // Director/GM have no branch_id — their branch access is through user_oversight_branches only.
+      // Director/GM have no branch_id — their branch access is through oversight mappings.
       delete submissionData.branchId;
+      if (submissionData.role === 'director') {
+        delete submissionData.oversightBranchIds;
+      } else {
+        delete submissionData.oversightGmIds;
+      }
     } else {
       delete submissionData.oversightBranchIds;
+      delete submissionData.oversightGmIds;
       if (!submissionData.branchId) delete submissionData.branchId;
     }
 
@@ -153,6 +190,7 @@ export const UserManagement = () => {
         branchId: '',
         managerId: '',
         oversightBranchIds: [],
+        oversightGmIds: [],
         hasSmartphone: true,
       });
     } catch (err) {
@@ -166,8 +204,10 @@ export const UserManagement = () => {
     try {
       const result = await fetchOversightBranches(targetUser.id).unwrap();
       setEditBranchIds(result.branchIds ?? []);
+      setEditGmIds(result.gmIds ?? []);
     } catch {
       setEditBranchIds([]);
+      setEditGmIds([]);
     }
   };
 
@@ -177,11 +217,21 @@ export const UserManagement = () => {
     );
   };
 
+  const toggleEditGm = (gmId) => {
+    setEditGmIds((prev) =>
+      prev.includes(gmId) ? prev.filter((id) => id !== gmId) : [...prev, gmId]
+    );
+  };
+
   const handleOversightUpdate = async (e) => {
     e.preventDefault();
     setEditBranchError('');
     try {
-      await updateOversightBranches({ id: editOversightUser.id, branchIds: editBranchIds }).unwrap();
+      await updateOversightBranches({
+        id: editOversightUser.id,
+        branchIds: editBranchIds,
+        gmIds: editGmIds,
+      }).unwrap();
       setEditOversightUser(null);
     } catch (err) {
       setEditBranchError(err.data?.error?.message || 'Failed to update branch assignments');
@@ -335,11 +385,11 @@ export const UserManagement = () => {
                 {user?.role === 'md' && (u.role === 'director' || u.role === 'gm') && (
                   <button
                     onClick={() => openOversightEditor(u)}
-                    title="Edit branch assignments"
+                    title={u.role === 'director' ? 'Edit GM assignments' : 'Edit branch assignments'}
                     className="p-2 rounded-xl bg-indigo/5 text-indigo hover:bg-indigo hover:text-white transition-all text-[10px] font-bold flex items-center gap-1.5 tactile-press"
                   >
                     <Building2 size={14} />
-                    Branches
+                    {u.role === 'director' ? 'GMs' : 'Branches'}
                   </button>
                 )}
                 <div className="text-right flex flex-col items-end gap-2">
@@ -406,24 +456,47 @@ export const UserManagement = () => {
             </div>
           )}
           <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest">
-            {editOversightUser?.role?.replace(/_/g, ' ')} · select all branches this person oversees
+            {editOversightUser?.role === 'director'
+              ? 'director · select GMs this director oversees through'
+              : `${editOversightUser?.role?.replace(/_/g, ' ')} · select all branches this person oversees`}
           </p>
-          <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
-            {branches.map((b) => (
-              <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 rounded accent-indigo cursor-pointer"
-                  checked={editBranchIds.includes(b.id)}
-                  onChange={() => toggleEditBranch(b.id)}
-                />
-                <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">{b.name}</span>
-              </label>
-            ))}
-            {branches.length === 0 && (
-              <p className="text-xs text-navy/30 text-center py-2">No branches available</p>
-            )}
-          </div>
+          {editOversightUser?.role === 'director' ? (
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+              {gmOptions.map((gm) => (
+                <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded accent-indigo cursor-pointer"
+                    checked={editGmIds.includes(gm.id)}
+                    onChange={() => toggleEditGm(gm.id)}
+                  />
+                  <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">
+                    {gm.name}
+                  </span>
+                </label>
+              ))}
+              {gmOptions.length === 0 && (
+                <p className="text-xs text-navy/30 text-center py-2">No GMs available</p>
+              )}
+            </div>
+          ) : (
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+              {branches.map((b) => (
+                <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded accent-indigo cursor-pointer"
+                    checked={editBranchIds.includes(b.id)}
+                    onChange={() => toggleEditBranch(b.id)}
+                  />
+                  <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">{b.name}</span>
+                </label>
+              ))}
+              {branches.length === 0 && (
+                <p className="text-xs text-navy/30 text-center py-2">No branches available</p>
+              )}
+            </div>
+          )}
           <div className="flex gap-3 pt-2">
             <Button
               type="button"
@@ -499,7 +572,7 @@ export const UserManagement = () => {
                 <select
                   className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value, branchId: '', managerId: '', oversightBranchIds: [] })}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value, branchId: '', managerId: '', oversightBranchIds: [], oversightGmIds: [] })}
                 >
                   {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
@@ -530,8 +603,38 @@ export const UserManagement = () => {
                 </div>
               )}
 
-              {/* Director / GM: pick multiple oversight branches */}
-              {isOversightRole(formData.role) && (
+              {/* Director: pick one or more GMs; Director branch visibility is inherited from selected GMs */}
+              {formData.role === 'director' && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                    Assigned GMs <span className="text-red-400">*</span>
+                  </label>
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+                    {gmOptions.map((gm) => (
+                      <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded accent-indigo cursor-pointer"
+                          checked={formData.oversightGmIds.includes(gm.id)}
+                          onChange={() => toggleOversightGm(gm.id)}
+                        />
+                        <span className="text-sm font-bold text-navy group-hover:text-indigo transition-colors">
+                          {gm.name}
+                        </span>
+                      </label>
+                    ))}
+                    {gmOptions.length === 0 && (
+                      <p className="text-xs text-navy/30 text-center py-2">No GMs available</p>
+                    )}
+                  </div>
+                  {formData.oversightGmIds.length === 0 && (
+                    <p className="text-[10px] text-amber-500 font-bold ml-1">Select at least one GM</p>
+                  )}
+                </div>
+              )}
+
+              {/* GM: pick multiple oversight branches */}
+              {formData.role === 'gm' && (
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Oversight Branches <span className="text-red-400">*</span>
@@ -620,7 +723,11 @@ export const UserManagement = () => {
             <Button
               type="submit"
               className="flex-1 bg-indigo text-white shadow-lg shadow-indigo/20"
-              disabled={isCreating || (isOversightRole(formData.role) && formData.oversightBranchIds.length === 0)}
+              disabled={
+                isCreating
+                || (formData.role === 'gm' && formData.oversightBranchIds.length === 0)
+                || (formData.role === 'director' && formData.oversightGmIds.length === 0)
+              }
             >
               {isCreating ? (
                 <>

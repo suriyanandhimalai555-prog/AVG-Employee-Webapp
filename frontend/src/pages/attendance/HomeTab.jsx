@@ -15,6 +15,7 @@ import {
   useGetHistoryQuery,
   useGetTeamHistoryQuery,
   useGetEmployeesQuery,
+  useGetUsersQuery,
 } from '../../store/api/apiSlice';
 
 /** Today's stats card — shared by BM / GM / Director / MD / BranchAdmin home views. */
@@ -93,7 +94,28 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
   );
 };
 
-export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCalendar, onBranchSelect }) => {
+const LeadershipSection = ({ title, members = [], onOpenList }) => {
+  if (!members.length) return null;
+  return (
+    <div className="bg-white rounded-3xl card-shadow overflow-hidden">
+      <button
+        onClick={onOpenList}
+        className="w-full flex items-center gap-4 px-5 py-4 text-left tactile-press hover:bg-navy/3 transition-all duration-200"
+      >
+        <div className="w-10 h-10 rounded-xl bg-indigo/8 flex items-center justify-center text-indigo shrink-0">
+          <Users size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-navy truncate">{title}</p>
+          <p className="text-[10px] font-medium text-navy/40 mt-0.5">{members.length} total</p>
+        </div>
+        <ChevronRight size={14} className="text-navy/25 shrink-0" />
+      </button>
+    </div>
+  );
+};
+
+export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCalendar, onBranchSelect, onOpenLeadershipList }) => {
   const user = useSelector(selectCurrentUser);
 
   const nowDate = new Date();
@@ -120,6 +142,14 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
     { viewerId: user?.id },
     { skip: !user?.id || !['branch_admin', ...TEAM_LIST_ROLES].includes(user?.role) },
   );
+  const { data: gmUsersResult = {} } = useGetUsersQuery(
+    { viewerId: user?.id, role: 'gm', limit: 500 },
+    { skip: !user?.id || !['director', 'md'].includes(user?.role) }
+  );
+  const { data: directorUsersResult = {} } = useGetUsersQuery(
+    { viewerId: user?.id, role: 'director', limit: 500 },
+    { skip: !user?.id || user?.role !== 'md' }
+  );
 
   const todayRecord = summary?.today ?? null;
   // Use IST date to avoid showing yesterday's date on devices not set to IST
@@ -130,6 +160,10 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
   // employeesResult is { data: [], total, ... } — extract the array before filtering
   const needsActionCount = (employeesResult?.data ?? []).filter((e) => !e.has_smartphone && !e.status).length;
   const teamMembers = employeesResult?.data ?? [];
+  const gmMembers = (gmUsersResult?.data ?? []).filter((u) =>
+    user?.role === 'director' ? u.managerId === user.id : true
+  );
+  const directorMembers = directorUsersResult?.data ?? [];
 
   return (
     <motion.div
@@ -284,6 +318,28 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
                 </button>
               ))}
             </div>
+          )}
+
+          {user?.role === 'director' && (
+            <LeadershipSection
+              title="General Managers"
+              members={gmMembers}
+              onOpenList={() => onOpenLeadershipList?.('gms')}
+            />
+          )}
+          {user?.role === 'md' && (
+            <>
+              <LeadershipSection
+                title="Directors"
+                members={directorMembers}
+                onOpenList={() => onOpenLeadershipList?.('directors')}
+              />
+              <LeadershipSection
+                title="General Managers"
+                members={gmMembers}
+                onOpenList={() => onOpenLeadershipList?.('gms')}
+              />
+            </>
           )}
 
           <StaffCard onOpen={onOpenUserManagement} />

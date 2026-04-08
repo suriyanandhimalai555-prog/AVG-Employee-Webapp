@@ -255,12 +255,12 @@ export const apiSlice = createApi({
       providesTags: ['Users'],
     }),
 
-    // Replaces the full oversight branch set for a Director or GM. MD only.
+    // Replaces oversight assignments for Director/GM. MD only.
     updateUserOversightBranches: builder.mutation({
-      query: ({ id, branchIds }) => ({
+      query: ({ id, branchIds = [], gmIds = [] }) => ({
         url: `/users/${id}/oversight-branches`,
         method: 'PATCH',
-        body: { branchIds },
+        body: { branchIds, gmIds },
       }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['Users'],

@@ -22,6 +22,8 @@ export const CreateUserSchema = z.object({
   hasSmartphone: z.boolean().default(true),
   // UUIDs of branches the Director / GM will oversee (multiple branches supported)
   oversightBranchIds: z.array(z.string().uuid()).optional(),
+  // UUIDs of GMs assigned to a Director. Director scope is derived from these GMs.
+  oversightGmIds: z.array(z.string().uuid()).optional(),
 });
 
 export const UserResponseSchema = z.object({
@@ -38,7 +40,8 @@ export const UserResponseSchema = z.object({
 
 // Schema for updating oversight branch assignments for a Director or GM (MD only)
 export const UpdateOversightBranchesSchema = z.object({
-  branchIds: z.array(z.string().uuid()),
+  branchIds: z.array(z.string().uuid()).optional().default([]),
+  gmIds: z.array(z.string().uuid()).optional().default([]),
 });
 
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
