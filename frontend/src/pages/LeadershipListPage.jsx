@@ -2,8 +2,10 @@ import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { ArrowLeft, ChevronRight, Users } from 'lucide-react';
+import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useGetUsersQuery } from '../store/api/apiSlice';
+
 
 export const LeadershipListPage = () => {
   const { kind } = useParams();
@@ -55,10 +57,7 @@ export const LeadershipListPage = () => {
               className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
             >
               <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
-                <img
-                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=0B1C30&color=fff&size=32`}
-                  alt=""
-                />
+                <Avatar url={member?.profilePhotoUrl} name={member.name} size={32} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-navy truncate">{member.name}</p>

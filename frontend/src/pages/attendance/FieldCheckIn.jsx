@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut } from 'lucide-react';
+import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
+
 
 export const FieldCheckIn = ({
   user,
@@ -177,10 +179,7 @@ export const FieldCheckIn = ({
           <div className="space-y-4 mb-32">
             <Card className="p-4 bg-white border-none card-shadow flex items-center gap-5">
               <div className="w-12 h-12 rounded-xl bg-navy/5 overflow-hidden">
-                <img
-                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'U')}&background=0B1C30&color=fff`}
-                  alt="selfie"
-                />
+                <Avatar url={user?.profilePhotoUrl} name={user?.name} />
               </div>
               <div>
                 <p className="text-[8px] font-bold text-navy/30 uppercase tracking-widest mb-1 font-mono">

@@ -16,6 +16,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Avatar } from '../components/Avatar';
 import { clearCredentials } from '../store/slices/authSlice';
 import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import {
@@ -30,6 +31,7 @@ import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
 import { selectCurrentUser } from '../store/slices/authSlice';
+
 
 export const UserManagement = () => {
   const user = useSelector(selectCurrentUser);
@@ -104,7 +106,7 @@ export const UserManagement = () => {
   const managerRoleMap = {
     director: ['md'],
     gm: ['director'],
-    branch_manager: ['gm', 'director'],
+    branch_manager: ['gm'],
     abm: ['branch_manager'],
     sales_officer: ['abm', 'branch_manager'],
     client: ['sales_officer', 'abm', 'branch_manager'],
@@ -363,7 +365,7 @@ export const UserManagement = () => {
               <div className="flex items-center gap-5 min-w-0">
                 <div className="w-14 h-14 rounded-2xl bg-indigo/5 flex items-center justify-center text-indigo shrink-0 group-hover:scale-110 transition-transform duration-500">
                   <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm">
-                    <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=0B1C30&color=fff&size=40`} alt="" />
+                    <Avatar url={u?.profilePhotoUrl} name={u.name} size={40} />
                   </div>
                 </div>
                 <div className="min-w-0">

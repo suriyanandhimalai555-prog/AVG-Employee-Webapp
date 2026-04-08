@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { getISTToday } from '../../lib/date';
 import { ArrowRight, AlertCircle, Building2, Users, ChevronRight } from 'lucide-react';
+import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
 import { AlertCard } from '../../components/attendance/AlertCard';
@@ -11,6 +12,7 @@ import { StaffCard } from '../../components/attendance/StaffCard';
 import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
+
   useGetSummaryQuery,
   useGetHistoryQuery,
   useGetTeamHistoryQuery,
@@ -66,10 +68,7 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
             className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
           >
             <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
-              <img
-                src={`https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=0B1C30&color=fff&size=32`}
-                alt=""
-              />
+              <Avatar url={emp?.profilePhotoUrl} name={emp.name} size={32} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-navy truncate">{emp.name}</p>

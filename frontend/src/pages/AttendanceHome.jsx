@@ -32,10 +32,21 @@ import { selectCurrentUser } from '../store/slices/authSlice';
 export const AttendanceHome = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = sessionStorage.getItem('attendanceHomeTab');
+    sessionStorage.removeItem('attendanceHomeTab');
+    return saved || 'home';
+  });
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [calendarEmployee, setCalendarEmployee] = useState(null);
   const [selectedBranch, setSelectedBranch] = useState(null);
+  const handleTabChange = (tab) => {
+    if (tab === 'profile') {
+      navigate('/profile');
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   // Maintains a live Socket.io connection — invalidates RTK Query cache when
   // the worker confirms attendance has been persisted to the database
@@ -56,7 +67,7 @@ export const AttendanceHome = () => {
     return (
       <div className="min-h-screen bg-surface relative">
         <BranchManagement onBack={() => setActiveTab('home')} />
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
+        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
       </div>
     );
   }
@@ -93,7 +104,7 @@ export const AttendanceHome = () => {
     return (
       <div className="min-h-screen bg-surface pb-24">
         <AdminDashboard />
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
+        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
       </div>
     );
   }
@@ -120,7 +131,7 @@ export const AttendanceHome = () => {
         </AnimatePresence>
       </div>
 
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} user={user} />
+      <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { Avatar } from '../components/Avatar';
 import { HistoryCalendar } from '../components/HistoryCalendar';
 import { useGetHistoryQuery, useGetPhotoUrlQuery } from '../store/api/apiSlice';
 import { getISTToday } from '../lib/date';
+
 
 /**
  * Full-page calendar view for any employee.
@@ -64,10 +66,7 @@ export const EmployeeCalendarPage = ({ employee, onBack }) => {
           <ArrowLeft size={20} />
         </button>
         <div className="w-9 h-9 rounded-full bg-navy/5 overflow-hidden shrink-0">
-          <img
-            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(employee?.name ?? '')}&background=0B1C30&color=fff&size=36`}
-            alt=""
-          />
+          <Avatar url={employee?.profilePhotoUrl} name={employee?.name} size={36} />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-navy truncate leading-tight">{employee?.name}</p>

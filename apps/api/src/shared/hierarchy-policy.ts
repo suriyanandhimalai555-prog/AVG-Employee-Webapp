@@ -16,7 +16,7 @@ type CreateHierarchyInput = {
 const ALLOWED_MANAGER_ROLES: Record<string, string[]> = {
   director: ['md'],
   gm: ['director'],
-  branch_manager: ['gm', 'director'],
+  branch_manager: ['gm'],
   abm: ['branch_manager'],
   sales_officer: ['abm', 'branch_manager'],
   client: ['sales_officer', 'abm', 'branch_manager'],

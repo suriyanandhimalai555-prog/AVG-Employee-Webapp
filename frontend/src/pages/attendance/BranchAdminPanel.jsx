@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { CheckCircle2, ChevronRight, Clock, Home, Loader2, LogOut, MapPin, Search, UserCheck, XCircle, X, AlertCircle } from 'lucide-react';
+import { Avatar } from '../../components/Avatar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
@@ -15,6 +16,7 @@ import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetEmployeesQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
 
+
 const SELF_VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
 
 const FILTERS = [
@@ -23,12 +25,9 @@ const FILTERS = [
   { key: 'no-smartphone', label: 'No Phone' },
 ];
 
-const EmployeeAvatar = ({ name }) => (
+const EmployeeAvatar = ({ name, profilePhotoUrl }) => (
   <div className="w-10 h-10 rounded-xl bg-navy/5 overflow-hidden shrink-0">
-    <img
-      src={`https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'U')}&background=0B1C30&color=fff`}
-      alt={name}
-    />
+    <Avatar url={profilePhotoUrl} name={name} />
   </div>
 );
 
@@ -348,7 +347,7 @@ export const BranchAdminPanel = () => {
                   {/* Employees who need check-in marking */}
                   {needsMark.map((emp) => (
                     <div key={emp.id} className="p-4 bg-white rounded-2xl card-shadow flex items-center gap-3">
-                      <EmployeeAvatar name={emp.name} />
+                      <EmployeeAvatar name={emp.name} profilePhotoUrl={emp.profilePhotoUrl} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
                         <p className="text-[9px] font-medium text-navy/40 uppercase tracking-widest mt-0.5">
@@ -373,7 +372,7 @@ export const BranchAdminPanel = () => {
                   {/* Employees who need sign-off */}
                   {needsSignOff.map((emp) => (
                     <div key={emp.id + '-signoff'} className="p-4 bg-white rounded-2xl card-shadow flex items-center gap-3">
-                      <EmployeeAvatar name={emp.name} />
+                      <EmployeeAvatar name={emp.name} profilePhotoUrl={emp.profilePhotoUrl} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
                         <p className="text-[9px] font-medium text-amber-600 uppercase tracking-widest mt-0.5">
@@ -458,7 +457,7 @@ export const BranchAdminPanel = () => {
               <div className="space-y-3">
                 {filtered.map((emp) => (
                   <div key={emp.id} className="p-4 bg-white rounded-2xl card-shadow flex items-center gap-3">
-                    <EmployeeAvatar name={emp.name} />
+                    <EmployeeAvatar name={emp.name} profilePhotoUrl={emp.profilePhotoUrl} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <p className="text-xs font-bold text-navy truncate">{emp.name}</p>

@@ -3,7 +3,12 @@ import { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } fro
 // Import the core business logic from the AuthService
 import { AuthService } from './auth.service';
 // Import the validation schemas for login and password change
-import { LoginSchema, ChangePasswordSchema } from './auth.schema';
+import {
+  LoginSchema,
+  ChangePasswordSchema,
+  ProfileUploadUrlSchema,
+  UpdateProfileAssetsSchema,
+} from './auth.schema';
 // Import the validated environment config for token signing
 import { env } from '../../config/env';
 // Import the Redis client instance for session caching
@@ -103,6 +108,28 @@ const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
       success: true,
       data: { message: 'Password changed successfully. Please log in again.' },
     });
+  });
+
+  // ─── GET /api/auth/profile-upload-url ───
+  // Returns presigned S3 PUT URL for profile assets (photo/proof)
+  fastify.get('/profile-upload-url', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = (request as any).user.id;
+    const query = ProfileUploadUrlSchema.parse(request.query);
+    const result = await AuthService.getProfileUploadUrl(userId, query);
+    return reply.send({ success: true, data: result });
+  });
+
+  // ─── PATCH /api/auth/profile-assets ───
+  // Saves uploaded S3 keys against the authenticated user's profile
+  fastify.patch('/profile-assets', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = (request as any).user.id;
+    const body = UpdateProfileAssetsSchema.parse(request.body);
+    await AuthService.updateProfileAssets(fastify.db, redisClient, userId, body);
+    return reply.send({ success: true, data: { message: 'Profile updated successfully' } });
   });
 
   fastify.log.info('✅ Auth module routes registered successfully');

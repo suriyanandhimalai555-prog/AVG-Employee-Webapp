@@ -1,5 +1,7 @@
 import { Loader2, MapPin } from 'lucide-react';
+import { Avatar } from '../../components/Avatar';
 import { GlassModal } from '../../components/GlassModal';
+
 
 const STATUS_OPTIONS = ['present', 'absent', 'field'];
 const MIN_NOTE_LENGTH = 10;
@@ -22,10 +24,7 @@ export const CorrectionModal = ({
       {/* Employee info */}
       <div className="flex items-center gap-3 p-4 bg-navy/5 rounded-2xl">
         <div className="w-12 h-12 rounded-xl bg-white overflow-hidden shadow-sm shrink-0">
-          <img
-            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(employee?.name || 'U')}&background=0B1C30&color=fff`}
-            alt=""
-          />
+          <Avatar url={employee?.profilePhotoUrl} name={employee?.name} />
         </div>
         <div>
           <p className="text-sm font-bold text-navy">{employee?.name}</p>

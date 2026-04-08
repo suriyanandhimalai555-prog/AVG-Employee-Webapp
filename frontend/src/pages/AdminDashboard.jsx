@@ -7,6 +7,7 @@ import {
   UserX, Building2, LogOut
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Avatar } from '../components/Avatar';
 import { clearCredentials, selectCurrentUser } from '../store/slices/authSlice';
 import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import { Card } from '../components/Card';
@@ -15,6 +16,7 @@ import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
 import { EmployeeCalendarPage } from './EmployeeCalendarPage';
 import {
+
   useGetEmployeesQuery,
   useGetSummaryQuery,
   useAdminCorrectMutation,
@@ -344,7 +346,7 @@ export const AdminDashboard = () => {
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0">
-                        <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=0B1C30&color=fff&size=32`} alt="" />
+                        <Avatar url={emp?.profilePhotoUrl} name={emp.name} size={32} />
                       </div>
                       <div>
                         <div className="font-bold text-navy group-hover:text-indigo transition-colors text-sm">{emp.name}</div>
@@ -472,7 +474,7 @@ export const AdminDashboard = () => {
           <div className="space-y-6">
             <div className="p-6 bg-surface-container-low rounded-3xl flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-white shadow-sm overflow-hidden">
-                <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(selectedEmployee.name)}&background=0B1C30&color=fff&size=56`} alt="" />
+                <Avatar url={selectedEmployee?.profilePhotoUrl} name={selectedEmployee.name} size={56} />
               </div>
               <div>
                 <p className="text-xl font-bold text-navy">{selectedEmployee.name}</p>

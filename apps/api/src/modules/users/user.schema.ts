@@ -36,6 +36,7 @@ export const UserResponseSchema = z.object({
   managerId: z.string().uuid().nullable(),
   isActive: z.boolean(),
   createdAt: z.string(),
+  profilePhotoUrl: z.string().nullable().optional(),
 });
 
 // Schema for updating oversight branch assignments for a Director or GM (MD only)

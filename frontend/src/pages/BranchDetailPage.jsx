@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Building2, Loader2, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useGetEmployeesQuery } from '../store/api/apiSlice';
 import { EmployeeCalendarPage } from './EmployeeCalendarPage';
+
 
 /**
  * Full-screen overlay showing details for a single branch.
@@ -136,10 +138,7 @@ export const BranchDetailPage = ({ branch, onBack }) => {
                   className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
                 >
                   <div className="w-9 h-9 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
-                    <img
-                      src={`https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=0B1C30&color=fff&size=36`}
-                      alt=""
-                    />
+                    <Avatar url={emp?.profilePhotoUrl} name={emp.name} size={36} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-navy truncate leading-tight">{emp.name}</p>

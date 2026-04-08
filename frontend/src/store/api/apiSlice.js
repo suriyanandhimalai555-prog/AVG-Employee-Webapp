@@ -40,6 +40,24 @@ export const apiSlice = createApi({
       }),
     }),
 
+    getProfileUploadUrl: builder.mutation({
+      query: ({ kind, contentType }) => ({
+        url: `/auth/profile-upload-url?kind=${encodeURIComponent(kind)}&contentType=${encodeURIComponent(contentType || 'image/jpeg')}`,
+        method: 'GET',
+      }),
+      transformResponse: (response) => response.data,
+    }),
+
+    updateProfileAssets: builder.mutation({
+      query: (data) => ({
+        url: '/auth/profile-assets',
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Users'],
+    }),
+
     // ─── Attendance (Employee) ───
     // Mutation (not query) so RTK Query never caches the result.
     // Presigned PUT URLs expire in 300s — a cached URL could be stale and cause silent upload failures.
@@ -282,6 +300,8 @@ export const {
   useLoginMutation,
   useGetMeQuery,
   useLogoutMutation,
+  useGetProfileUploadUrlMutation,
+  useUpdateProfileAssetsMutation,
   useSubmitAttendanceMutation,
   useGetSummaryQuery,
   useGetHistoryQuery,

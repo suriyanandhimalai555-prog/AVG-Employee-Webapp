@@ -1,7 +1,9 @@
 // apps/api/src/modules/users/user.service.ts
 import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
+import Redis from 'ioredis';
 import { CreateUserInput, UserResponse, UpdateOversightBranchesInput } from './user.schema';
+import { populateAvatarUrls } from '../../shared/avatar.util';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { bustHierarchyCache } from '../../shared/hierarchy';
@@ -13,6 +15,7 @@ export const UserService = {
   // Create a new user (with password hashing)
   async createUser(
     db: Pool,
+    redis: Redis,
     requesterId: string,
     requesterRole: string,
     requesterBranchId: string | null,
@@ -175,14 +178,15 @@ export const UserService = {
       await bustHierarchyCache(newUserId);
     }
 
-    return this.getUserById(db, newUserId);
+    return this.getUserById(db, redis, newUserId);
   },
 
-  // Helper to fetch full user info by ID
-  async getUserById(db: Pool, userId: string): Promise<UserResponse> {
+  // ─── GET USER BY ID ───
+  async getUserById(db: Pool, redis: Redis, userId: string): Promise<UserResponse> {
     const result = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id AS "branchId",
               b.name AS "branchName", u.manager_id AS "managerId",
+              u.profile_photo_key,
               u.is_active AS "isActive", u.created_at AS "createdAt"
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
@@ -194,7 +198,12 @@ export const UserService = {
       throw new NotFoundError('User not found');
     }
 
-    return result.rows[0];
+    const user = result.rows[0];
+    
+    await populateAvatarUrls(redis, [user], u => u.profile_photo_key, (u, url) => u.profilePhotoUrl = url);
+    delete user.profile_photo_key;
+
+    return user;
   },
 
   // Fetch the oversight branch IDs assigned to a Director or GM
@@ -250,6 +259,7 @@ export const UserService = {
   // Replace the full set of oversight branches for a Director or GM (MD only)
   async updateOversightBranches(
     db: Pool,
+    redis: Redis,
     _requesterId: string,
     requesterRole: string,
     targetUserId: string,
@@ -331,12 +341,13 @@ export const UserService = {
     // Bust cache so the Director/GM immediately sees their new scope
     await bustHierarchyCache(targetUserId);
 
-    return this.getUserById(db, targetUserId);
+    return this.getUserById(db, redis, targetUserId);
   },
 
   // List users for management table, scoped per role, with pagination and search
   async listUsers(
     db: Pool,
+    redis: Redis,
     requesterId: string,
     requesterRole: string,
     requesterBranchId: string | null,
@@ -348,6 +359,7 @@ export const UserService = {
     const base = `
       SELECT u.id, u.name, u.email, u.role, u.branch_id AS "branchId",
              b.name AS "branchName", u.manager_id AS "managerId",
+             u.profile_photo_key,
              u.is_active AS "isActive", u.created_at AS "createdAt"
       FROM users u
       LEFT JOIN branches b ON u.branch_id = b.id
@@ -410,8 +422,13 @@ export const UserService = {
     ]);
 
     const total = parseInt(countResult.rows[0].count, 10);
+    const users = dataResult.rows;
+
+    await populateAvatarUrls(redis, users, u => u.profile_photo_key, (u, url) => u.profilePhotoUrl = url);
+    users.forEach(u => delete u.profile_photo_key);
+
     return {
-      data: dataResult.rows,
+      data: users,
       total,
       page,
       limit,

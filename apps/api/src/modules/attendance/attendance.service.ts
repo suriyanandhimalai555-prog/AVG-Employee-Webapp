@@ -1,6 +1,7 @@
 // src/modules/attendance/attendance.service.ts
 import { Pool } from 'pg';
 import Redis from 'ioredis';
+import { populateAvatarUrls } from '../../shared/avatar.util';
 // Import S3 utilities for generating photo upload URLs, unique keys, and download URLs
 import { generateUploadUrl, generatePhotoKey, generateDownloadUrl } from '../../config/s3';
 // Import the queue functions that push attendance and sign-off jobs to the background worker
@@ -591,10 +592,10 @@ export const AttendanceService = {
     };
   },
 
-  // ─── BRANCH EMPLOYEES (Admin Dashboard) ───
-  
+  // ─── GET BRANCH EMPLOYEES ───
   async getBranchEmployees(
     db: Pool,
+    redis: Redis,
     requesterId: string,
     requesterRole: string,
     branchId: string | null,
@@ -651,6 +652,7 @@ export const AttendanceService = {
 
     const selectSql = `
       SELECT
+        u.profile_photo_key,
         u.id,
         u.name,
         u.email,
@@ -688,8 +690,13 @@ export const AttendanceService = {
     ]);
 
     const total = parseInt(countResult.rows[0].count, 10);
+    const employees = dataResult.rows;
+
+    await populateAvatarUrls(redis, employees, e => e.profile_photo_key, (e, url) => e.profilePhotoUrl = url);
+    employees.forEach(e => delete e.profile_photo_key);
+
     return {
-      data: dataResult.rows,
+      data: employees,
       total,
       page,
       limit,

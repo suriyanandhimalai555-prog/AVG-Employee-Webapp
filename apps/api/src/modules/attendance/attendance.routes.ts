@@ -4,6 +4,8 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 // Import the AttendanceService object containing all business logic
 import { AttendanceService } from './attendance.service';
+import { AuthService } from '../auth/auth.service';
+import { ProfileUploadUrlSchema, UpdateProfileAssetsSchema } from '../auth/auth.schema';
 // Import Zod schemas for validating incoming request data
 import {
   SubmitAttendanceSchema,
@@ -178,6 +180,37 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     }
   });
 
+  // ─── GET /profile-upload-url (Profile S3 URL fallback under attendance module) ───
+  fastify.get('/profile-upload-url', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role === 'client') {
+        return sendForbidden(reply, 'Clients cannot upload profile assets');
+      }
+      const query = ProfileUploadUrlSchema.parse(req.query);
+      const result = await AuthService.getProfileUploadUrl(req.user.id, query);
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── PATCH /profile-assets (Save profile S3 keys fallback under attendance module) ───
+  fastify.patch('/profile-assets', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const body = UpdateProfileAssetsSchema.parse(req.body);
+      await AuthService.updateProfileAssets(fastify.db, fastify.redis, req.user.id, body);
+      return reply.send({ success: true, data: { message: 'Profile updated successfully' } });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   // ─── GET /photo-url?key=... (S3 Download URL) ───
   // Key is passed as a query param because S3 keys contain slashes which would
   // break path-segment param matching (e.g. attendance/userId/timestamp.jpg).
@@ -246,6 +279,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
       const q = req.query as any;
       const result = await AttendanceService.getBranchEmployees(
         fastify.db,
+        fastify.redis,
         req.user.id,
         req.user.role,
         req.user.branchId,

@@ -2,10 +2,19 @@
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 // Import custom error classes for graceful error handling
 import { UnauthorizedError, ForbiddenError, NotFoundError } from '../../shared/errors';
+import { populateAvatarUrls } from '../../shared/avatar.util';
 import { hydrateBranchAdminProfile } from '../../shared/attendance-scope';
-import { AuthUserResponse, LoginInput, ChangePasswordInput } from './auth.schema';
+import { generateUploadUrl } from '../../config/s3';
+import {
+  AuthUserResponse,
+  LoginInput,
+  ChangePasswordInput,
+  ProfileUploadUrlInput,
+  UpdateProfileAssetsInput,
+} from './auth.schema';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH SERVICE IMPLEMENTATION
@@ -21,7 +30,7 @@ export const AuthService = {
     // Step 1: Look up the user by email in the database with their branch name
     const userResult = await db.query(
       `SELECT u.id, u.name, u.email, u.password_hash, u.role,
-              u.branch_id, u.has_smartphone, u.is_active,
+              u.branch_id, u.has_smartphone, u.profile_photo_key, u.profile_proof_key, u.is_active,
               b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
@@ -61,9 +70,13 @@ export const AuthService = {
       branchId: user.branch_id,
       branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
       hasSmartphone: user.has_smartphone,
+      profilePhotoKey: user.profile_photo_key ?? null,
+      profileProofKey: user.profile_proof_key ?? null,
     };
 
     await hydrateBranchAdminProfile(db, profile);
+
+    await populateAvatarUrls(redis, [profile], p => p.profilePhotoKey, (p, url) => p.profilePhotoUrl = url);
 
     // Step 5: Cache the session in Redis for 30 minutes to make subsequent /me lookups instant
     await redis.setex(`user:${user.id}`, 1800, JSON.stringify(profile));
@@ -87,7 +100,7 @@ export const AuthService = {
     // Step 2: Cache miss — query the database for the full profile
     const result = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id,
-              u.has_smartphone, u.is_active, b.name AS branch_name
+              u.has_smartphone, u.profile_photo_key, u.profile_proof_key, u.is_active, b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.id = $1`,
@@ -111,9 +124,13 @@ export const AuthService = {
       branchId: user.branch_id,
       branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
       hasSmartphone: user.has_smartphone,
+      profilePhotoKey: user.profile_photo_key ?? null,
+      profileProofKey: user.profile_proof_key ?? null,
     };
 
     await hydrateBranchAdminProfile(db, profile);
+
+    await populateAvatarUrls(redis, [profile], p => p.profilePhotoKey, (p, url) => p.profilePhotoUrl = url);
 
     // Step 4: Refresh the Redis cache with the latest database data for 30 minutes
     await redis.setex(`user:${userId}`, 1800, JSON.stringify(profile));
@@ -159,5 +176,36 @@ export const AuthService = {
     // Invalidate the Redis session — the user must log in again with their new password
     await redis.del(`user:${userId}`);
     await redis.del(`sess:${userId}`);
+  },
+
+  async getProfileUploadUrl(userId: string, input: ProfileUploadUrlInput): Promise<{ uploadUrl: string; fileKey: string }> {
+    const ext = input.contentType.includes('png')
+      ? 'png'
+      : input.contentType.includes('webp')
+      ? 'webp'
+      : input.contentType.includes('pdf')
+      ? 'pdf'
+      : 'jpg';
+    const random = crypto.randomBytes(4).toString('hex');
+    const folder = input.kind === 'photo' ? 'profile' : 'proofs';
+    const fileKey = `${folder}/${userId}-${Date.now()}-${random}.${ext}`;
+    const uploadUrl = await generateUploadUrl(fileKey, input.contentType);
+    return { uploadUrl, fileKey };
+  },
+
+  async updateProfileAssets(
+    db: Pool,
+    redis: Redis,
+    userId: string,
+    input: UpdateProfileAssetsInput
+  ): Promise<void> {
+    await db.query(
+      `UPDATE users
+       SET profile_photo_key = COALESCE($1, profile_photo_key),
+           profile_proof_key = COALESCE($2, profile_proof_key)
+       WHERE id = $3`,
+      [input.profilePhotoKey ?? null, input.profileProofKey ?? null, userId]
+    );
+    await redis.del(`user:${userId}`);
   },
 };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Home, Fingerprint, Wallet, Bell, MoreHorizontal, Building2, X } from 'lucide-react';
+import { Home, Fingerprint, Wallet, Bell, UserCircle2, MoreHorizontal, Building2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const NavItem = ({ icon: Icon, label, active, onClick }) => (
@@ -84,6 +84,7 @@ export const BottomNav = ({ activeTab, onTabChange, user }) => {
         <NavItem icon={Fingerprint} label="Attendance" active={activeTab === 'attendance'} onClick={() => onTabChange('attendance')} />
         <NavItem icon={Wallet}      label="Money"      active={activeTab === 'money'}      onClick={() => onTabChange('money')} />
         <NavItem icon={Bell}        label="Alerts"     active={activeTab === 'alerts'}     onClick={() => onTabChange('alerts')} />
+        <NavItem icon={UserCircle2} label="Profile"    active={activeTab === 'profile'}    onClick={() => onTabChange('profile')} />
         {moreItems.length > 0 && (
           <button
             onClick={() => setMoreOpen(o => !o)}

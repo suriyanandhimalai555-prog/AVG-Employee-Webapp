@@ -37,6 +37,19 @@ export const ChangePasswordSchema = z.object({
 // TypeScript type inferred from the Zod schema for use in the service layer
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
 
+export const ProfileUploadUrlSchema = z.object({
+  kind: z.enum(['photo', 'proof']),
+  contentType: z.string().min(1).default('image/jpeg'),
+});
+
+export const UpdateProfileAssetsSchema = z.object({
+  profilePhotoKey: z.string().min(1).optional(),
+  profileProofKey: z.string().min(1).optional(),
+});
+
+export type ProfileUploadUrlInput = z.infer<typeof ProfileUploadUrlSchema>;
+export type UpdateProfileAssetsInput = z.infer<typeof UpdateProfileAssetsSchema>;
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUTH RESPONSE INTERFACE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -47,7 +60,10 @@ export interface AuthUserResponse {
   name: string;
   email: string;
   role: string;
-  branchId: string;
+  branchId: string | null;
   branchName: string | null;
   hasSmartphone: boolean;
+  profilePhotoKey?: string | null;
+  profilePhotoUrl?: string | null;
+  profileProofKey?: string | null;
 }

@@ -5,8 +5,10 @@ import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { HistoryCalendar } from '../components/HistoryCalendar';
 import { useGetHistoryQuery, useGetPhotoUrlQuery, useGetUsersQuery } from '../store/api/apiSlice';
 import { useSelector } from 'react-redux';
+import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { getISTToday } from '../lib/date';
+
 
 export const PersonAttendancePage = () => {
   const { userId } = useParams();
@@ -68,10 +70,7 @@ export const PersonAttendancePage = () => {
           <ArrowLeft size={20} />
         </button>
         <div className="w-9 h-9 rounded-full bg-navy/5 overflow-hidden shrink-0">
-          <img
-            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(targetUser?.name ?? 'Employee')}&background=0B1C30&color=fff&size=36`}
-            alt=""
-          />
+          <Avatar url={targetUser?.profilePhotoUrl} name={targetUser?.name} size={36} />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-navy truncate leading-tight">{targetUser?.name ?? 'Employee'}</p>

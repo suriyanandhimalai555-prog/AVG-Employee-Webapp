@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { AttendanceHome } from './pages/AttendanceHome';
 import { PersonAttendancePage } from './pages/PersonAttendancePage';
 import { LeadershipListPage } from './pages/LeadershipListPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { Login } from './pages/Login';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
@@ -42,6 +43,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<AttendanceHome />} />
+      <Route path="/profile" element={<ProfilePage />} />
       <Route path="/leadership/:kind" element={<LeadershipListPage />} />
       <Route path="/people/:userId" element={<PersonAttendancePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

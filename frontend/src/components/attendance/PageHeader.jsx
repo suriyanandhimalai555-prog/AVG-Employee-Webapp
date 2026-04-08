@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { ArrowRight, LogOut, KeyRound, X, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useDispatch } from 'react-redux';
+import { Avatar } from '../../components/Avatar';
 import { apiSlice, useLogoutMutation, useChangePasswordMutation } from '../../store/api/apiSlice';
 import { clearCredentials } from '../../store/slices/authSlice';
+
 
 export const PageHeader = ({ user, title, showBack, onBack, hideLogout }) => {
   const dispatch = useDispatch();
@@ -72,11 +74,7 @@ export const PageHeader = ({ user, title, showBack, onBack, hideLogout }) => {
           </button>
         ) : (
           <div className="w-12 h-12 rounded-[18px] overflow-hidden shrink-0 ring-4 ring-white shadow-premium border border-navy/5 group hover:rotate-3 transition-transform duration-500">
-            <img
-              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'U')}&background=0B1C30&color=fff&size=48`}
-              alt="avatar"
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-            />
+            <Avatar url={user?.profilePhotoUrl} name={user?.name} size={48} />
           </div>
         )}
         <div className="flex flex-col min-w-0">
