@@ -102,6 +102,20 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ─── GET /api/users/superiors ───
+  // Lists all the user's ancestors (upper hierarchy) up to the MD
+  fastify.get('/superiors', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const data = await UserService.getSuperiors(fastify.db, fastify.redis, req.user.id);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   // ─── GET /api/users ───
   // List all users. Useful for MD's company overview.
   fastify.get('/', {

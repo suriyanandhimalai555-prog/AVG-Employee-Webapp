@@ -117,6 +117,11 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Mounts under the '/api/transactions' prefix
   await app.register(transactionRoutes, { prefix: '/api/transactions' });
 
+  // Register the Money Collections module
+  // Mounts under the '/api/money' prefix
+  const moneyRoutes = require('./modules/money/money.routes').default;
+  await app.register(moneyRoutes, { prefix: '/api/money' });
+
   // Register the User Management module (MD only for creation)
   // Mounts under the '/api/users' prefix
   await app.register(userRoutes, { prefix: '/api/users' });

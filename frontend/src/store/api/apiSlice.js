@@ -15,7 +15,7 @@ export const apiSlice = createApi({
       return headers;
     },
   }),
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -239,7 +239,77 @@ export const apiSlice = createApi({
       invalidatesTags: ['Transactions'],
     }),
 
+    // ─── Money Module ───
+    createMoneyProject: builder.mutation({
+      query: (data) => ({ url: '/money/projects', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyProjects'],
+    }),
+
+    getMoneyProjects: builder.query({
+      query: () => '/money/projects',
+      transformResponse: (response) => response.data,
+      providesTags: ['MoneyProjects'],
+    }),
+
+    submitMoneyCollection: builder.mutation({
+      query: (data) => ({ url: '/money', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyCollections'],
+    }),
+
+    verifyMoneyCollection: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/money/${id}/verify`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyCollections'],
+    }),
+
+    getMoneyCollections: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return `/money${qs ? `?${qs}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['MoneyCollections'],
+    }),
+
+    getMoneyUploadUrl: builder.mutation({
+      query: ({ contentType = 'image/jpeg', mode = 'gpay' }) => ({
+        url: `/money/upload-url?contentType=${encodeURIComponent(contentType)}&mode=${encodeURIComponent(mode)}`,
+        method: 'GET',
+      }),
+      transformResponse: (response) => response.data,
+    }),
+
+    getMoneyPhotoUrl: builder.query({
+      query: (key) => `/money/photo-url?key=${encodeURIComponent(key)}`,
+      transformResponse: (response) => response.data,
+    }),
+
+    getMoneyWallet: builder.query({
+      query: () => '/money/wallet',
+      transformResponse: (response) => response.data,
+      providesTags: ['MoneyWallet'],
+    }),
+
+    transferMoney: builder.mutation({
+      query: (data) => ({ url: '/money/transfer', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyWallet', 'MoneyCollections'],
+    }),
+
+    getMoneySources: builder.query({
+      query: (id) => `/money/${id}/sources`,
+      transformResponse: (response) => response.data,
+    }),
+
     // ─── User Management (Staff & Admins) ───
+    getUserSuperiors: builder.query({
+      query: () => '/users/superiors',
+      transformResponse: (response) => response.data,
+      providesTags: ['Users'],
+    }),
+
     getUsers: builder.query({
       query: (params = {}) => {
         const { viewerId: _viewerId, role, branchId, search, page = 1, limit = 50 } = params;
@@ -321,10 +391,21 @@ export const {
   useGetTransactionsQuery,
   useCreateTransactionMutation,
   useUpdateTransactionStatusMutation,
+  useCreateMoneyProjectMutation,
+  useGetMoneyProjectsQuery,
+  useSubmitMoneyCollectionMutation,
+  useVerifyMoneyCollectionMutation,
+  useGetMoneyCollectionsQuery,
+  useGetMoneyUploadUrlMutation,
+  useGetMoneyPhotoUrlQuery,
+  useGetUserSuperiorsQuery,
   useGetUsersQuery,
   useCreateUserMutation,
   useGetUserOversightBranchesQuery,
   useLazyGetUserOversightBranchesQuery,
   useUpdateUserOversightBranchesMutation,
   useChangePasswordMutation,
+  useGetMoneyWalletQuery,
+  useTransferMoneyMutation,
+  useGetMoneySourcesQuery,
 } = apiSlice;

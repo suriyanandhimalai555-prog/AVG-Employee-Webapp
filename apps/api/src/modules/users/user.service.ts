@@ -206,6 +206,55 @@ export const UserService = {
     return user;
   },
 
+  // ─── GET SUPERIORS ───
+  // Walks the manager_id chain upward to return all managers in the user's hierarchy.
+  async getSuperiors(db: Pool, redis: Redis, userId: string): Promise<UserResponse[]> {
+    const result = await db.query(
+      `WITH RECURSIVE ancestors AS (
+        SELECT u.id, u.name, u.email, u.role, u.branch_id, u.manager_id, u.profile_photo_key,
+               1 AS level
+        FROM users u WHERE id = (SELECT manager_id FROM users WHERE id = $1)
+        UNION ALL
+        SELECT u.id, u.name, u.email, u.role, u.branch_id, u.manager_id, u.profile_photo_key,
+               a.level + 1
+        FROM users u
+        JOIN ancestors a ON u.id = a.manager_id
+      )
+      SELECT a.id, a.name, a.email, a.role, a.branch_id AS "branchId",
+             b.name AS "branchName", a.manager_id AS "managerId",
+             a.profile_photo_key
+      FROM ancestors a
+      LEFT JOIN branches b ON a.branch_id = b.id
+      ORDER BY a.level ASC`,
+      [userId]
+    );
+
+    // Also include MD if not in the direct chain (MD might not be a direct manager if there's no GM linked)
+    // Actually, MD is always the top level so they should be manually appended if not present
+    const users = result.rows;
+
+    const mdResult = await db.query(
+      `SELECT u.id, u.name, u.email, u.role, u.branch_id AS "branchId",
+              b.name AS "branchName", u.manager_id AS "managerId",
+              u.profile_photo_key
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE u.role = 'md' AND u.is_active = true LIMIT 1`
+    );
+
+    if (mdResult.rows.length > 0) {
+      const md = mdResult.rows[0];
+      if (!users.some(u => u.id === md.id)) {
+        users.push(md);
+      }
+    }
+
+    await populateAvatarUrls(redis, users, u => u.profile_photo_key, (u, url) => u.profilePhotoUrl = url);
+    users.forEach(u => delete u.profile_photo_key);
+
+    return users;
+  },
+
   // Fetch the oversight branch IDs assigned to a Director or GM
   async getOversightBranches(
     db: Pool,

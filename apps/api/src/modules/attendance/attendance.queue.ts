@@ -7,7 +7,7 @@ export interface AttendanceJobData {
   // Store the unique ID of the user whose attendance is being processed
   userId: string;
   // Store the unique ID of the branch the user is tied to
-  branchId: string;
+  branchId: string | null;
   // Specify the date in YYYY-MM-DD format for attendance record creation
   date: string;
   // Specify the mode of attendance as either 'office' or 'field'

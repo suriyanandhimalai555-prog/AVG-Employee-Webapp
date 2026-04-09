@@ -1,0 +1,1 @@
+// Add this at the bottom of the API routes file or user.service.ts... wait, I'll use multi_replace_file_content to add it securely.

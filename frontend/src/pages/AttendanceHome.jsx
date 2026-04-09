@@ -19,7 +19,6 @@ import { useNavigate } from 'react-router-dom';
 import { BottomNav } from '../components/attendance/BottomNav';
 import { HomeTab } from './attendance/HomeTab';
 import { AttendanceTab } from './attendance/AttendanceTab';
-import { MoneyTab } from './attendance/MoneyTab';
 import { AlertsTab } from './attendance/AlertsTab';
 import { AdminDashboard } from './AdminDashboard';
 import { UserManagement } from './UserManagement';
@@ -43,6 +42,10 @@ export const AttendanceHome = () => {
   const handleTabChange = (tab) => {
     if (tab === 'profile') {
       navigate('/profile');
+      return;
+    }
+    if (tab === 'money') {
+      navigate('/money');
       return;
     }
     setActiveTab(tab);
@@ -126,7 +129,6 @@ export const AttendanceHome = () => {
           {activeTab === 'attendance' && (
             <AttendanceTab onCheckInSuccess={() => setActiveTab('home')} />
           )}
-          {activeTab === 'money'  && <MoneyTab />}
           {activeTab === 'alerts' && <AlertsTab />}
         </AnimatePresence>
       </div>
