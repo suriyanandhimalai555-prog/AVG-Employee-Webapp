@@ -62,8 +62,8 @@ export const AttendanceService = {
     assertCanMarkAttendance(role as any);
 
     // Step 2: Smartphone + branch check — one query covers both
-    // Directors/GMs have no branch_id in users table; attendance.branch_id is NOT NULL,
-    // so we must resolve a valid branch before queuing or the worker INSERT will fail.
+    // Directors/GMs have no branch_id in users table; attendance.branch_id is nullable,
+    // so their records are stored with branch_id = NULL (global scope, no branch leakage).
     const userResult = await db.query(
       'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
       [userId]
@@ -79,7 +79,8 @@ export const AttendanceService = {
       );
     }
 
-    // Prefer JWT branchId → users.branch_id → first oversight branch (director/gm path)
+    // Prefer JWT branchId → users.branch_id → first oversight branch (director/gm path).
+    // If none is found, branch_id stays NULL — valid for Directors/GMs who operate globally.
     let resolvedBranchId: string | null = branchId ?? userResult.rows[0].branch_id ?? null;
     if (!resolvedBranchId) {
       const oversightResult = await db.query(
@@ -87,11 +88,6 @@ export const AttendanceService = {
         [userId]
       );
       resolvedBranchId = oversightResult.rows[0]?.branch_id ?? null;
-    }
-    if (!resolvedBranchId) {
-      throw new ValidationError(
-        'No branch assigned to your account. Contact the MD to assign a branch before marking attendance.'
-      );
     }
 
     // Step 3: Duplicate check using Redis atomic SET with NX — use IST date, not UTC
@@ -307,7 +303,7 @@ export const AttendanceService = {
         b.name AS branch_name
       FROM attendance a
       JOIN users u ON a.user_id = u.id
-      JOIN branches b ON a.branch_id = b.id
+      LEFT JOIN branches b ON a.branch_id = b.id
       WHERE a.user_id = ANY($1)
     `;
 

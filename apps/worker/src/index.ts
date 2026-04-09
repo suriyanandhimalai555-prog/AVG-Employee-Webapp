@@ -65,7 +65,8 @@ const processAutoAbsent = async (): Promise<void> => {
 
   console.log(`🔄 Auto-absent: checking for unmarked employees on ${todayIST}`);
 
-  // Select all active employees (excluding md and client) who have no record today
+  // Select all active employees (excluding md and client) who have no record today.
+  // branch_id may be NULL for Directors/GMs — that's expected and handled below.
   const missing = await db.query(
     `SELECT u.id, u.branch_id FROM users u
      WHERE u.is_active = true
@@ -82,32 +83,42 @@ const processAutoAbsent = async (): Promise<void> => {
     return;
   }
 
-  // Insert one absent record per missing employee; audit each insertion
-  for (const row of missing.rows as Array<{ id: string; branch_id: string }>) {
-    const insertResult = await db.query(
-      `INSERT INTO attendance (user_id, branch_id, date, mode, status, marked_by, submitted_at)
-       VALUES ($1, $2, $3, 'office', 'absent', $1, NOW())
-       ON CONFLICT (user_id, date) DO NOTHING
-       RETURNING id`,
-      [row.id, row.branch_id, todayIST]
-    );
+  let markedCount = 0;
+  let errorCount = 0;
 
-    // Only audit if the row was actually inserted (not a race-condition duplicate)
-    if (insertResult.rowCount && insertResult.rowCount > 0) {
-      // Use the system user id (the employee themselves) as changed_by for auto records
-      const attendanceId: string = insertResult.rows[0].id;
-      await db.query(
-        `INSERT INTO attendance_audit (attendance_id, changed_by, change_type, old_data, new_data)
-         VALUES ($1, $2, 'auto_absent', NULL,
-           (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1))`,
-        [attendanceId, row.id]
+  // Insert one absent record per missing employee; audit each insertion.
+  // Each insert is wrapped in its own try/catch so a single failure
+  // (e.g. FK constraint) never kills the loop for everyone else.
+  for (const row of missing.rows as Array<{ id: string; branch_id: string | null }>) {
+    try {
+      const insertResult = await db.query(
+        `INSERT INTO attendance (user_id, branch_id, date, mode, status, marked_by, submitted_at)
+         VALUES ($1, $2, $3, 'office', 'absent', $1, NOW())
+         ON CONFLICT (user_id, date) DO NOTHING
+         RETURNING id`,
+        [row.id, row.branch_id, todayIST]
       );
+
+      // Only audit if the row was actually inserted (not a race-condition duplicate)
+      if (insertResult.rowCount && insertResult.rowCount > 0) {
+        const attendanceId: string = insertResult.rows[0].id;
+        await db.query(
+          `INSERT INTO attendance_audit (attendance_id, changed_by, change_type, old_data, new_data)
+           VALUES ($1, $2, 'auto_absent', NULL,
+             (SELECT row_to_json(a) FROM attendance a WHERE a.id = $1))`,
+          [attendanceId, row.id]
+        );
+        markedCount++;
+      }
+    } catch (err: any) {
+      errorCount++;
+      console.error(`❌ Auto-absent: failed to mark user ${row.id}:`, err.message);
     }
   }
 
   // Notify connected clients so dashboards refresh automatically
-  await redis.publish('absent:marked', JSON.stringify({ date: todayIST, count: missing.rows.length }));
-  console.log(`✅ Auto-absent: marked ${missing.rows.length} employees as absent for ${todayIST}`);
+  await redis.publish('absent:marked', JSON.stringify({ date: todayIST, count: markedCount }));
+  console.log(`✅ Auto-absent: marked ${markedCount} employees as absent for ${todayIST}${errorCount > 0 ? ` (${errorCount} errors)` : ''}`);
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
