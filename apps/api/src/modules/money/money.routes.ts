@@ -7,7 +7,8 @@ import {
   SubmitCollectionSchema,
   VerifyCollectionSchema,
   GetCollectionsQuerySchema,
-  TransferCashSchema
+  TransferCashSchema,
+  UpdateProjectSchema
 } from './money.schema';
 
 const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
@@ -84,11 +85,31 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
     }
   });
 
+  fastify.patch('/projects/:id', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'md') {
+        return sendForbidden(reply, 'Only MD can update projects');
+      }
+
+      const { id } = req.params as { id: string };
+      const body = UpdateProjectSchema.parse(req.body);
+      const data = await MoneyService.updateProject(fastify.db, id, body);
+
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   fastify.get('/projects', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const data = await MoneyService.getProjects(fastify.db);
+      const { includeInactive } = request.query as { includeInactive?: string };
+      const data = await MoneyService.getProjects(fastify.db, includeInactive === 'true');
       return reply.send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);
@@ -214,6 +235,46 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
       const req = request as AuthenticatedRequest;
       const { id } = req.params as { id: string };
       const data = await MoneyService.getTransferSources(fastify.db, id);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── ADMIN OVERVIEW (MD / Director / GM / BM / BA only) ───
+
+  fastify.get('/admin/overview', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { stuckDays } = req.query as { stuckDays?: string };
+      const data = await MoneyService.getAdminOverview(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        req.user.branchId || null,
+        stuckDays ? parseInt(stuckDays, 10) : 3
+      );
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  fastify.get('/admin/branch/:branchId', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { branchId } = req.params as { branchId: string };
+      const data = await MoneyService.getBranchDrilldown(
+        fastify.db,
+        branchId,
+        req.user.id,
+        req.user.role,
+        req.user.branchId || null
+      );
       return reply.send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);

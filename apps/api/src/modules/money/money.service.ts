@@ -3,6 +3,7 @@ import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../shared/errors';
 import type {
   CreateProjectInput,
+  UpdateProjectInput,
   SubmitCollectionInput,
   VerifyCollectionInput,
   GetCollectionsQuery,
@@ -27,11 +28,55 @@ export const MoneyService = {
     }
   },
 
-  async getProjects(db: Pool): Promise<any[]> {
+  async getProjects(db: Pool, includeInactive: boolean = false): Promise<any[]> {
+    const whereClause = includeInactive ? '' : 'WHERE is_active = true';
     const result = await db.query(
-      'SELECT * FROM projects WHERE is_active = true ORDER BY name ASC'
+      `SELECT * FROM projects ${whereClause} ORDER BY name ASC`
     );
     return result.rows;
+  },
+
+  async updateProject(db: Pool, id: string, payload: UpdateProjectInput): Promise<any> {
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (payload.name !== undefined) {
+      updates.push(`name = $${paramIndex}`);
+      params.push(payload.name);
+      paramIndex++;
+    }
+
+    if (payload.isActive !== undefined) {
+      updates.push(`is_active = $${paramIndex}`);
+      params.push(payload.isActive);
+      paramIndex++;
+    }
+
+    if (updates.length === 0) {
+      throw new ValidationError('No updates provided');
+    }
+
+    params.push(id);
+    const query = `
+      UPDATE projects 
+      SET ${updates.join(', ')} 
+      WHERE id = $${paramIndex} 
+      RETURNING *
+    `;
+
+    try {
+      const result = await db.query(query, params);
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Project not found');
+      }
+      return result.rows[0];
+    } catch (error: any) {
+      if (error.code === '23505') {
+        throw new ConflictError('A project with this name already exists');
+      }
+      throw error;
+    }
   },
 
   // ─── COLLECTIONS ───
@@ -172,12 +217,13 @@ export const MoneyService = {
       WHERE ${whereClause}
     `;
 
-    // 1. Get totals for summary cards (Pending vs Approved etc.)
+    // 1. Get totals for summary cards. Exclude cash_transfer — it is internal movement
+    //    of money already counted when the original cash entry was submitted.
     const totalsSql = `
-      SELECT 
-        SUM(CASE WHEN m.status = 'pending' THEN m.amount ELSE 0 END) as pending_total,
-        SUM(CASE WHEN m.status = 'approved' THEN m.amount ELSE 0 END) as approved_total,
-        SUM(CASE WHEN m.status = 'rejected' THEN m.amount ELSE 0 END) as rejected_total
+      SELECT
+        SUM(CASE WHEN m.status = 'pending'  AND m.mode != 'cash_transfer' THEN m.amount ELSE 0 END) as pending_total,
+        SUM(CASE WHEN m.status = 'approved' AND m.mode != 'cash_transfer' THEN m.amount ELSE 0 END) as approved_total,
+        SUM(CASE WHEN m.status = 'rejected' AND m.mode != 'cash_transfer' THEN m.amount ELSE 0 END) as rejected_total
       ${sqlBase}
     `;
     const totalsResult = await db.query(totalsSql, params);
@@ -332,7 +378,7 @@ export const MoneyService = {
   async getTransferSources(db: Pool, transferId: string) {
     const transferResult = await db.query('SELECT source_collection_ids FROM money_collections WHERE id = $1', [transferId]);
     if (transferResult.rows.length === 0) throw new NotFoundError('Transfer not found');
-    
+
     const sourceIds = transferResult.rows[0].source_collection_ids;
     if (!sourceIds || sourceIds.length === 0) return [];
 
@@ -344,5 +390,316 @@ export const MoneyService = {
       WHERE m.id = ANY($1::uuid[])
     `, [sourceIds]);
     return result.rows;
-  }
+  },
+
+  // ─── ADMIN OVERVIEW ───
+
+  // Resolves the branch IDs in scope for an admin user.
+  // Returns null for MD (all branches), array for everyone else.
+  async _resolveScopedBranchIds(
+    db: Pool,
+    userId: string,
+    role: string,
+    branchId: string | null
+  ): Promise<string[] | null> {
+    if (role === 'md') return null;
+
+    if (role === 'director' || role === 'gm') {
+      const r = await db.query(
+        `SELECT branch_id FROM user_oversight_branches WHERE user_id = $1`,
+        [userId]
+      );
+      return r.rows.map((row: any) => row.branch_id);
+    }
+
+    if (role === 'branch_manager' || role === 'branch_admin') {
+      if (!branchId) throw new ForbiddenError('No branch assigned');
+      return [branchId];
+    }
+
+    throw new ForbiddenError('You do not have access to the admin overview');
+  },
+
+  async getAdminOverview(
+    db: Pool,
+    userId: string,
+    role: string,
+    branchId: string | null,
+    stuckDays: number = 3
+  ): Promise<any> {
+    const isMd = role === 'md';
+    // Null means all branches (MD); array means scoped branches
+    const scopedBranchIds = await this._resolveScopedBranchIds(db, userId, role, branchId);
+
+    // Build a reusable WHERE clause fragment for scoping by submitter's branch
+    const branchFilter = scopedBranchIds !== null
+      ? `AND u.branch_id = ANY($1::uuid[])`
+      : '';
+    const branchParams: any[] = scopedBranchIds !== null ? [scopedBranchIds] : [];
+
+    // 1. Global flow totals.
+    //    Exclude cash_transfer — it is internal movement of money already counted
+    //    when the original cash entry was submitted. Counting it again would double
+    //    the same funds every time someone passes cash up the chain.
+    const totalsResult = await db.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS collected,
+        COALESCE(SUM(CASE WHEN mc.status = 'approved'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS verified,
+        COALESCE(SUM(CASE WHEN mc.status = 'pending'   AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN mc.status = 'rejected'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS rejected,
+        COALESCE(SUM(CASE WHEN mc.mode = 'gpay'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS gpay,
+        COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
+        COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
+      FROM money_collections mc
+      JOIN users u ON mc.user_id = u.id
+      WHERE 1=1 ${branchFilter}
+    `, branchParams);
+
+    const totals = {
+      collected:    parseFloat(totalsResult.rows[0].collected),
+      verified:     parseFloat(totalsResult.rows[0].verified),
+      pending:      parseFloat(totalsResult.rows[0].pending),
+      rejected:     parseFloat(totalsResult.rows[0].rejected),
+      byMode: {
+        gpay:        parseFloat(totalsResult.rows[0].gpay),
+        bankReceipt: parseFloat(totalsResult.rows[0].bank_receipt),
+        cash:        parseFloat(totalsResult.rows[0].cash),
+      },
+    };
+
+    // 2. Cash on hand total (MD-only)
+    let cashOnHand: number | undefined;
+    if (isMd) {
+      const cohResult = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) AS cash_on_hand
+        FROM money_collections
+        WHERE status = 'approved'
+          AND is_forwarded = false
+          AND mode IN ('cash', 'cash_transfer')
+      `);
+      cashOnHand = parseFloat(cohResult.rows[0].cash_on_hand);
+    }
+
+    // 3. Stuck cash list (MD-only) — approved cash held longer than stuckDays
+    let stuckCash: any[] | undefined;
+    if (isMd) {
+      const stuckResult = await db.query(`
+        SELECT
+          mc.id, mc.amount, mc.mode, mc.verified_at,
+          holder.name  AS holder_name,
+          holder.role  AS holder_role,
+          b.id         AS branch_id,
+          b.name       AS branch_name
+        FROM money_collections mc
+        JOIN users holder ON mc.assigned_verifier_id = holder.id
+        LEFT JOIN branches b ON holder.branch_id = b.id
+        WHERE mc.status = 'approved'
+          AND mc.is_forwarded = false
+          AND mc.mode IN ('cash', 'cash_transfer')
+          AND mc.verified_at < NOW() - ($1 || ' days')::interval
+        ORDER BY mc.verified_at ASC
+        LIMIT 20
+      `, [stuckDays]);
+      stuckCash = stuckResult.rows;
+    }
+
+    // 4. Per-branch flow stats — same cash_transfer exclusion as global totals.
+    const byBranchResult = await db.query(`
+      SELECT
+        b.id   AS branch_id,
+        b.name AS branch_name,
+        COALESCE(SUM(CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS collected,
+        COALESCE(SUM(CASE WHEN mc.status = 'approved'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS verified,
+        COALESCE(SUM(CASE WHEN mc.status = 'pending'   AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN mc.status = 'rejected'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS rejected,
+        COALESCE(SUM(CASE WHEN mc.mode = 'gpay'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS gpay,
+        COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
+        COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
+      FROM branches b
+      LEFT JOIN users u ON u.branch_id = b.id AND u.is_active = true
+      LEFT JOIN money_collections mc ON mc.user_id = u.id
+      WHERE 1=1 ${scopedBranchIds !== null ? 'AND b.id = ANY($1::uuid[])' : ''}
+      GROUP BY b.id, b.name
+      ORDER BY verified DESC NULLS LAST
+    `, branchParams);
+
+    let byBranch: any[] = byBranchResult.rows.map((r: any) => ({
+      branchId:   r.branch_id,
+      branchName: r.branch_name,
+      collected:  parseFloat(r.collected),
+      verified:   parseFloat(r.verified),
+      pending:    parseFloat(r.pending),
+      rejected:   parseFloat(r.rejected),
+      byMode: {
+        gpay:        parseFloat(r.gpay),
+        bankReceipt: parseFloat(r.bank_receipt),
+        cash:        parseFloat(r.cash),
+      },
+    }));
+
+    // 5. Cash on hand per branch (MD-only) — keyed by holder's branch
+    if (isMd) {
+      const cohBranchResult = await db.query(`
+        SELECT holder.branch_id, COALESCE(SUM(mc.amount), 0) AS cash_on_hand
+        FROM money_collections mc
+        JOIN users holder ON mc.assigned_verifier_id = holder.id
+        WHERE mc.status = 'approved'
+          AND mc.is_forwarded = false
+          AND mc.mode IN ('cash', 'cash_transfer')
+        GROUP BY holder.branch_id
+      `);
+      const cohMap: Record<string, number> = {};
+      for (const row of cohBranchResult.rows) {
+        cohMap[row.branch_id] = parseFloat(row.cash_on_hand);
+      }
+      byBranch = byBranch.map(b => ({ ...b, cashOnHand: cohMap[b.branchId] ?? 0 }));
+    }
+
+    // 6. Org-wide cash holders list (MD-only) — everyone currently holding cash
+    let holders: any[] | undefined;
+    if (isMd) {
+      const holdersResult = await db.query(`
+        SELECT
+          u.id, u.name, u.role,
+          b.name AS branch_name,
+          COALESCE(SUM(mc.amount), 0) AS amount_held
+        FROM users u
+        JOIN money_collections mc ON mc.assigned_verifier_id = u.id
+        LEFT JOIN branches b ON u.branch_id = b.id
+        WHERE mc.status = 'approved'
+          AND mc.is_forwarded = false
+          AND mc.mode IN ('cash', 'cash_transfer')
+        GROUP BY u.id, u.name, u.role, b.name
+        ORDER BY amount_held DESC
+      `);
+      holders = holdersResult.rows;
+    }
+
+    return {
+      totals,
+      ...(isMd && { cashOnHand, stuckCash, holders }),
+      byBranch,
+    };
+  },
+
+  async getBranchDrilldown(
+    db: Pool,
+    targetBranchId: string,
+    requesterId: string,
+    role: string,
+    requesterBranchId: string | null
+  ): Promise<any> {
+    const isMd = role === 'md';
+
+    // Non-MD admins: enforce branch scope
+    if (!isMd) {
+      const scopedIds = await this._resolveScopedBranchIds(db, requesterId, role, requesterBranchId);
+      if (!scopedIds || !scopedIds.includes(targetBranchId)) {
+        throw new ForbiddenError('You do not have access to this branch');
+      }
+    }
+
+    // Flow totals for this branch — exclude cash_transfer to avoid double-counting.
+    const totalsResult = await db.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS collected,
+        COALESCE(SUM(CASE WHEN mc.status = 'approved'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS verified,
+        COALESCE(SUM(CASE WHEN mc.status = 'pending'   AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS pending,
+        COALESCE(SUM(CASE WHEN mc.status = 'rejected'  AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS rejected,
+        COALESCE(SUM(CASE WHEN mc.mode = 'gpay'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS gpay,
+        COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
+        COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
+      FROM money_collections mc
+      JOIN users u ON mc.user_id = u.id
+      WHERE u.branch_id = $1
+    `, [targetBranchId]);
+
+    const totals = {
+      collected:    parseFloat(totalsResult.rows[0].collected),
+      verified:     parseFloat(totalsResult.rows[0].verified),
+      pending:      parseFloat(totalsResult.rows[0].pending),
+      rejected:     parseFloat(totalsResult.rows[0].rejected),
+      byMode: {
+        gpay:        parseFloat(totalsResult.rows[0].gpay),
+        bankReceipt: parseFloat(totalsResult.rows[0].bank_receipt),
+        cash:        parseFloat(totalsResult.rows[0].cash),
+      },
+    };
+
+    // Top collectors — exclude cash_transfer (internal movements, not client collections).
+    const topResult = await db.query(`
+      SELECT u.id, u.name, u.role,
+        COALESCE(SUM(mc.amount), 0) AS total_collected
+      FROM users u
+      JOIN money_collections mc ON mc.user_id = u.id
+      WHERE u.branch_id = $1
+        AND mc.status != 'rejected'
+        AND mc.mode  != 'cash_transfer'
+      GROUP BY u.id, u.name, u.role
+      ORDER BY total_collected DESC
+      LIMIT 5
+    `, [targetBranchId]);
+
+    // Project split — exclude cash_transfer for the same reason.
+    const projectResult = await db.query(`
+      SELECT p.id, p.name,
+        COALESCE(SUM(mc.amount), 0) AS total_amount
+      FROM projects p
+      JOIN money_collections mc ON mc.project_id = p.id
+      JOIN users u ON mc.user_id = u.id
+      WHERE u.branch_id = $1
+        AND mc.status != 'rejected'
+        AND mc.mode  != 'cash_transfer'
+      GROUP BY p.id, p.name
+      ORDER BY total_amount DESC
+    `, [targetBranchId]);
+
+    // Current cash holders inside this branch (MD-only)
+    let holders: any[] | undefined;
+    if (isMd) {
+      const holdersResult = await db.query(`
+        SELECT u.id, u.name, u.role,
+          COALESCE(SUM(mc.amount), 0) AS amount_held
+        FROM users u
+        JOIN money_collections mc ON mc.assigned_verifier_id = u.id
+        WHERE u.branch_id = $1
+          AND mc.status = 'approved'
+          AND mc.is_forwarded = false
+          AND mc.mode IN ('cash', 'cash_transfer')
+        GROUP BY u.id, u.name, u.role
+        ORDER BY amount_held DESC
+      `, [targetBranchId]);
+      holders = holdersResult.rows;
+    }
+
+    // Recent collections for this branch including photo_key so MD can view proofs
+    let collections: any[] | undefined;
+    if (isMd) {
+      const colResult = await db.query(`
+        SELECT
+          mc.id, mc.amount, mc.mode, mc.status, mc.photo_key,
+          mc.client_name, mc.client_phone, mc.submitted_at, mc.verified_at,
+          mc.rejection_note,
+          u.name  AS submitter_name,
+          u.role  AS submitter_role,
+          p.name  AS project_name,
+          v.name  AS verifier_name
+        FROM money_collections mc
+        JOIN users u ON mc.user_id = u.id
+        JOIN projects p ON mc.project_id = p.id
+        LEFT JOIN users v ON mc.assigned_verifier_id = v.id
+        WHERE u.branch_id = $1
+        ORDER BY mc.submitted_at DESC
+        LIMIT 30
+      `, [targetBranchId]);
+      collections = colResult.rows;
+    }
+
+    return {
+      totals,
+      topCollectors: topResult.rows,
+      projectSplit:  projectResult.rows,
+      ...(isMd && { holders, collections }),
+    };
+  },
 };

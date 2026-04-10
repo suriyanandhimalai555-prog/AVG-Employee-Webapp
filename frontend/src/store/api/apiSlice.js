@@ -278,9 +278,22 @@ export const apiSlice = createApi({
     }),
 
     getMoneyProjects: builder.query({
-      query: () => '/money/projects',
+      query: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return `/money/projects${qs ? `?${qs}` : ''}`;
+      },
       transformResponse: (response) => response.data,
       providesTags: ['MoneyProjects'],
+    }),
+
+    updateMoneyProject: builder.mutation({
+      query: ({ id, ...data }) => ({
+        url: `/money/projects/${id}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyProjects'],
     }),
 
     submitMoneyCollection: builder.mutation({
@@ -331,6 +344,20 @@ export const apiSlice = createApi({
 
     getMoneySources: builder.query({
       query: (id) => `/money/${id}/sources`,
+      transformResponse: (response) => response.data,
+    }),
+
+    getMoneyAdminOverview: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return `/money/admin/overview${qs ? `?${qs}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['MoneyCollections', 'MoneyWallet'],
+    }),
+
+    getMoneyBranchDrilldown: builder.query({
+      query: (branchId) => `/money/admin/branch/${branchId}`,
       transformResponse: (response) => response.data,
     }),
 
@@ -423,6 +450,7 @@ export const {
   useCreateTransactionMutation,
   useUpdateTransactionStatusMutation,
   useCreateMoneyProjectMutation,
+  useUpdateMoneyProjectMutation,
   useGetMoneyProjectsQuery,
   useSubmitMoneyCollectionMutation,
   useVerifyMoneyCollectionMutation,
@@ -439,6 +467,8 @@ export const {
   useGetMoneyWalletQuery,
   useTransferMoneyMutation,
   useGetMoneySourcesQuery,
+  useGetMoneyAdminOverviewQuery,
+  useGetMoneyBranchDrilldownQuery,
   useGetMyDocumentsQuery,
   useAddDocumentMutation,
   useDeleteDocumentMutation,

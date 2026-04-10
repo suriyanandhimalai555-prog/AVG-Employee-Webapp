@@ -57,7 +57,13 @@ export const TransferCashSchema = z.object({
   collectionIds: z.array(z.string().uuid()).min(1),
 });
 
+export const UpdateProjectSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  isActive: z.boolean().optional(),
+});
+
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
+export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
 export type SubmitCollectionInput = z.infer<typeof SubmitCollectionSchema>;
 export type VerifyCollectionInput = z.infer<typeof VerifyCollectionSchema>;
 export type GetCollectionsQuery = z.infer<typeof GetCollectionsQuerySchema>;

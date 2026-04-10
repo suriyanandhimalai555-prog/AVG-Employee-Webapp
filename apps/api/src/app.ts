@@ -20,6 +20,7 @@ import authRoutes from './modules/auth/auth.routes';
 import attendanceRoutes from './modules/attendance/attendance.routes';
 import branchRoutes from './modules/branches/branch.routes';
 import transactionRoutes from './modules/transactions/transaction.routes';
+import moneyRoutes from './modules/money/money.routes';
 import userRoutes from './modules/users/user.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -119,7 +120,6 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // Register the Money Collections module
   // Mounts under the '/api/money' prefix
-  const moneyRoutes = require('./modules/money/money.routes').default;
   await app.register(moneyRoutes, { prefix: '/api/money' });
 
   // Register the User Management module (MD only for creation)

@@ -1,14 +1,14 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
-import { 
+import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Upload, Navigation, Send, DollarSign, Image as ImageIcon, MapPin, Loader2, BookOpen, Clock, AlertCircle,
-  Briefcase, ArrowUpRight, Check, Info
+  Briefcase, ArrowUpRight, Check, Info, TrendingUp, Users, Building2, AlertTriangle
 } from 'lucide-react';
 import { PageHeader } from '../components/attendance/PageHeader';
 import { selectCurrentUser } from '../store/slices/authSlice';
-import { 
+import {
   useGetMoneyProjectsQuery,
   useCreateMoneyProjectMutation,
   useSubmitMoneyCollectionMutation,
@@ -17,10 +17,13 @@ import {
   useGetMoneyUploadUrlMutation,
   useGetMoneyWalletQuery,
   useTransferMoneyMutation,
+  useVerifyMoneyCollectionMutation,
+  useGetMoneyAdminOverviewQuery,
+  useGetMoneyBranchDrilldownQuery,
 } from '../store/api/apiSlice';
 import { useNavigate } from 'react-router-dom';
-import { Avatar } from '../components/Avatar';
 import { SourceInspector } from '../components/money/SourceInspector';
+import { PhotoProof } from '../components/money/PhotoProof';
 
 // Status colors
 const STATUS_COLORS = {
@@ -32,24 +35,25 @@ const STATUS_COLORS = {
 const MODE_LABELS = {
   gpay: 'Google Pay',
   bank_receipt: 'Bank Receipt',
-  cash: 'Cash in Hand'
+  cash: 'Cash in Hand',
+  cash_transfer: 'Cash Transfer'
 };
 
 export const MoneyManagementPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const [view, setView] = useState('home'); // 'home', 'submit', 'history', 'wallet'
-  
-  // Create Project State (MD Only)
-  const [newProjectName, setNewProjectName] = useState('');
-  const [createProject, { isLoading: isCreatingProject }] = useCreateMoneyProjectMutation();
+  const [view, setView] = useState('home'); // 'home', 'submit', 'history', 'wallet', 'overview'
+  const [drillBranchId, setDrillBranchId] = useState(null);
+
+  // Admin overview — MD only
+  const { data: adminOverview, isLoading: isOverviewLoading } = useGetMoneyAdminOverviewQuery({}, { skip: user?.role !== 'md' });
+  const { data: drilldown, isLoading: isDrilldownLoading } = useGetMoneyBranchDrilldownQuery(drillBranchId, { skip: !drillBranchId });
 
   // Queries
   const { data: projects = [] } = useGetMoneyProjectsQuery();
   const { data: superiors = [] } = useGetUserSuperiorsQuery(undefined, { skip: user?.role === 'md' });
   const { data: collectionsResult, isLoading: isCollectionsLoading } = useGetMoneyCollectionsQuery();
   
-  const totals = collectionsResult?.totals || { pending: 0, approved: 0, rejected: 0 };
   const collections = collectionsResult?.data || [];
 
   // Submit Collection State
@@ -75,6 +79,38 @@ export const MoneyManagementPage = () => {
   const { data: walletItems = [], isLoading: isWalletLoading } = useGetMoneyWalletQuery(undefined, {
     skip: user?.role === 'md' // MD doesn't have a wallet in this simplified logic as they are the end point
   });
+  const [verifyCollection, { isLoading: isVerifying }] = useVerifyMoneyCollectionMutation();
+  const [verifyingId, setVerifyingId] = useState(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [rejectingId, setRejectingId] = useState(null);
+
+  const pendingToVerify = collections.filter(c => c.status === 'pending' && c.assigned_verifier_id === user?.id);
+
+  const handleApprove = async (id) => {
+    setVerifyingId(id);
+    try {
+      await verifyCollection({ id, status: 'approved' }).unwrap();
+    } catch (err) {
+      setFormError(err?.data?.error?.message || 'Approval failed');
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const handleReject = async (id) => {
+    if (!rejectNote.trim()) return;
+    setVerifyingId(id);
+    try {
+      await verifyCollection({ id, status: 'rejected', rejectionNote: rejectNote }).unwrap();
+      setRejectingId(null);
+      setRejectNote('');
+    } catch (err) {
+      setFormError(err?.data?.error?.message || 'Rejection failed');
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
   const [selectedForTransfer, setSelectedForTransfer] = useState([]);
   const [transferTarget, setTransferTarget] = useState('');
   const [transferMoney, { isLoading: isTransferring }] = useTransferMoneyMutation();
@@ -116,17 +152,6 @@ export const MoneyManagementPage = () => {
     setFormError('');
     const previewUrl = URL.createObjectURL(file);
     setFieldPhoto({ file, previewUrl });
-  };
-
-  const handleAddProject = async (e) => {
-    e.preventDefault();
-    if (!newProjectName.trim()) return;
-    try {
-      await createProject({ name: newProjectName.trim() }).unwrap();
-      setNewProjectName('');
-    } catch (err) {
-      alert(err.data?.error?.message || 'Failed to create project');
-    }
   };
 
   const handleSubmitCollection = async (e) => {
@@ -188,113 +213,420 @@ export const MoneyManagementPage = () => {
     }
   };
 
+// ─── SHARED ADMIN OVERVIEW VIEW (used for MD and management roles) ───
+  const AdminOverviewContent = () => {
+    const isMd = user?.role === 'md';
+    const ov = adminOverview;
+    const ovTotals = ov?.totals || { collected: 0, verified: 0, pending: 0, rejected: 0, byMode: { gpay: 0, bankReceipt: 0, cash: 0 } };
+    const byBranch = ov?.byBranch || [];
+    const stuckCash = ov?.stuckCash || [];
+    const allHolders = ov?.holders || [];
+    const topVerified = ovTotals.verified > 0 ? ovTotals.verified : 1; // for bar scaling
+
+    return (
+      <div className="pb-28">
+        {/* KPI Strip */}
+        <div className="px-4 mb-6">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center"><TrendingUp size={14} /></div>
+                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Collected</p>
+              </div>
+              <p className="text-xl font-bold text-navy">₹{ovTotals.collected.toLocaleString()}</p>
+            </div>
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center"><CheckCircle2 size={14} /></div>
+                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Verified</p>
+              </div>
+              <p className="text-xl font-bold text-navy">₹{ovTotals.verified.toLocaleString()}</p>
+            </div>
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center"><Clock size={14} /></div>
+                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Pending</p>
+              </div>
+              <p className="text-xl font-bold text-navy">₹{ovTotals.pending.toLocaleString()}</p>
+            </div>
+            {isMd ? (
+              <div className="bg-navy rounded-3xl p-4 card-shadow">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-xl bg-white/10 text-white flex items-center justify-center"><Wallet size={14} /></div>
+                  <p className="text-[9px] uppercase tracking-widest font-bold text-white/40">Cash on Hand</p>
+                </div>
+                <p className="text-xl font-bold text-white">₹{(ov?.cashOnHand || 0).toLocaleString()}</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><XCircle size={14} /></div>
+                  <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Rejected</p>
+                </div>
+                <p className="text-xl font-bold text-navy">₹{ovTotals.rejected.toLocaleString()}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mode breakdown strip */}
+        <div className="px-4 mb-6">
+          <div className="bg-white rounded-[24px] p-4 card-shadow border border-navy/5">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'GPay', val: ovTotals.byMode?.gpay || 0, color: 'bg-indigo/5 text-indigo' },
+                { label: 'Bank', val: ovTotals.byMode?.bankReceipt || 0, color: 'bg-emerald-50 text-emerald-600' },
+                { label: 'Cash', val: ovTotals.byMode?.cash || 0, color: 'bg-amber-50 text-amber-600' },
+              ].map(({ label, val, color }) => (
+                <div key={label} className={`rounded-2xl p-3 ${color}`}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
+                  <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Stuck Cash Alerts (MD-only) */}
+        {isMd && stuckCash.length > 0 && (
+          <div className="px-4 mb-6">
+            <div className="bg-red-50 border border-red-200 rounded-[24px] p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-red-500" />
+                <p className="text-xs font-bold text-red-700">{stuckCash.length} cash alert{stuckCash.length > 1 ? 's' : ''} — held &gt;3 days</p>
+              </div>
+              <div className="space-y-2">
+                {stuckCash.map(sc => (
+                  <div key={sc.id} className="bg-white rounded-2xl p-3 flex items-center justify-between border border-red-100">
+                    <div>
+                      <p className="text-xs font-bold text-navy">{sc.holder_name}</p>
+                      <p className="text-[9px] font-medium text-navy/40">{sc.branch_name} · {sc.holder_role?.replace('_', ' ')}</p>
+                    </div>
+                    <p className="text-sm font-bold text-red-600">₹{parseFloat(sc.amount).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Branch Breakdown */}
+        <div className="px-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Branch Breakdown</p>
+            {isMd && <p className="text-[9px] font-bold text-navy/20 uppercase tracking-wider">incl. cash on hand</p>}
+          </div>
+          <div className="space-y-3">
+            {isOverviewLoading ? (
+              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-navy/20" size={28} /></div>
+            ) : byBranch.length === 0 ? (
+              <p className="text-center text-sm text-navy/30 py-6">No branch data yet.</p>
+            ) : (
+              byBranch.map(b => (
+                <button
+                  key={b.branchId}
+                  onClick={() => setDrillBranchId(b.branchId)}
+                  className="w-full bg-white rounded-[24px] p-4 card-shadow border border-navy/5 text-left tactile-press group"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Building2 size={15} />
+                      </div>
+                      <p className="text-sm font-bold text-navy">{b.branchName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isMd && b.cashOnHand > 0 && (
+                        <span className="text-[9px] font-bold text-navy bg-navy/5 px-2 py-1 rounded-lg">
+                          ₹{b.cashOnHand.toLocaleString()} held
+                        </span>
+                      )}
+                      <ChevronRight size={14} className="text-navy/20 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                  {/* Mini bar: verified width relative to top branch */}
+                  <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden mb-2">
+                    <div
+                      className="h-full bg-indigo rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, (b.verified / topVerified) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex gap-4 text-[9px] font-bold uppercase tracking-wider mb-3">
+                    <span className="text-emerald-500">₹{b.verified.toLocaleString()} verified</span>
+                    {b.pending > 0 && <span className="text-amber-500">₹{b.pending.toLocaleString()} pending</span>}
+                    {b.rejected > 0 && <span className="text-red-400">₹{b.rejected.toLocaleString()} rejected</span>}
+                  </div>
+                  {/* Mode breakdown */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-navy/5">
+                    {[
+                      { label: 'GPay', val: b.byMode?.gpay || 0, cls: 'text-indigo bg-indigo/5' },
+                      { label: 'Bank', val: b.byMode?.bankReceipt || 0, cls: 'text-emerald-600 bg-emerald-50' },
+                      { label: 'Cash', val: b.byMode?.cash || 0, cls: 'text-amber-600 bg-amber-50' },
+                    ].map(({ label, val, cls }) => (
+                      <div key={label} className={`rounded-xl px-2 py-1.5 ${cls}`}>
+                        <p className="text-[8px] font-bold uppercase tracking-wider opacity-60">{label}</p>
+                        <p className="text-[10px] font-bold mt-0.5">₹{val.toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Org-wide cash holders (MD-only) */}
+        {isMd && allHolders.length > 0 && (
+          <div className="px-4 mb-6">
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Who is Holding Cash</p>
+            <div className="space-y-2">
+              {allHolders.map(h => (
+                <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30">
+                      <Wallet size={16} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-navy">{h.name}</p>
+                      <p className="text-[9px] font-medium text-navy/40 capitalize">
+                        {h.role?.replace(/_/g, ' ')} · {h.branch_name || 'No branch'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Manage Projects (MD-only) */}
+        {isMd && (
+          <div className="px-4">
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Administration</p>
+            <button
+              onClick={() => navigate('/money/projects')}
+              className="w-full bg-white rounded-[28px] p-5 flex items-center justify-between card-shadow border border-navy/5 group tactile-press"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Briefcase size={22} />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-bold text-navy">Manage Projects</p>
+                  <p className="text-[10px] font-medium text-navy/30">Edit names, activate/deactivate</p>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-navy/20 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        )}
+
+        {/* Branch Drilldown Panel */}
+        <AnimatePresence>
+          {drillBranchId && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-end justify-center bg-navy/40 backdrop-blur-sm"
+              onClick={() => setDrillBranchId(null)}
+            >
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+                onClick={e => e.stopPropagation()}
+                className="bg-white w-full max-w-lg rounded-t-[32px] overflow-hidden shadow-2xl"
+              >
+                <div className="flex items-center justify-between p-5 border-b border-navy/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
+                    <div>
+                      <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest">Branch Detail</p>
+                      <p className="text-base font-bold text-navy">
+                        {byBranch.find(b => b.branchId === drillBranchId)?.branchName || 'Branch'}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => setDrillBranchId(null)} className="p-2 hover:bg-navy/5 rounded-full">
+                    <XCircle size={20} className="text-navy/30" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
+                  {isDrilldownLoading ? (
+                    <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo/40" size={28} /></div>
+                  ) : drilldown ? (
+                    <>
+                      {/* Flow totals */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { label: 'Collected', val: drilldown.totals.collected, icon: <TrendingUp size={13} />, bg: 'bg-indigo/5 text-indigo' },
+                          { label: 'Verified',  val: drilldown.totals.verified,  icon: <CheckCircle2 size={13} />, bg: 'bg-emerald-50 text-emerald-500' },
+                          { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
+                          { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
+                        ].map(({ label, val, icon, bg }) => (
+                          <div key={label} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
+                            <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Mode breakdown */}
+                      <div className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { label: 'GPay', val: drilldown.totals.byMode?.gpay || 0, cls: 'bg-indigo/5 text-indigo' },
+                            { label: 'Bank', val: drilldown.totals.byMode?.bankReceipt || 0, cls: 'bg-emerald-50 text-emerald-600' },
+                            { label: 'Cash', val: drilldown.totals.byMode?.cash || 0, cls: 'bg-amber-50 text-amber-600' },
+                          ].map(({ label, val, cls }) => (
+                            <div key={label} className={`rounded-2xl p-3 ${cls}`}>
+                              <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
+                              <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Cash holders (MD-only) */}
+                      {isMd && drilldown.holders && drilldown.holders.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
+                          <div className="space-y-2">
+                            {drilldown.holders.map(h => (
+                              <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
+                                  <div>
+                                    <p className="text-xs font-bold text-navy">{h.name}</p>
+                                    <p className="text-[9px] font-medium text-navy/40 capitalize">{h.role?.replace('_', ' ')}</p>
+                                  </div>
+                                </div>
+                                <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top collectors */}
+                      {drilldown.topCollectors && drilldown.topCollectors.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
+                          <div className="space-y-2">
+                            {drilldown.topCollectors.map((c, idx) => (
+                              <div key={c.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center gap-3">
+                                <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-navy truncate">{c.name}</p>
+                                  <p className="text-[9px] font-medium text-navy/40 capitalize">{c.role?.replace('_', ' ')}</p>
+                                </div>
+                                <p className="text-sm font-bold text-indigo shrink-0">₹{parseFloat(c.total_collected).toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Project split */}
+                      {drilldown.projectSplit && drilldown.projectSplit.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Project Split</p>
+                          <div className="space-y-2">
+                            {drilldown.projectSplit.map(p => {
+                              const pct = drilldown.totals.collected > 0
+                                ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
+                                : 0;
+                              return (
+                                <div key={p.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                                  <div className="flex justify-between items-center mb-2">
+                                    <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
+                                    <div className="text-right shrink-0">
+                                      <p className="text-xs font-bold text-indigo">₹{parseFloat(p.total_amount).toLocaleString()}</p>
+                                      <p className="text-[9px] font-bold text-navy/20">{pct}%</p>
+                                    </div>
+                                  </div>
+                                  <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {/* Collections with proof photos (MD-only) */}
+                      {isMd && drilldown.collections && drilldown.collections.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
+                          <div className="space-y-3">
+                            {drilldown.collections.map(col => (
+                              <div key={col.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 space-y-3">
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
+                                    <p className="text-[9px] text-navy/40 capitalize">{col.submitter_role?.replace(/_/g, ' ')}</p>
+                                    {col.verifier_name && (
+                                      <p className="text-[9px] font-semibold text-indigo mt-0.5">→ {col.verifier_name}</p>
+                                    )}
+                                  </div>
+                                  <span className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
+                                    {col.status}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="text-base font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
+                                    <p className="text-[9px] text-navy/40">{col.client_name} · {col.project_name}</p>
+                                  </div>
+                                  <span className="text-[9px] font-bold text-navy/30 bg-navy/5 px-2 py-1 rounded-lg uppercase">
+                                    {MODE_LABELS[col.mode] || col.mode}
+                                  </span>
+                                </div>
+                                {col.photo_key && <PhotoProof photoKey={col.photo_key} />}
+                                {col.rejection_note && (
+                                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-100 flex items-start gap-2">
+                                    <AlertCircle size={12} className="text-red-500 shrink-0 mt-0.5" />
+                                    <p className="text-[9px] font-medium text-red-700 leading-relaxed">{col.rejection_note}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
 // ─── MD DASHBOARD VIEW ───
   if (user?.role === 'md') {
     return (
       <div className="flex flex-col">
         <PageHeader user={user} title="Financial Oversight" />
         <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
-          
           <div className="px-6 mb-6">
             <h2 className="text-3xl font-bold text-navy tracking-tight">Finances</h2>
             <p className="text-xs font-medium text-navy/40 mt-1">Global collections overview</p>
           </div>
-
-        {/* Global Totals Grid */}
-        <div className="px-6 mb-8 grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-3xl p-4 card-shadow flex flex-col items-center">
-            <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mb-2"><CheckCircle2 size={16} /></div>
-            <p className="text-lg font-bold text-navy">₹{totals.approved.toLocaleString()}</p>
-            <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Approved</p>
-          </div>
-          <div className="bg-white rounded-3xl p-4 card-shadow flex flex-col items-center">
-             <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center mb-2"><Clock size={16} /></div>
-            <p className="text-lg font-bold text-navy">₹{totals.pending.toLocaleString()}</p>
-            <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Pending</p>
-          </div>
-          <div className="bg-white rounded-3xl p-4 card-shadow flex flex-col items-center">
-             <div className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-2"><XCircle size={16} /></div>
-            <p className="text-lg font-bold text-navy">₹{totals.rejected.toLocaleString()}</p>
-            <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Rejected</p>
-          </div>
-        </div>
-
-        {/* Create Project */}
-        <div className="px-6 mb-8">
-          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Manage Projects</p>
-          <form onSubmit={handleAddProject} className="bg-white rounded-[24px] p-2 flex items-center card-shadow relative">
-             <div className="w-10 h-10 rounded-xl bg-navy/5 flex items-center justify-center text-navy/40 ml-1">
-               <BookOpen size={18} />
-             </div>
-             <input
-                type="text"
-                placeholder="E.g. Phase 2 Expansion, Client Setup"
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-navy placeholder:text-navy/30 px-3 outline-none"
-                value={newProjectName}
-                onChange={e => setNewProjectName(e.target.value)}
-             />
-             <button disabled={isCreatingProject} className="w-10 h-10 rounded-xl bg-indigo text-white flex items-center justify-center tactile-press disabled:opacity-50 relative mr-1">
-               {isCreatingProject ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-             </button>
-          </form>
-        </div>
-
-        {/* Global Collections List */}
-        <div className="px-6 space-y-4">
-           <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Operations Log</p>
-           {isCollectionsLoading ? (
-              <div className="flex justify-center p-10"><Loader2 className="animate-spin text-navy/20" size={32} /></div>
-           ) : collections.length === 0 ? (
-              <p className="text-center text-sm text-navy/40 py-8 font-medium">No recorded money flows yet.</p>
-           ) : (
-             <div className="space-y-3">
-               {collections.map(col => (
-                 <div key={col.id} className="bg-white p-4 rounded-3xl card-shadow border border-navy/5 flex flex-col gap-3">
-                    <div className="flex justify-between items-start">
-                       <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 rounded-full overflow-hidden bg-navy/5">
-                           <Avatar url={col.submitter_photo_key} name={col.submitter_name} size={40} />
-                         </div>
-                         <div>
-                           <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
-                           <p className="text-[10px] font-bold tracking-wider uppercase text-navy/40 mt-0.5">{col.client_name}</p>
-                         </div>
-                       </div>
-                       <div className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
-                         {col.status}
-                       </div>
-                    </div>
-                    <div className="h-px bg-navy/5 w-full"/>
-                    <div className="flex justify-between items-center">
-                       <div>
-                         <p className="text-sm font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
-                         <p className="text-[10px] font-medium text-navy/40 mt-0.5">{col.project_name}</p>
-                       </div>
-                       <div className="text-right">
-                         <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40">{col.mode.replace('_', ' ')}</p>
-                         {col.verifier_name && <p className="text-[9px] font-medium text-navy/40 mt-0.5">Verifier: {col.verifier_name}</p>}
-                       </div>
-                    </div>
-                    {col.mode === 'cash_transfer' && (
-                      <button 
-                        onClick={() => setInspectingId(col.id)}
-                        className="w-full p-3 rounded-2xl bg-navy/2 border border-navy/5 flex items-center justify-center gap-2 text-[10px] font-bold text-navy/40 hover:bg-navy/5 transition-colors"
-                      >
-                        <Info size={14} /> Inspect Transfer Sources
-                      </button>
-                    )}
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
-        <AnimatePresence>
-          {inspectingId && <SourceInspector transferId={inspectingId} onClose={() => setInspectingId(null)} />}
-        </AnimatePresence>
-      </motion.div>
-    </div>
-  );
-}
+          <AdminOverviewContent />
+        </motion.div>
+      </div>
+    );
+  }
 
   // ─── NON-MD WORKFORCE VIEW ───
   return (
@@ -337,6 +669,21 @@ export const MoneyManagementPage = () => {
                </div>
             </button>
 
+            {pendingToVerify.length > 0 && (
+              <button onClick={() => setView('history')} className="bg-amber-50 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-amber-200">
+                 <div className="relative z-10 w-3/4">
+                   <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-4 group-hover:scale-110 transition-transform">
+                     <CheckCircle2 size={24} />
+                   </div>
+                   <p className="text-xl font-bold text-navy mb-1">Pending Approvals</p>
+                   <p className="text-xs font-medium text-navy/40">{pendingToVerify.length} collection{pendingToVerify.length > 1 ? 's' : ''} waiting for your review</p>
+                 </div>
+                 <div className="relative z-10 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mt-2 group-hover:bg-amber-200 transition-colors">
+                   <ArrowRight size={20} className="text-amber-600" />
+                 </div>
+              </button>
+            )}
+
             {user?.role !== 'md' && (
               <button onClick={() => setView('wallet')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
                  <div className="relative z-10 w-3/4">
@@ -351,6 +698,7 @@ export const MoneyManagementPage = () => {
                  </div>
               </button>
             )}
+
           </div>
         </motion.div>
       )}
@@ -468,6 +816,12 @@ export const MoneyManagementPage = () => {
                         <div>
                           <p className="text-lg font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
                           <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mt-0.5">{col.client_name}</p>
+                          {/* Show who submitted when the current user is the verifier */}
+                          {col.submitter_name && col.user_id !== user?.id && (
+                            <p className="text-[10px] font-semibold text-indigo mt-1">
+                              From {col.submitter_name}
+                            </p>
+                          )}
                         </div>
                         <div className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
                           {col.status}
@@ -497,10 +851,68 @@ export const MoneyManagementPage = () => {
                          <Info size={14} /> View Origin Details
                        </button>
                      )}
+                     {/* Payment proof photo for GPay / Bank Receipt */}
+                     {col.photo_key && (
+                       <div className="relative z-10">
+                         <PhotoProof photoKey={col.photo_key} />
+                       </div>
+                     )}
                      {col.rejection_note && (
                        <div className="p-3 rounded-xl bg-red-50/50 border border-red-100 flex items-start gap-2 relative z-10">
                          <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
                          <p className="text-[10px] font-medium text-red-700 leading-relaxed">{col.rejection_note}</p>
+                       </div>
+                     )}
+
+                     {/* Verification panel: shown when current user is the assigned verifier and status is pending */}
+                     {col.status === 'pending' && col.assigned_verifier_id === user?.id && (
+                       <div className="relative z-10 border-t border-amber-100 pt-3 space-y-2">
+                         <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Awaiting your review</p>
+                         {rejectingId === col.id ? (
+                           <div className="space-y-2">
+                             <textarea
+                               rows={2}
+                               placeholder="Reason for rejection..."
+                               value={rejectNote}
+                               onChange={e => setRejectNote(e.target.value)}
+                               className="w-full p-3 text-xs font-medium text-navy bg-navy/2 rounded-xl border border-navy/10 outline-none resize-none focus:ring-2 ring-red-200"
+                             />
+                             <div className="flex gap-2">
+                               <button
+                                 onClick={() => { setRejectingId(null); setRejectNote(''); }}
+                                 className="flex-1 py-2.5 text-xs font-bold text-navy/40 hover:text-navy transition-colors"
+                               >
+                                 Cancel
+                               </button>
+                               <button
+                                 disabled={!rejectNote.trim() || isVerifying}
+                                 onClick={() => handleReject(col.id)}
+                                 className="flex-1 py-2.5 bg-red-500 text-white text-xs font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-1"
+                               >
+                                 {isVerifying && verifyingId === col.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                                 Confirm Reject
+                               </button>
+                             </div>
+                           </div>
+                         ) : (
+                           <div className="flex gap-2">
+                             <button
+                               disabled={isVerifying}
+                               onClick={() => handleApprove(col.id)}
+                               className="flex-1 py-2.5 bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 disabled:opacity-50"
+                             >
+                               {isVerifying && verifyingId === col.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                               Approve
+                             </button>
+                             <button
+                               disabled={isVerifying}
+                               onClick={() => setRejectingId(col.id)}
+                               className="flex-1 py-2.5 bg-red-50 text-red-500 text-xs font-bold rounded-xl border border-red-200 flex items-center justify-center gap-1 disabled:opacity-50"
+                             >
+                               <XCircle size={14} /> Reject
+                             </button>
+                           </div>
+                         )}
                        </div>
                      )}
                   </div>
@@ -597,7 +1009,7 @@ export const MoneyManagementPage = () => {
                  )}
               </div>
 
-              <button disabled={isSubmitting || isUploading || isCollectionsLoading} type="submit" className="w-full p-5 rounded-[24px] gradient-indigo text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50">
+              <button disabled={isSubmitting || isUploading || isCollectionsLoading} type="submit" className="w-full p-5 rounded-[24px] gradient-primary text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50">
                 {isSubmitting || isUploading ? <><Loader2 size={20} className="animate-spin"/> Submitting...</> : <><Send size={20} /> Submit Collection</>}
               </button>
            </form>

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { X, Loader2, Info } from 'lucide-react';
 import { useGetMoneySourcesQuery } from '../../store/api/apiSlice';
+import { PhotoProof } from './PhotoProof';
 
 export const SourceInspector = ({ transferId, onClose }) => {
   const { data: sources = [], isLoading } = useGetMoneySourcesQuery(transferId, { skip: !transferId });
@@ -52,6 +53,11 @@ export const SourceInspector = ({ transferId, onClose }) => {
                     </p>
                   </div>
                 </div>
+                {s.photo_key && (
+                  <div className="mt-3">
+                    <PhotoProof photoKey={s.photo_key} />
+                  </div>
+                )}
               </div>
             ))
           )}
