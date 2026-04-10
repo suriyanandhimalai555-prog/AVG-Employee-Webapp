@@ -15,7 +15,7 @@ export const apiSlice = createApi({
       return headers;
     },
   }),
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -42,9 +42,40 @@ export const apiSlice = createApi({
 
     getProfileUploadUrl: builder.mutation({
       query: ({ kind, contentType }) => ({
-        url: `/auth/profile-upload-url?kind=${encodeURIComponent(kind)}&contentType=${encodeURIComponent(contentType || 'image/jpeg')}`,
-        method: 'GET',
+        url: '/users/upload-url',
+        params: { kind, contentType }
       }),
+      transformResponse: (response) => response.data,
+    }),
+
+    getMyDocuments: builder.query({
+      query: () => '/users/me/documents',
+      providesTags: ['UserDocuments'],
+      transformResponse: (response) => response.data,
+    }),
+
+    addDocument: builder.mutation({
+      query: (body) => ({
+        url: '/users/me/documents',
+        method: 'POST',
+        body
+      }),
+      invalidatesTags: ['UserDocuments'],
+      transformResponse: (response) => response.data,
+    }),
+
+    deleteDocument: builder.mutation({
+      query: (id) => ({
+        url: `/users/me/documents/${id}`,
+        method: 'DELETE'
+      }),
+      invalidatesTags: ['UserDocuments'],
+      transformResponse: (response) => response.data,
+    }),
+
+    getUserDocuments: builder.query({
+      query: (id) => `/users/${id}/documents`,
+      providesTags: (result, error, id) => [{ type: 'UserDocuments', id }],
       transformResponse: (response) => response.data,
     }),
 
@@ -408,4 +439,8 @@ export const {
   useGetMoneyWalletQuery,
   useTransferMoneyMutation,
   useGetMoneySourcesQuery,
+  useGetMyDocumentsQuery,
+  useAddDocumentMutation,
+  useDeleteDocumentMutation,
+  useGetUserDocumentsQuery,
 } = apiSlice;

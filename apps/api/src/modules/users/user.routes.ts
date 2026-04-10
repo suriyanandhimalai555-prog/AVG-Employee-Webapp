@@ -116,6 +116,96 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ─── GET /api/users/upload-url ───
+  // Gets a presigned URL for profile assets
+  fastify.get('/upload-url', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { kind, contentType } = request.query as { kind: 'photo' | 'proof', contentType: string };
+      
+      if (!kind || !contentType) {
+        throw new AppError('Validation Error', 400, 'MISSING_PARAMS');
+      }
+
+      const result = await UserService.getPresignedProfileUploadUrl(req.user.id, kind, contentType);
+      return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /api/users/me/documents ───
+  fastify.get('/me/documents', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const data = await UserService.getDocuments(fastify.db, fastify.redis, req.user.id);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /api/users/me/documents ───
+  // Registers a new document record after S3 upload
+  fastify.post('/me/documents', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { s3Key, fileName, fileType } = request.body as { s3Key: string, fileName: string, fileType?: string };
+      
+      if (!s3Key || !fileName) {
+        throw new AppError('Validation Error', 400, 'MISSING_PARAMS');
+      }
+
+      const data = await UserService.addDocument(fastify.db, req.user.id, s3Key, fileName, fileType);
+      return reply.code(201).send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── DELETE /api/users/me/documents/:id ───
+  fastify.delete('/me/documents/:id', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { id } = req.params as { id: string };
+      
+      await UserService.removeDocument(fastify.db, req.user.id, id, req.user.role);
+      return reply.send({ success: true });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /api/users/:id/documents ───
+  // View someone else's documents (MD/GM/Director only)
+  fastify.get('/:id/documents', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { id } = req.params as { id: string };
+      
+      const allowedRoles = ['md', 'director', 'gm', 'branch_admin'];
+      if (!allowedRoles.includes(req.user.role)) {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+
+      const data = await UserService.getDocuments(fastify.db, fastify.redis, id);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+
   // ─── GET /api/users ───
   // List all users. Useful for MD's company overview.
   fastify.get('/', {

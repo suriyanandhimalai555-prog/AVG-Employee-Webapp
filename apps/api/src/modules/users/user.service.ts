@@ -9,6 +9,17 @@ import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
+import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
+
+export interface UserDocument {
+  id: string;
+  userId: string;
+  s3Key: string;
+  fileName: string;
+  fileType?: string;
+  createdAt: string;
+  downloadUrl?: string;
+}
 
 export const UserService = {
 
@@ -483,5 +494,53 @@ export const UserService = {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  },
+
+  // ─── USER DOCUMENTS (PROOFS) ───
+
+  async getPresignedProfileUploadUrl(userId: string, kind: 'photo' | 'proof', contentType: string) {
+    const timestamp = Date.now();
+    const extension = contentType.split('/')[1] || 'bin';
+    const folder = kind === 'photo' ? 'profile/photos' : 'profile/proofs';
+    const fileKey = `${folder}/${userId}-${timestamp}.${extension}`;
+    
+    const uploadUrl = await generateUploadUrl(fileKey, contentType);
+    return { uploadUrl, fileKey };
+  },
+
+  async addDocument(db: Pool, userId: string, s3Key: string, fileName: string, fileType?: string) {
+    const result = await db.query(
+      `INSERT INTO user_documents (user_id, s3_key, file_name, file_type)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [userId, s3Key, fileName, fileType || null]
+    );
+    return result.rows[0];
+  },
+
+  async removeDocument(db: Pool, userId: string, documentId: string, userRole: string) {
+    // Only MD or the owner can delete
+    const checkResult = await db.query(`SELECT user_id FROM user_documents WHERE id = $1`, [documentId]);
+    if (checkResult.rows.length === 0) throw new NotFoundError('Document not found');
+    
+    if (userRole !== 'md' && checkResult.rows[0].user_id !== userId) {
+      throw new ForbiddenError('You do not have permission to delete this document');
+    }
+
+    await db.query(`DELETE FROM user_documents WHERE id = $1`, [documentId]);
+  },
+
+  async getDocuments(db: Pool, redis: Redis, userId: string): Promise<UserDocument[]> {
+    const result = await db.query(
+      `SELECT id, user_id AS "userId", s3_key AS "s3Key", file_name AS "fileName", 
+              file_type AS "fileType", created_at AS "createdAt"
+       FROM user_documents
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    const docs = result.rows;
+    await populateAvatarUrls(redis, docs, d => d.s3Key, (d, url) => d.downloadUrl = url);
+    return docs;
   }
 };

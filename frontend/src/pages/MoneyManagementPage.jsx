@@ -104,6 +104,16 @@ export const MoneyManagementPage = () => {
   const handlePhotoCapture = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // 6MB size limit
+    const MAX_SIZE = 6 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setFormError('File size too large. Maximum allowed is 6MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setFormError('');
     const previewUrl = URL.createObjectURL(file);
     setFieldPhoto({ file, previewUrl });
   };

@@ -13,7 +13,9 @@ import {
   ChevronLeft,
   ArrowRight,
   Loader2,
-  LogOut
+  LogOut,
+  FileText,
+  ExternalLink
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Avatar } from '../components/Avatar';
@@ -25,6 +27,7 @@ import {
   useGetBranchesQuery,
   useLazyGetUserOversightBranchesQuery,
   useUpdateUserOversightBranchesMutation,
+  useGetUserDocumentsQuery,
 } from '../store/api/apiSlice';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -75,6 +78,13 @@ export const UserManagement = () => {
   const [editBranchIds, setEditBranchIds] = useState([]);
   const [editGmIds, setEditGmIds] = useState([]);
   const [editBranchError, setEditBranchError] = useState('');
+
+  // Document Viewer state
+  const [viewDocsUserId, setViewDocsUserId] = useState(null);
+  const [viewDocsUserName, setViewDocsUserName] = useState('');
+  const { data: userDocs = [], isLoading: isDocsLoading } = useGetUserDocumentsQuery(viewDocsUserId, {
+    skip: !viewDocsUserId
+  });
 
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
@@ -392,6 +402,16 @@ export const UserManagement = () => {
                   >
                     <Building2 size={14} />
                     {u.role === 'director' ? 'GMs' : 'Branches'}
+                  </button>
+                )}
+                {user?.role === 'md' && (
+                  <button
+                    onClick={() => { setViewDocsUserId(u.id); setViewDocsUserName(u.name); }}
+                    title="View uploaded proofs"
+                    className="p-2 rounded-xl bg-navy/5 text-navy/40 hover:bg-navy hover:text-white transition-all text-[10px] font-bold flex items-center gap-1.5 tactile-press"
+                  >
+                    <FileText size={14} />
+                    Docs
                   </button>
                 )}
                 <div className="text-right flex flex-col items-end gap-2">
@@ -745,6 +765,58 @@ export const UserManagement = () => {
             </Button>
           </div>
         </form>
+      </GlassModal>
+
+      {/* User Documents Modal */}
+      <GlassModal
+        isOpen={!!viewDocsUserId}
+        onClose={() => setViewDocsUserId(null)}
+        title={`Uploaded Proofs — ${viewDocsUserName}`}
+      >
+        <div className="space-y-4 pt-4">
+          {isDocsLoading ? (
+            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo/20" size={32} /></div>
+          ) : userDocs.length === 0 ? (
+            <div className="py-10 text-center space-y-3">
+              <FileText className="mx-auto text-navy/5" size={48} />
+              <p className="text-sm font-bold text-navy/30">No documents found for this user.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+              {userDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between p-4 rounded-2xl bg-navy/[0.02] border border-navy/5 group">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="p-2.5 rounded-xl bg-white shadow-sm text-indigo border border-navy/5">
+                      <FileText size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-navy truncate">{doc.fileName}</p>
+                      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">
+                        Uploaded {new Date(doc.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <a 
+                    href={doc.downloadUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="p-3 rounded-xl bg-white border border-navy/5 text-indigo hover:bg-indigo hover:text-white transition-all tactile-press flex items-center gap-2 text-xs font-bold shadow-sm"
+                  >
+                    <ExternalLink size={14} />
+                    View
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button 
+            variant="outline" 
+            className="w-full mt-2 border-navy/5 text-navy/40"
+            onClick={() => setViewDocsUserId(null)}
+          >
+            Close
+          </Button>
+        </div>
       </GlassModal>
     </div>
   );
