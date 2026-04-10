@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, Fingerprint, Wallet, Bell, UserCircle2, MoreHorizontal, Building2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -20,8 +21,36 @@ const NavItem = ({ icon: Icon, label, active, onClick }) => (
   </button>
 );
 
-export const BottomNav = ({ activeTab, onTabChange, user }) => {
+export const BottomNav = ({ activeTab: propActiveTab, onTabChange, user }) => {
   const [moreOpen, setMoreOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Determine active tab from URL or props
+  let activeTab;
+  if (location.pathname === '/profile') {
+    activeTab = 'profile';
+  } else if (location.pathname === '/money') {
+    activeTab = 'money';
+  } else {
+    activeTab = propActiveTab || 'home';
+  }
+
+  const handleTabClick = (tab) => {
+    if (tab === 'profile') {
+      navigate('/profile');
+    } else if (tab === 'money') {
+      navigate('/money');
+    } else {
+      // Home, Attendance, Alerts are currently handled by AttendanceHome at '/'
+      if (location.pathname !== '/') {
+        sessionStorage.setItem('attendanceHomeTab', tab);
+        navigate('/');
+      } else if (onTabChange) {
+        onTabChange(tab);
+      }
+    }
+  };
 
   // Build the "More" menu items based on role
   const moreItems = [];
@@ -31,7 +60,7 @@ export const BottomNav = ({ activeTab, onTabChange, user }) => {
 
   const handleMoreItem = (tab) => {
     setMoreOpen(false);
-    onTabChange(tab);
+    handleTabClick(tab);
   };
 
   return (
@@ -80,11 +109,11 @@ export const BottomNav = ({ activeTab, onTabChange, user }) => {
       </AnimatePresence>
 
       <nav className="p-1.5 flex items-center justify-around glass rounded-[26px] card-shadow pointer-events-auto">
-        <NavItem icon={Home}        label="Home"       active={activeTab === 'home'}       onClick={() => onTabChange('home')} />
-        <NavItem icon={Fingerprint} label="Attendance" active={activeTab === 'attendance'} onClick={() => onTabChange('attendance')} />
-        <NavItem icon={Wallet}      label="Money"      active={activeTab === 'money'}      onClick={() => onTabChange('money')} />
-        <NavItem icon={Bell}        label="Alerts"     active={activeTab === 'alerts'}     onClick={() => onTabChange('alerts')} />
-        <NavItem icon={UserCircle2} label="Profile"    active={activeTab === 'profile'}    onClick={() => onTabChange('profile')} />
+        <NavItem icon={Home}        label="Home"       active={activeTab === 'home'}       onClick={() => handleTabClick('home')} />
+        <NavItem icon={Fingerprint} label="Attendance" active={activeTab === 'attendance'} onClick={() => handleTabClick('attendance')} />
+        <NavItem icon={Wallet}      label="Money"      active={activeTab === 'money'}      onClick={() => handleTabClick('money')} />
+        <NavItem icon={Bell}        label="Alerts"     active={activeTab === 'alerts'}     onClick={() => handleTabClick('alerts')} />
+        <NavItem icon={UserCircle2} label="Profile"    active={activeTab === 'profile'}    onClick={() => handleTabClick('profile')} />
         {moreItems.length > 0 && (
           <button
             onClick={() => setMoreOpen(o => !o)}
@@ -106,3 +135,4 @@ export const BottomNav = ({ activeTab, onTabChange, user }) => {
     </footer>
   );
 };
+

@@ -68,7 +68,7 @@ export const BranchManagement = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen bg-surface p-4 md:p-8 pb-32">
+    <div className="p-4 md:p-8 pb-32">
       {/* Header */}
       <header className="flex items-center gap-4 mb-10">
         <button

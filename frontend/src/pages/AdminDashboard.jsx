@@ -154,7 +154,7 @@ export const AdminDashboard = () => {
 
   if (empLoading) {
     return (
-      <div className="min-h-screen bg-surface flex flex-col items-center justify-center gap-4">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
         <Loader2 className="animate-spin text-indigo" size={40} />
         <p className="text-xs font-bold text-navy/30 uppercase tracking-widest">Synchronizing Center Data...</p>
       </div>
@@ -162,7 +162,7 @@ export const AdminDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-surface p-4 md:p-8 lg:p-12 overflow-x-hidden">
+    <div className="p-4 md:p-8 lg:p-12 overflow-x-hidden">
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-12">
         <div className="flex items-center gap-5">
           <div className="p-4 rounded-[24px] bg-white shadow-premium border border-navy/5 text-indigo relative group">

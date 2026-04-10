@@ -11,6 +11,8 @@ import { Loader2 } from 'lucide-react';
 import { selectCurrentUser, selectIsAuthenticated, clearCredentials } from './store/slices/authSlice';
 import { useGetMeQuery } from './store/api/apiSlice';
 
+import { AppLayout } from './components/layout/AppLayout';
+
 function App() {
   const dispatch = useDispatch();
   const user = useSelector(selectCurrentUser);
@@ -43,11 +45,13 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<AttendanceHome />} />
-      <Route path="/profile" element={<ProfilePage />} />
-      <Route path="/money" element={<MoneyManagementPage />} />
-      <Route path="/leadership/:kind" element={<LeadershipListPage />} />
-      <Route path="/people/:userId" element={<PersonAttendancePage />} />
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<AttendanceHome />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/money" element={<MoneyManagementPage />} />
+        <Route path="/leadership/:kind" element={<LeadershipListPage />} />
+        <Route path="/people/:userId" element={<PersonAttendancePage />} />
+      </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

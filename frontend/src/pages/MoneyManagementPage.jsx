@@ -188,12 +188,11 @@ export const MoneyManagementPage = () => {
     }
   };
 
-  // ─── MD DASHBOARD VIEW ───
+// ─── MD DASHBOARD VIEW ───
   if (user?.role === 'md') {
     return (
-      <div className="min-h-screen bg-surface">
+      <div className="flex flex-col">
         <PageHeader user={user} title="Financial Oversight" />
-        <button onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 p-2 bg-white/80 backdrop-blur-md rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press"><ArrowRight className="rotate-180" size={20} /></button>
         <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
           
           <div className="px-6 mb-6">
@@ -299,13 +298,12 @@ export const MoneyManagementPage = () => {
 
   // ─── NON-MD WORKFORCE VIEW ───
   return (
-    <div className="min-h-screen bg-surface relative">
+    <div className="relative">
       <PageHeader user={user} title="Collections" />
       <motion.div key="worker_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
 
       {view === 'home' && (
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-          <button onClick={() => navigate('/')} className="ml-6 mb-4 p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press"><ArrowRight className="rotate-180" size={20} /></button>
           <div className="px-6 mb-8">
              <h2 className="text-3xl font-bold text-navy tracking-tight">Money</h2>
              <p className="text-xs font-medium text-navy/40 mt-1">Submit & track collections</p>

@@ -1,22 +1,9 @@
-/**
- * AttendanceHome — shell component.
- *
- * Responsibilities:
- *  - Owns the active tab state (home / attendance / money / alerts)
- *  - Handles two full-screen overlays: UserManagement and MD's AdminDashboard
- *  - Renders the correct tab component and the shared bottom nav
- *
- * All data-fetching, business logic, and UI details live in the sub-modules
- * under pages/attendance/ and components/attendance/.
- */
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { AnimatePresence } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 
-import { BottomNav } from '../components/attendance/BottomNav';
 import { HomeTab } from './attendance/HomeTab';
 import { AttendanceTab } from './attendance/AttendanceTab';
 import { AlertsTab } from './attendance/AlertsTab';
@@ -31,6 +18,8 @@ import { selectCurrentUser } from '../store/slices/authSlice';
 export const AttendanceHome = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
+  const { setActiveTab: setContextActiveTab, setOnTabChange: setContextOnTabChange } = useOutletContext();
+  
   const [activeTab, setActiveTab] = useState(() => {
     const saved = sessionStorage.getItem('attendanceHomeTab');
     sessionStorage.removeItem('attendanceHomeTab');
@@ -39,6 +28,15 @@ export const AttendanceHome = () => {
   const [showUserManagement, setShowUserManagement] = useState(false);
   const [calendarEmployee, setCalendarEmployee] = useState(null);
   const [selectedBranch, setSelectedBranch] = useState(null);
+
+  useEffect(() => {
+    if (setContextActiveTab) setContextActiveTab(activeTab);
+  }, [activeTab, setContextActiveTab]);
+
+  useEffect(() => {
+    if (setContextOnTabChange) setContextOnTabChange(() => handleTabChange);
+  }, [setContextOnTabChange]);
+
   const handleTabChange = (tab) => {
     if (tab === 'profile') {
       navigate('/profile');
@@ -68,10 +66,7 @@ export const AttendanceHome = () => {
   // ── Full-screen overlay: Branch Management (MD only, via More menu) ──
   if (activeTab === 'branches') {
     return (
-      <div className="min-h-screen bg-surface relative">
-        <BranchManagement onBack={() => setActiveTab('home')} />
-        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
-      </div>
+      <BranchManagement onBack={() => setActiveTab('home')} />
     );
   }
 
@@ -105,35 +100,27 @@ export const AttendanceHome = () => {
   // ── Full-screen override: MD on Attendance tab → full-width AdminDashboard ──
   if (activeTab === 'attendance' && user?.role === 'md') {
     return (
-      <div className="min-h-screen bg-surface pb-24">
-        <AdminDashboard />
-        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
-      </div>
+      <AdminDashboard />
     );
   }
 
-  // ── Main Layout Shell ──
+  // ── Main Content ──
   return (
-    <div className="app-shell relative">
-      <div className="flex-1 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl mx-auto bg-white/40 md:shadow-2xl md:my-8 md:rounded-[40px] overflow-hidden relative border border-white/20 backdrop-blur-sm min-h-[100dvh] md:min-h-[850px]">
-        <AnimatePresence mode="wait">
-          {activeTab === 'home' && (
-            <HomeTab
-              onNavigateToAttendance={() => setActiveTab('attendance')}
-              onOpenUserManagement={() => setShowUserManagement(true)}
-              onOpenCalendar={(emp) => setCalendarEmployee(emp)}
-              onBranchSelect={(branch) => setSelectedBranch(branch)}
-              onOpenLeadershipList={(kind) => navigate(`/leadership/${kind}`)}
-            />
-          )}
-          {activeTab === 'attendance' && (
-            <AttendanceTab onCheckInSuccess={() => setActiveTab('home')} />
-          )}
-          {activeTab === 'alerts' && <AlertsTab />}
-        </AnimatePresence>
-      </div>
-
-      <BottomNav activeTab={activeTab} onTabChange={handleTabChange} user={user} />
-    </div>
+    <AnimatePresence mode="wait">
+      {activeTab === 'home' && (
+        <HomeTab
+          onNavigateToAttendance={() => setActiveTab('attendance')}
+          onOpenUserManagement={() => setShowUserManagement(true)}
+          onOpenCalendar={(emp) => setCalendarEmployee(emp)}
+          onBranchSelect={(branch) => setSelectedBranch(branch)}
+          onOpenLeadershipList={(kind) => navigate(`/leadership/${kind}`)}
+        />
+      )}
+      {activeTab === 'attendance' && (
+        <AttendanceTab onCheckInSuccess={() => setActiveTab('home')} />
+      )}
+      {activeTab === 'alerts' && <AlertsTab />}
+    </AnimatePresence>
   );
 }
+
