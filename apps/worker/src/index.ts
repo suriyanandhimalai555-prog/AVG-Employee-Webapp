@@ -91,6 +91,17 @@ const processAutoAbsent = async (): Promise<void> => {
   // (e.g. FK constraint) never kills the loop for everyone else.
   for (const row of missing.rows as Array<{ id: string; branch_id: string | null }>) {
     try {
+      // Skip if the Redis dupe-guard key exists — it means the employee already
+      // submitted attendance but the BullMQ worker hasn't written to the DB yet.
+      // Without this check, auto-absent wins the race and the real check-in is
+      // silently dropped by ON CONFLICT DO NOTHING when the worker later processes it.
+      const dupeKey: string = `att:${row.id}:${todayIST}`;
+      const queued: number = await redis.exists(dupeKey);
+      if (queued) {
+        console.log(`⏭️  Auto-absent: skipping ${row.id} — check-in queued in Redis`);
+        continue;
+      }
+
       const insertResult = await db.query(
         `INSERT INTO attendance (user_id, branch_id, date, mode, status, marked_by, submitted_at)
          VALUES ($1, $2, $3, 'office', 'absent', $1, NOW())
@@ -222,7 +233,12 @@ const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => 
   try {
     await client.query('BEGIN');
 
-    // Write to PostgreSQL with idempotency (ON CONFLICT DO NOTHING)
+    // Write to PostgreSQL.
+    // ON CONFLICT DO UPDATE WHERE status = 'absent' means:
+    //   - Fresh insert → always writes (no conflict)
+    //   - Conflict with an auto-absent record → overwrites it with the real check-in (layer 2 safety net)
+    //   - Conflict with an existing present/field record → DO NOTHING (true duplicate, safe to skip)
+    // This ensures a real check-in always wins over auto-absent regardless of timing.
     const insertResult = await client.query(
       `INSERT INTO attendance (
         user_id, branch_id, date, mode, status,
@@ -231,7 +247,17 @@ const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => 
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
       )
-      ON CONFLICT (user_id, date) DO NOTHING
+      ON CONFLICT (user_id, date) DO UPDATE SET
+        status        = EXCLUDED.status,
+        mode          = EXCLUDED.mode,
+        check_in_time = EXCLUDED.check_in_time,
+        check_in_lat  = EXCLUDED.check_in_lat,
+        check_in_lng  = EXCLUDED.check_in_lng,
+        photo_key     = EXCLUDED.photo_key,
+        field_note    = EXCLUDED.field_note,
+        marked_by     = EXCLUDED.marked_by,
+        submitted_at  = EXCLUDED.submitted_at
+      WHERE attendance.status = 'absent'
       RETURNING id`,
       [
         job.data.userId,
@@ -248,11 +274,10 @@ const processAttendanceJob = async (job: Job): Promise<{ success: boolean }> => 
       ]
     );
 
-    // Only log to audit if a new row was actually inserted (not a duplicate)
+    // rowCount > 0 means either a fresh insert OR an absent-record overwrite — audit both
     if (insertResult.rowCount && insertResult.rowCount > 0) {
       const attendanceId = insertResult.rows[0].id;
 
-      // Log the initial check-in to the immutable audit table
       await client.query(
         `INSERT INTO attendance_audit (
           attendance_id, changed_by, change_type, old_data, new_data

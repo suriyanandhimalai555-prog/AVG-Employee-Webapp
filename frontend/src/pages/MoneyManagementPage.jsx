@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
@@ -423,197 +424,13 @@ export const MoneyManagementPage = () => {
           </div>
         )}
 
-        {/* Branch Drilldown Panel */}
-        <AnimatePresence>
-          {drillBranchId && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-end justify-center bg-navy/40 backdrop-blur-sm"
-              onClick={() => setDrillBranchId(null)}
-            >
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-                onClick={e => e.stopPropagation()}
-                className="bg-white w-full max-w-lg rounded-t-[32px] overflow-hidden shadow-2xl"
-              >
-                <div className="flex items-center justify-between p-5 border-b border-navy/5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
-                    <div>
-                      <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest">Branch Detail</p>
-                      <p className="text-base font-bold text-navy">
-                        {byBranch.find(b => b.branchId === drillBranchId)?.branchName || 'Branch'}
-                      </p>
-                    </div>
-                  </div>
-                  <button onClick={() => setDrillBranchId(null)} className="p-2 hover:bg-navy/5 rounded-full">
-                    <XCircle size={20} className="text-navy/30" />
-                  </button>
-                </div>
-
-                <div className="overflow-y-auto max-h-[70vh] p-4 space-y-6">
-                  {isDrilldownLoading ? (
-                    <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo/40" size={28} /></div>
-                  ) : drilldown ? (
-                    <>
-                      {/* Flow totals */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {[
-                          { label: 'Collected', val: drilldown.totals.collected, icon: <TrendingUp size={13} />, bg: 'bg-indigo/5 text-indigo' },
-                          { label: 'Verified',  val: drilldown.totals.verified,  icon: <CheckCircle2 size={13} />, bg: 'bg-emerald-50 text-emerald-500' },
-                          { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
-                          { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
-                        ].map(({ label, val, icon, bg }) => (
-                          <div key={label} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
-                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
-                            <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
-                            <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Mode breakdown */}
-                      <div className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { label: 'GPay', val: drilldown.totals.byMode?.gpay || 0, cls: 'bg-indigo/5 text-indigo' },
-                            { label: 'Bank', val: drilldown.totals.byMode?.bankReceipt || 0, cls: 'bg-emerald-50 text-emerald-600' },
-                            { label: 'Cash', val: drilldown.totals.byMode?.cash || 0, cls: 'bg-amber-50 text-amber-600' },
-                          ].map(({ label, val, cls }) => (
-                            <div key={label} className={`rounded-2xl p-3 ${cls}`}>
-                              <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
-                              <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cash holders (MD-only) */}
-                      {isMd && drilldown.holders && drilldown.holders.length > 0 && (
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
-                          <div className="space-y-2">
-                            {drilldown.holders.map(h => (
-                              <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
-                                  <div>
-                                    <p className="text-xs font-bold text-navy">{h.name}</p>
-                                    <p className="text-[9px] font-medium text-navy/40 capitalize">{h.role?.replace('_', ' ')}</p>
-                                  </div>
-                                </div>
-                                <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Top collectors */}
-                      {drilldown.topCollectors && drilldown.topCollectors.length > 0 && (
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
-                          <div className="space-y-2">
-                            {drilldown.topCollectors.map((c, idx) => (
-                              <div key={c.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center gap-3">
-                                <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-bold text-navy truncate">{c.name}</p>
-                                  <p className="text-[9px] font-medium text-navy/40 capitalize">{c.role?.replace('_', ' ')}</p>
-                                </div>
-                                <p className="text-sm font-bold text-indigo shrink-0">₹{parseFloat(c.total_collected).toLocaleString()}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Project split */}
-                      {drilldown.projectSplit && drilldown.projectSplit.length > 0 && (
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Project Split</p>
-                          <div className="space-y-2">
-                            {drilldown.projectSplit.map(p => {
-                              const pct = drilldown.totals.collected > 0
-                                ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
-                                : 0;
-                              return (
-                                <div key={p.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
-                                  <div className="flex justify-between items-center mb-2">
-                                    <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
-                                    <div className="text-right shrink-0">
-                                      <p className="text-xs font-bold text-indigo">₹{parseFloat(p.total_amount).toLocaleString()}</p>
-                                      <p className="text-[9px] font-bold text-navy/20">{pct}%</p>
-                                    </div>
-                                  </div>
-                                  <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      {/* Collections with proof photos (MD-only) */}
-                      {isMd && drilldown.collections && drilldown.collections.length > 0 && (
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
-                          <div className="space-y-3">
-                            {drilldown.collections.map(col => (
-                              <div key={col.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 space-y-3">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
-                                    <p className="text-[9px] text-navy/40 capitalize">{col.submitter_role?.replace(/_/g, ' ')}</p>
-                                    {col.verifier_name && (
-                                      <p className="text-[9px] font-semibold text-indigo mt-0.5">→ {col.verifier_name}</p>
-                                    )}
-                                  </div>
-                                  <span className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
-                                    {col.status}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <p className="text-base font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
-                                    <p className="text-[9px] text-navy/40">{col.client_name} · {col.project_name}</p>
-                                  </div>
-                                  <span className="text-[9px] font-bold text-navy/30 bg-navy/5 px-2 py-1 rounded-lg uppercase">
-                                    {MODE_LABELS[col.mode] || col.mode}
-                                  </span>
-                                </div>
-                                {col.photo_key && <PhotoProof photoKey={col.photo_key} />}
-                                {col.rejection_note && (
-                                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-100 flex items-start gap-2">
-                                    <AlertCircle size={12} className="text-red-500 shrink-0 mt-0.5" />
-                                    <p className="text-[9px] font-medium text-red-700 leading-relaxed">{col.rejection_note}</p>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     );
   };
 
 // ─── MD DASHBOARD VIEW ───
   if (user?.role === 'md') {
+    const mdByBranch = adminOverview?.byBranch || [];
     return (
       <div className="flex flex-col">
         <PageHeader user={user} title="Financial Oversight" />
@@ -624,6 +441,196 @@ export const MoneyManagementPage = () => {
           </div>
           <AdminOverviewContent />
         </motion.div>
+
+        {/* Branch Drilldown — rendered via portal to ensure viewport centering */}
+        {createPortal(
+          <AnimatePresence>
+            {drillBranchId && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-navy/40 backdrop-blur-sm pointer-events-none"
+                onClick={() => setDrillBranchId(null)}
+              >
+                <motion.div
+                  initial={{ scale: 0.92, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.92, opacity: 0 }}
+                  transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+                  onClick={e => e.stopPropagation()}
+                  className="bg-white w-full max-w-lg rounded-[32px] overflow-hidden shadow-2xl pointer-events-auto"
+                >
+                  <div className="flex items-center justify-between p-5 border-b border-navy/5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
+                      <div>
+                        <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest">Branch Detail</p>
+                        <p className="text-base font-bold text-navy">
+                          {mdByBranch.find(b => b.branchId === drillBranchId)?.branchName || 'Branch'}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => setDrillBranchId(null)} className="p-2 hover:bg-navy/5 rounded-full">
+                      <XCircle size={20} className="text-navy/30" />
+                    </button>
+                  </div>
+
+                  <div className="overflow-y-auto max-h-[80vh] p-4 space-y-6">
+                    {isDrilldownLoading ? (
+                      <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo/40" size={28} /></div>
+                    ) : drilldown ? (
+                      <>
+                        {/* Flow totals */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            { label: 'Collected', val: drilldown.totals.collected, icon: <TrendingUp size={13} />, bg: 'bg-indigo/5 text-indigo' },
+                            { label: 'Verified',  val: drilldown.totals.verified,  icon: <CheckCircle2 size={13} />, bg: 'bg-emerald-50 text-emerald-500' },
+                            { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
+                            { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
+                          ].map(({ label, val, icon, bg }) => (
+                            <div key={label} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
+                              <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
+                              <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Mode breakdown */}
+                        <div className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { label: 'GPay', val: drilldown.totals.byMode?.gpay || 0, cls: 'bg-indigo/5 text-indigo' },
+                              { label: 'Bank', val: drilldown.totals.byMode?.bankReceipt || 0, cls: 'bg-emerald-50 text-emerald-600' },
+                              { label: 'Cash', val: drilldown.totals.byMode?.cash || 0, cls: 'bg-amber-50 text-amber-600' },
+                            ].map(({ label, val, cls }) => (
+                              <div key={label} className={`rounded-2xl p-3 ${cls}`}>
+                                <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
+                                <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Cash holders (MD-only) */}
+                        {drilldown.holders && drilldown.holders.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
+                            <div className="space-y-2">
+                              {drilldown.holders.map(h => (
+                                <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
+                                    <div>
+                                      <p className="text-xs font-bold text-navy">{h.name}</p>
+                                      <p className="text-[9px] font-medium text-navy/40 capitalize">{h.role?.replace('_', ' ')}</p>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Top collectors */}
+                        {drilldown.topCollectors && drilldown.topCollectors.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
+                            <div className="space-y-2">
+                              {drilldown.topCollectors.map((c, idx) => (
+                                <div key={c.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center gap-3">
+                                  <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-navy truncate">{c.name}</p>
+                                    <p className="text-[10px] font-medium text-navy/40 capitalize">{c.role?.replace('_', ' ')}</p>
+                                  </div>
+                                  <p className="text-sm font-bold text-indigo shrink-0">₹{parseFloat(c.total_collected).toLocaleString()}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Project split */}
+                        {drilldown.projectSplit && drilldown.projectSplit.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Project Split</p>
+                            <div className="space-y-2">
+                              {drilldown.projectSplit.map(p => {
+                                const pct = drilldown.totals.collected > 0
+                                  ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
+                                  : 0;
+                                return (
+                                  <div key={p.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                                    <div className="flex justify-between items-center mb-2">
+                                      <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
+                                      <div className="text-right shrink-0">
+                                        <p className="text-xs font-bold text-indigo">₹{parseFloat(p.total_amount).toLocaleString()}</p>
+                                        <p className="text-[9px] font-bold text-navy/20">{pct}%</p>
+                                      </div>
+                                    </div>
+                                    <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden">
+                                      <div className="h-full bg-indigo rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Collections log with proof photos */}
+                        {drilldown.collections && drilldown.collections.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
+                            <div className="space-y-3">
+                              {drilldown.collections.map(col => (
+                                <div key={col.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 space-y-3">
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
+                                      <p className="text-[9px] text-navy/40 capitalize">{col.submitter_role?.replace(/_/g, ' ')}</p>
+                                      {col.verifier_name && (
+                                        <p className="text-[9px] font-semibold text-indigo mt-0.5">→ {col.verifier_name}</p>
+                                      )}
+                                    </div>
+                                    <span className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
+                                      {col.status}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <p className="text-base font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
+                                      <p className="text-[9px] text-navy/40">{col.client_name} · {col.project_name}</p>
+                                    </div>
+                                    <span className="text-[9px] font-bold text-navy/30 bg-navy/5 px-2 py-1 rounded-lg uppercase">
+                                      {MODE_LABELS[col.mode] || col.mode}
+                                    </span>
+                                  </div>
+                                  {col.photo_key && <PhotoProof photoKey={col.photo_key} />}
+                                  {col.rejection_note && (
+                                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-100 flex items-start gap-2">
+                                      <AlertCircle size={12} className="text-red-500 shrink-0 mt-0.5" />
+                                      <p className="text-[9px] font-medium text-red-700 leading-relaxed">{col.rejection_note}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
       </div>
     );
   }

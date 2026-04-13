@@ -59,6 +59,14 @@
     @apply bg-linear-to-br from-yellow to-[#EAB308];
   }
 
+  .gradient-directors {
+    @apply bg-linear-to-br from-slate-900 via-[#111827] to-[#0B1C30];
+  }
+
+  .gradient-gms {
+    @apply bg-linear-to-br from-indigo-950 via-[#1E1B4B] to-[#0B1C30];
+  }
+
   .no-border {
     @apply border-none shadow-none;
   }

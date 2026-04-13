@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Loader2, Info } from 'lucide-react';
 import { useGetMoneySourcesQuery } from '../../store/api/apiSlice';
@@ -6,21 +7,23 @@ import { PhotoProof } from './PhotoProof';
 export const SourceInspector = ({ transferId, onClose }) => {
   const { data: sources = [], isLoading } = useGetMoneySourcesQuery(transferId, { skip: !transferId });
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
       exit={{ opacity: 0 }} 
-      className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-navy/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-navy/60 backdrop-blur-sm pointer-events-none"
     >
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }} 
         animate={{ scale: 1, opacity: 1 }} 
-        className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl flex flex-col"
+        className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
       >
         <div className="p-6 border-b border-navy/5 flex justify-between items-center">
           <h4 className="font-bold text-navy">Origin Details</h4>
-          <button onClick={onClose} className="p-2 hover:bg-navy/5 rounded-full">
+          <button onClick={onClose} className="p-2 hover:bg-navy/5 rounded-full text-navy/40 hover:text-navy">
             <X size={20}/>
           </button>
         </div>
@@ -72,6 +75,7 @@ export const SourceInspector = ({ transferId, onClose }) => {
           </button>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 };

@@ -39,7 +39,7 @@ export const LeadershipListPage = () => {
         >
           <ArrowLeft size={20} />
         </button>
-        <div className="w-9 h-9 rounded-full bg-indigo/8 flex items-center justify-center text-indigo shrink-0">
+        <div className={`w-9 h-9 rounded-xl ${kind === 'directors' ? 'gradient-directors border-l-2 border-rose-500 shadow-rose/10' : 'gradient-gms border-l-2 border-sky-500 shadow-sky/10'} flex items-center justify-center text-white shrink-0 shadow-lg`}>
           <Users size={16} />
         </div>
         <div className="flex-1 min-w-0">

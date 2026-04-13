@@ -93,22 +93,52 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
   );
 };
 
-const LeadershipSection = ({ title, members = [], onOpenList }) => {
+const LeadershipSection = ({ title, members = [], onOpenList, variant = 'indigo' }) => {
   if (!members.length) return null;
+
+  const styles = {
+    directors: { 
+      card: 'gradient-directors border-l-4 border-rose-500 shadow-rose/10', 
+      text: 'text-white', 
+      subtext: 'text-white/50', 
+      icon: 'text-slate-900', 
+      iconBg: 'bg-white',
+      chevron: 'text-white/20'
+    },
+    gms: { 
+      card: 'gradient-gms border-l-4 border-sky-500 shadow-sky/10', 
+      text: 'text-white', 
+      subtext: 'text-white/50', 
+      icon: 'text-indigo-950', 
+      iconBg: 'bg-white',
+      chevron: 'text-white/20'
+    },
+    indigo: { 
+      card: 'bg-white border border-navy/5 card-shadow', 
+      text: 'text-navy', 
+      subtext: 'text-navy/40', 
+      icon: 'text-indigo', 
+      iconBg: 'bg-indigo/8',
+      chevron: 'text-navy/25'
+    }
+  }[variant];
+
   return (
-    <div className="bg-white rounded-3xl card-shadow overflow-hidden">
+    <div className={`${styles.card} rounded-[28px] overflow-hidden transition-all duration-300`}>
       <button
         onClick={onOpenList}
-        className="w-full flex items-center gap-4 px-5 py-4 text-left tactile-press hover:bg-navy/3 transition-all duration-200"
+        className="w-full flex items-center gap-4 px-5 py-5 text-left tactile-press hover:bg-white/3 transition-all duration-200"
       >
-        <div className="w-10 h-10 rounded-xl bg-indigo/8 flex items-center justify-center text-indigo shrink-0">
-          <Users size={18} />
+        <div className={`w-11 h-11 rounded-2xl ${styles.iconBg} flex items-center justify-center ${styles.icon} shrink-0 shadow-sm shadow-black/10`}>
+          <Users size={20} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-navy truncate">{title}</p>
-          <p className="text-[10px] font-medium text-navy/40 mt-0.5">{members.length} total</p>
+          <p className={`text-sm font-bold ${styles.text} truncate tracking-tight`}>{title}</p>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${styles.subtext} mt-0.5`}>
+            {members.length} {members.length === 1 ? 'Leader' : 'Leaders'}
+          </p>
         </div>
-        <ChevronRight size={14} className="text-navy/25 shrink-0" />
+        <ChevronRight size={16} className={`${styles.chevron} shrink-0`} />
       </button>
     </div>
   );
@@ -283,6 +313,33 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             thirdStat={{ value: summary?.field ?? 0, label: 'Field', color: 'text-indigo' }}
           />
 
+          {user?.role === 'director' && (
+            <LeadershipSection
+              title="General Managers"
+              members={gmMembers}
+              onOpenList={() => onOpenLeadershipList?.('gms')}
+              variant="gms"
+            />
+          )}
+          {user?.role === 'md' && (
+            <>
+              <LeadershipSection
+                title="Directors"
+                members={directorMembers}
+                onOpenList={() => onOpenLeadershipList?.('directors')}
+                variant="directors"
+              />
+              <LeadershipSection
+                title="General Managers"
+                members={gmMembers}
+                onOpenList={() => onOpenLeadershipList?.('gms')}
+                variant="gms"
+              />
+            </>
+          )}
+
+          <StaffCard onOpen={onOpenUserManagement} />
+
           {/* Per-branch breakdown — rendered if the API returns a branches array */}
           {summary?.branches?.length > 0 && (
             <div className="space-y-2">
@@ -319,29 +376,6 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             </div>
           )}
 
-          {user?.role === 'director' && (
-            <LeadershipSection
-              title="General Managers"
-              members={gmMembers}
-              onOpenList={() => onOpenLeadershipList?.('gms')}
-            />
-          )}
-          {user?.role === 'md' && (
-            <>
-              <LeadershipSection
-                title="Directors"
-                members={directorMembers}
-                onOpenList={() => onOpenLeadershipList?.('directors')}
-              />
-              <LeadershipSection
-                title="General Managers"
-                members={gmMembers}
-                onOpenList={() => onOpenLeadershipList?.('gms')}
-              />
-            </>
-          )}
-
-          <StaffCard onOpen={onOpenUserManagement} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"
@@ -387,8 +421,9 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             </button>
           )}
 
-          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
           <StaffCard onOpen={onOpenUserManagement} />
+
+          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"
