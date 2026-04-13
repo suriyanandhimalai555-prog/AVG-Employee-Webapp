@@ -483,8 +483,17 @@ export const AttendanceService = {
     if (fetchToday) {
       if (rawTodayResult && rawTodayResult.rows.length > 0) {
         today = rawTodayResult.rows[0];
-        // If no DB check_out_time yet, check if a sign-off job is queued in Redis
-        if (today && today.check_out_time === null) {
+        // Auto-absent creates a DB record with status='absent' before the worker processes
+        // the real check-in. If the Redis dupe key still exists the employee's job is still
+        // in the BullMQ queue — surface it as pending so the UI doesn't show "Not Marked Yet"
+        // and the employee doesn't get a confusing 409 ConflictError if they try to re-submit.
+        if (today.status === 'absent') {
+          const queued = await redis.exists(`att:${requesterId}:${date}`);
+          if (queued) {
+            today = { status: 'present', mode: 'pending', queued: true };
+          }
+        } else if (today.check_out_time === null) {
+          // If no DB check_out_time yet, check if a sign-off job is queued in Redis
           const signoffQueued = await redis.exists(`signoff:${requesterId}:${date}`);
           if (signoffQueued) {
             // Optimistically mark sign-off as pending so the UI shows "signing off..."

@@ -13,14 +13,12 @@ async function migrate() {
 
     const migrationsDir = path.join(__dirname, 'apps/api/migrations');
 
-    // Run migrations in order. Already-applied ones must be idempotent.
-    const files = [
-      '001_init.sql',
-      '002_attendance.sql',
-      '003_transactions_and_messages.sql',
-      '004_user_oversight_branches.sql',
-      '005_indexes.sql',
-    ];
+    // Auto-discover migrations in lexical order (001_*, 002_*, ...).
+    // This prevents missing new files when adding future migrations.
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith('.sql'))
+      .sort((a, b) => a.localeCompare(b));
 
     for (const file of files) {
       const filePath = path.join(migrationsDir, file);

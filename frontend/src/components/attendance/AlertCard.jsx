@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2, Fingerprint, MapPin } from 'lucide-react';
 
 export const AlertCard = ({ isMarked, onAction }) => (
   <AnimatePresence mode="wait">
-    {!isMarked ? (
+    {!isMarked || isMarked.status === 'absent' ? (
       <motion.div
         key="alert"
         initial={{ opacity: 0, y: 8 }}

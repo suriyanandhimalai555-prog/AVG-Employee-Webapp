@@ -45,8 +45,8 @@ export const PhotoProof = ({ photoKey }) => {
         alt="Payment proof"
         className="w-full object-contain max-h-64 bg-navy/2"
       />
-      <div className="absolute inset-0 bg-navy/0 group-hover:bg-navy/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-        <div className="bg-white rounded-xl px-3 py-2 flex items-center gap-1.5 text-[10px] font-bold text-navy shadow-lg">
+      <div className="absolute inset-0 bg-navy/10 transition-colors flex items-center justify-center">
+        <div className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2 flex items-center gap-1.5 text-[10px] font-bold text-navy shadow-lg border border-white/20">
           <ExternalLink size={12} /> Open full size
         </div>
       </div>

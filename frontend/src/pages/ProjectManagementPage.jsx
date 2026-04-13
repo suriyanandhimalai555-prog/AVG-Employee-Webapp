@@ -135,7 +135,7 @@ export const ProjectManagementPage = () => {
                 <div className={`p-2.5 rounded-xl ${project.is_active ? 'bg-indigo/5 text-indigo' : 'bg-red-50 text-red-400'}`}>
                   <Layers size={18} />
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={() => openEdit(project)}
                     className="p-2 rounded-xl text-navy/30 hover:text-indigo hover:bg-indigo/5 transition-all"

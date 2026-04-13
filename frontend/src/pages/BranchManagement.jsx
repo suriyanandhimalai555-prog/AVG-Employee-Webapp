@@ -115,7 +115,7 @@ export const BranchManagement = ({ onBack }) => {
                 <div className="p-2.5 bg-indigo/5 rounded-xl text-indigo">
                   <Building2 size={18} />
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={() => openEdit(branch)}
                     className="p-2 rounded-xl text-navy/30 hover:text-indigo hover:bg-indigo/5 transition-all"

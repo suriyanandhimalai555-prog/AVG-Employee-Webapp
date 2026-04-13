@@ -45,8 +45,15 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   // Mutation (not lazy query) so each call generates a fresh presigned URL — never a stale cached one
   const [getUploadUrl] = useGetUploadUrlMutation();
 
+  // Treat an auto-absent record (status='absent') the same as no record — show check-in buttons.
+  // The only exception is when the user submitted this session (optimistic fallback):
+  // even if the DB still shows absent (worker hasn't overwritten it yet), we know
+  // the check-in is queued so we hold the "present" optimistic state.
+  const rawToday = summary?.today;
   const todayRecord =
-    summary?.today || (submittedThisSession ? { status: 'present', mode: 'office' } : null);
+    (rawToday && rawToday.status !== 'absent')
+      ? rawToday
+      : (submittedThisSession ? { status: 'present', mode: 'office' } : null);
 
   /** Call this when the user enters the office or field check-in view, or to re-prompt after error. */
   const fetchGps = () => {

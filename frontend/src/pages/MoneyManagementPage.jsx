@@ -1002,8 +1002,8 @@ export const MoneyManagementPage = () => {
                       {fieldPhoto ? (
                         <div className="relative rounded-2xl overflow-hidden w-full aspect-video border border-navy/10 group bg-navy/5">
                            <img src={fieldPhoto.previewUrl} alt="Receipt" className="w-full h-full object-contain" />
-                           <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-navy/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <p className="text-white text-xs font-bold uppercase tracking-wider">Retake Photo</p>
+                           <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-navy/40 flex items-center justify-center opacity-100 transition-opacity">
+                              <p className="text-white text-[10px] font-bold uppercase tracking-[0.2em] bg-navy/40 px-3 py-1.5 rounded-lg border border-white/20 backdrop-blur-md">Retake Photo</p>
                            </button>
                         </div>
                       ) : (

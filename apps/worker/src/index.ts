@@ -361,8 +361,20 @@ worker.on('stalled', (jobId) => console.warn(`⚠️ Job ${jobId} stalled — re
     await redis.ping();
     console.log('✅ Worker Redis connected');
 
+    // Remove ALL existing auto-absent repeatable jobs before registering the canonical one.
+    // BullMQ keys repeatable jobs by (name + cron pattern + jobId). Changing the cron
+    // pattern creates a NEW key while leaving the old timestamps in the delayed queue,
+    // causing double-fires on every day the old timestamps remain. Purging first ensures
+    // exactly one schedule is active regardless of what was previously stored in Redis.
+    const existingRepeatable = await schedulerQueue.getRepeatableJobs();
+    for (const job of existingRepeatable) {
+      if (job.name === 'auto-absent') {
+        await schedulerQueue.removeRepeatableByKey(job.key);
+        console.log(`🧹 Removed stale auto-absent repeatable job: ${job.key}`);
+      }
+    }
+
     // Register the daily auto-absent repeatable job (23:30 IST = 18:00 UTC).
-    // BullMQ deduplicates by jobId so restarting the worker never creates duplicates.
     await schedulerQueue.add('auto-absent', {}, {
       repeat: { pattern: '0 18 * * *' },
       jobId: 'auto-absent-daily',
