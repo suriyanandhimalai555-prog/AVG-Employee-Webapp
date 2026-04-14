@@ -62,9 +62,30 @@ export const UpdateProjectSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+// MD-only manual collection entry — attributed directly to a branch
+export const MdCollectionEntrySchema = z.object({
+  branchId:        z.string().uuid(),
+  projectId:       z.string().uuid(),
+  // YYYY-MM-DD; validated further in service (not future, not >1yr past)
+  date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  mode:            z.enum(['gpay', 'bank_receipt', 'cash']),
+  amount:          z.number().positive().max(100_000_000, 'Amount too large'),
+  notes:           z.string().max(1000).optional(),
+  // Client-generated UUID for idempotency — retries with the same key are safe
+  idempotencyKey:  z.string().uuid('idempotencyKey must be a UUID'),
+});
+
+// Optional date-range filter for branch rankings
+export const GetRankingsQuerySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
 export type SubmitCollectionInput = z.infer<typeof SubmitCollectionSchema>;
 export type VerifyCollectionInput = z.infer<typeof VerifyCollectionSchema>;
 export type GetCollectionsQuery = z.infer<typeof GetCollectionsQuerySchema>;
 export type TransferCashInput = z.infer<typeof TransferCashSchema>;
+export type MdCollectionEntryInput = z.infer<typeof MdCollectionEntrySchema>;
+export type GetRankingsQuery = z.infer<typeof GetRankingsQuerySchema>;

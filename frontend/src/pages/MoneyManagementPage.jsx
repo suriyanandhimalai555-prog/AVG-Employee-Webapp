@@ -1,11 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Upload, Navigation, Send, DollarSign, Image as ImageIcon, MapPin, Loader2, BookOpen, Clock, AlertCircle,
-  Briefcase, ArrowUpRight, Check, Info, TrendingUp, Users, Building2, AlertTriangle
+  Briefcase, ArrowUpRight, Check, Info, TrendingUp, Building2, AlertTriangle,
+  BarChart3, PenLine
 } from 'lucide-react';
 import { PageHeader } from '../components/attendance/PageHeader';
 import { selectCurrentUser } from '../store/slices/authSlice';
@@ -43,7 +44,7 @@ const MODE_LABELS = {
 export const MoneyManagementPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const [view, setView] = useState('home'); // 'home', 'submit', 'history', 'wallet', 'overview'
+  const [view, setView] = useState('home'); // 'home', 'submit', 'history', 'wallet'
   const [drillBranchId, setDrillBranchId] = useState(null);
 
   // Admin overview — MD only
@@ -431,6 +432,8 @@ export const MoneyManagementPage = () => {
 // ─── MD DASHBOARD VIEW ───
   if (user?.role === 'md') {
     const mdByBranch = adminOverview?.byBranch || [];
+
+
     return (
       <div className="flex flex-col">
         <PageHeader user={user} title="Financial Oversight" />
@@ -439,6 +442,35 @@ export const MoneyManagementPage = () => {
             <h2 className="text-3xl font-bold text-navy tracking-tight">Finances</h2>
             <p className="text-xs font-medium text-navy/40 mt-1">Global collections overview</p>
           </div>
+
+          {/* MD quick actions */}
+          <div className="px-4 mb-6 grid grid-cols-2 gap-3">
+            <button
+              onClick={() => navigate('/money/rankings')}
+              className="bg-gradient-to-br from-indigo to-indigo/80 rounded-[24px] p-4 flex flex-col items-start gap-3 card-shadow tactile-press group"
+            >
+              <div className="w-9 h-9 rounded-2xl bg-white/10 flex items-center justify-center">
+                <BarChart3 size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white leading-tight">Branch Rankings</p>
+                <p className="text-[9px] font-medium text-white/60 mt-0.5">Top collectors</p>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate('/money/add-entry')}
+              className="bg-white rounded-[24px] p-4 flex flex-col items-start gap-3 card-shadow border border-navy/5 tactile-press group"
+            >
+              <div className="w-9 h-9 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                <PenLine size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-navy leading-tight">Add Entry</p>
+                <p className="text-[9px] font-medium text-navy/40 mt-0.5">Direct collection</p>
+              </div>
+            </button>
+          </div>
+
           <AdminOverviewContent />
         </motion.div>
 

@@ -361,6 +361,24 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
     }),
 
+    getBranchRankings: builder.query({
+      query: ({ startDate, endDate } = {}) => {
+        const qs = new URLSearchParams();
+        if (startDate) qs.set('startDate', startDate);
+        if (endDate) qs.set('endDate', endDate);
+        const q = qs.toString();
+        return `/money/admin/rankings${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['MoneyCollections'],
+    }),
+
+    mdAddCollectionEntry: builder.mutation({
+      query: (data) => ({ url: '/money/admin/entry', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MoneyCollections', 'MoneyWallet'],
+    }),
+
     // ─── User Management (Staff & Admins) ───
     getUserSuperiors: builder.query({
       query: () => '/users/superiors',
@@ -469,6 +487,8 @@ export const {
   useGetMoneySourcesQuery,
   useGetMoneyAdminOverviewQuery,
   useGetMoneyBranchDrilldownQuery,
+  useGetBranchRankingsQuery,
+  useMdAddCollectionEntryMutation,
   useGetMyDocumentsQuery,
   useAddDocumentMutation,
   useDeleteDocumentMutation,

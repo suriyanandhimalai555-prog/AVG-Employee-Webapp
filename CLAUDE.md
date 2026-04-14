@@ -426,3 +426,8 @@ Never call the API directly from a component.
 10. All timestamps in PostgreSQL are TIMESTAMPTZ
 11. TypeScript files: add one-line comment above every
     TS-specific line explaining what it does and why
+
+
+
+    make everything a component like how a professional react dev do 
+    using react-router-dom

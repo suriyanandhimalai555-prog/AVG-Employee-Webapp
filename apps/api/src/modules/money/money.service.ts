@@ -8,6 +8,8 @@ import type {
   VerifyCollectionInput,
   GetCollectionsQuery,
   TransferCashInput,
+  MdCollectionEntryInput,
+  GetRankingsQuery,
 } from './money.schema';
 
 export const MoneyService = {
@@ -504,6 +506,8 @@ export const MoneyService = {
     }
 
     // 4. Per-branch flow stats — same cash_transfer exclusion as global totals.
+    //    Use a subquery that resolves each collection's effective branch via
+    //    override_branch_id (for MD direct entries) or the submitter's branch_id.
     const byBranchResult = await db.query(`
       SELECT
         b.id   AS branch_id,
@@ -516,8 +520,11 @@ export const MoneyService = {
         COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
         COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
       FROM branches b
-      LEFT JOIN users u ON u.branch_id = b.id AND u.is_active = true
-      LEFT JOIN money_collections mc ON mc.user_id = u.id
+      LEFT JOIN (
+        SELECT COALESCE(mc.override_branch_id, u.branch_id) AS effective_branch_id, mc.*
+        FROM money_collections mc
+        JOIN users u ON mc.user_id = u.id
+      ) mc ON mc.effective_branch_id = b.id
       WHERE 1=1 ${scopedBranchIds !== null ? 'AND b.id = ANY($1::uuid[])' : ''}
       GROUP BY b.id, b.name
       ORDER BY verified DESC NULLS LAST
@@ -600,6 +607,7 @@ export const MoneyService = {
     }
 
     // Flow totals for this branch — exclude cash_transfer to avoid double-counting.
+    // Also include MD direct entries (override_branch_id) for this branch.
     const totalsResult = await db.query(`
       SELECT
         COALESCE(SUM(CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS collected,
@@ -611,7 +619,7 @@ export const MoneyService = {
         COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
       FROM money_collections mc
       JOIN users u ON mc.user_id = u.id
-      WHERE u.branch_id = $1
+      WHERE (u.branch_id = $1 OR mc.override_branch_id = $1)
     `, [targetBranchId]);
 
     const totals = {
@@ -641,13 +649,14 @@ export const MoneyService = {
     `, [targetBranchId]);
 
     // Project split — exclude cash_transfer for the same reason.
+    // Include both regular branch collections and MD direct entries.
     const projectResult = await db.query(`
       SELECT p.id, p.name,
         COALESCE(SUM(mc.amount), 0) AS total_amount
       FROM projects p
       JOIN money_collections mc ON mc.project_id = p.id
       JOIN users u ON mc.user_id = u.id
-      WHERE u.branch_id = $1
+      WHERE (u.branch_id = $1 OR mc.override_branch_id = $1)
         AND mc.status != 'rejected'
         AND mc.mode  != 'cash_transfer'
       GROUP BY p.id, p.name
@@ -688,7 +697,7 @@ export const MoneyService = {
         JOIN users u ON mc.user_id = u.id
         JOIN projects p ON mc.project_id = p.id
         LEFT JOIN users v ON mc.assigned_verifier_id = v.id
-        WHERE u.branch_id = $1
+        WHERE (u.branch_id = $1 OR mc.override_branch_id = $1)
         ORDER BY mc.submitted_at DESC
         LIMIT 30
       `, [targetBranchId]);
@@ -701,5 +710,173 @@ export const MoneyService = {
       projectSplit:  projectResult.rows,
       ...(isMd && { holders, collections }),
     };
+  },
+
+  // ─── BRANCH RANKINGS (MD-only) ───
+  //
+  // No double-counting guarantee:
+  //   Each money_collection row has exactly ONE effective_branch_id resolved by
+  //   COALESCE(override_branch_id, u.branch_id). Since MD entries use u.branch_id = NULL
+  //   and override_branch_id = target, while worker entries use override_branch_id = NULL
+  //   and u.branch_id = their branch, each collection maps to exactly one branch — never two.
+  //
+  // Optional date range filters applied to submitted_at for period-based comparisons.
+  async getBranchRankings(db: Pool, query: GetRankingsQuery): Promise<any[]> {
+    // Build optional date filter
+    const params: any[] = [];
+    // Parameterised date filter clause
+    let dateFilter = '';
+    if (query.startDate) {
+      params.push(query.startDate);
+      dateFilter += ` AND mc.submitted_at >= $${params.length}::date`;
+    }
+    if (query.endDate) {
+      params.push(query.endDate);
+      dateFilter += ` AND mc.submitted_at < ($${params.length}::date + interval '1 day')`;
+    }
+
+    const result = await db.query(`
+      SELECT
+        b.id   AS branch_id,
+        b.name AS branch_name,
+        -- Subquery fetches the single active BM per branch; avoids MIN(uuid) which PostgreSQL
+        -- does not support. LIMIT 1 is a safety net — there should be at most one BM per branch.
+        (SELECT u.name FROM users u
+          WHERE u.branch_id = b.id AND u.role = 'branch_manager' AND u.is_active = true
+          LIMIT 1) AS bm_name,
+        COALESCE(SUM(
+          CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer'
+          THEN mc.amount ELSE 0 END
+        ), 0) AS total_collection,
+        COALESCE(SUM(CASE WHEN mc.mode = 'gpay'         AND mc.status != 'rejected' THEN mc.amount ELSE 0 END), 0) AS gpay,
+        COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected' THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
+        COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected' THEN mc.amount ELSE 0 END), 0) AS cash
+      FROM branches b
+      LEFT JOIN (
+        -- Resolve each collection to its effective branch in one place.
+        -- MD entries: COALESCE picks override_branch_id (user.branch_id is NULL for MD).
+        -- Worker entries: COALESCE picks u.branch_id (override_branch_id is NULL for workers).
+        -- Result: exactly one branch per collection row — no duplicates.
+        SELECT COALESCE(mc.override_branch_id, u.branch_id) AS effective_branch_id, mc.*
+        FROM money_collections mc
+        JOIN users u ON mc.user_id = u.id
+        WHERE 1=1 ${dateFilter}
+      ) mc ON mc.effective_branch_id = b.id
+      GROUP BY b.id, b.name
+      ORDER BY total_collection DESC
+    `, params);
+
+    return result.rows.map((r: any, idx: number) => ({
+      rank:            idx + 1,
+      branchId:        r.branch_id,
+      branchName:      r.branch_name,
+      bmName:          r.bm_name || '—',
+      totalCollection: parseFloat(r.total_collection),
+      byMode: {
+        gpay:        parseFloat(r.gpay),
+        bankReceipt: parseFloat(r.bank_receipt),
+        cash:        parseFloat(r.cash),
+      },
+    }));
+  },
+
+  // ─── MD DIRECT COLLECTION ENTRY ───
+  // MD manually adds a collection attributed to any branch.
+  // Entry is auto-approved (MD is the final authority).
+  // Idempotent: submitting the same idempotencyKey twice returns the original record.
+  async mdAddCollectionEntry(
+    db: Pool,
+    mdUserId: string,
+    payload: MdCollectionEntryInput
+  ): Promise<any> {
+    // ── Validate branch and project exist before touching collections ──
+    const branchCheck = await db.query(
+      'SELECT id FROM branches WHERE id = $1',
+      [payload.branchId]
+    );
+    if (branchCheck.rows.length === 0) {
+      throw new NotFoundError('Branch not found');
+    }
+
+    const projectCheck = await db.query(
+      'SELECT id FROM projects WHERE id = $1 AND is_active = true',
+      [payload.projectId]
+    );
+    if (projectCheck.rows.length === 0) {
+      throw new NotFoundError('Project not found or is inactive');
+    }
+
+    // ── Date bounds: not in the future, not older than 2 years ──
+    const entryDate  = new Date(payload.date);
+    const today      = new Date();
+    today.setHours(0, 0, 0, 0);
+    const twoYearsAgo = new Date(today);
+    twoYearsAgo.setFullYear(today.getFullYear() - 2);
+
+    if (entryDate > today) {
+      throw new ValidationError('Entry date cannot be in the future');
+    }
+    if (entryDate < twoYearsAgo) {
+      throw new ValidationError('Entry date cannot be more than 2 years in the past');
+    }
+
+    // ── Idempotent insert inside an explicit transaction ──
+    // ON CONFLICT on idempotency_key: second identical request returns the
+    // original row without inserting anything — safe for network retries.
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const result = await client.query(`
+        INSERT INTO money_collections (
+          user_id,
+          project_id,
+          amount,
+          mode,
+          override_branch_id,
+          notes,
+          idempotency_key,
+          client_name,
+          client_phone,
+          assigned_verifier_id,
+          status,
+          verified_at,
+          submitted_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'approved', NOW(), $11::date)
+        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+        DO NOTHING
+        RETURNING *
+      `, [
+        mdUserId,
+        payload.projectId,
+        payload.amount,
+        payload.mode,
+        payload.branchId,
+        payload.notes || null,
+        payload.idempotencyKey,
+        'MD Direct Entry',
+        'N/A',
+        mdUserId,
+        payload.date,
+      ]);
+
+      await client.query('COMMIT');
+
+      // If DO NOTHING fired (duplicate key), fetch and return the original row
+      if (result.rows.length === 0) {
+        const existing = await db.query(
+          'SELECT * FROM money_collections WHERE idempotency_key = $1',
+          [payload.idempotencyKey]
+        );
+        return existing.rows[0];
+      }
+
+      return result.rows[0];
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   },
 };

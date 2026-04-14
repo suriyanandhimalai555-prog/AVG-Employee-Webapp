@@ -8,7 +8,9 @@ import {
   VerifyCollectionSchema,
   GetCollectionsQuerySchema,
   TransferCashSchema,
-  UpdateProjectSchema
+  UpdateProjectSchema,
+  MdCollectionEntrySchema,
+  GetRankingsQuerySchema,
 } from './money.schema';
 
 const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
@@ -257,6 +259,40 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
         stuckDays ? parseInt(stuckDays, 10) : 3
       );
       return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── BRANCH RANKINGS (MD-only) ───
+  fastify.get('/admin/rankings', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'md') {
+        return sendForbidden(reply, 'Only MD can view branch rankings');
+      }
+      const query = GetRankingsQuerySchema.parse(req.query);
+      const data = await MoneyService.getBranchRankings(fastify.db, query);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── MD DIRECT COLLECTION ENTRY (MD-only) ───
+  fastify.post('/admin/entry', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'md') {
+        return sendForbidden(reply, 'Only MD can add direct collection entries');
+      }
+      const body = MdCollectionEntrySchema.parse(req.body);
+      const data = await MoneyService.mdAddCollectionEntry(fastify.db, req.user.id, body);
+      return reply.code(201).send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);
     }
