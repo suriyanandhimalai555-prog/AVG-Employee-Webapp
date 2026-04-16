@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { ArrowLeft, ChevronRight, Users } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
-import { useGetUsersQuery } from '../store/api/apiSlice';
+import { useGetUsersQuery, useGetEmployeesQuery } from '../store/api/apiSlice';
 
 
 export const LeadershipListPage = () => {
@@ -20,6 +20,15 @@ export const LeadershipListPage = () => {
 
   const members = (usersResult.data ?? []).filter((u) =>
     user?.role === 'director' ? u.managerId === user.id : true
+  );
+
+  // Fetch today's attendance for all visible employees to get status for each member
+  const { data: employeesResult = {} } = useGetEmployeesQuery(
+    { viewerId: user?.id, limit: 500 },
+    { skip: !user?.id }
+  );
+  const attendanceMap = new Map(
+    (employeesResult.data ?? []).map((e) => [e.id, e.status ?? null])
   );
 
   const title = kind === 'directors' ? 'Directors' : 'General Managers';
@@ -65,7 +74,8 @@ export const LeadershipListPage = () => {
                   {(member.role ?? '').replace(/_/g, ' ')}
                 </p>
               </div>
-              <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0" />
+              <AttendanceBadge status={attendanceMap.get(member.id)} />
+              <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0 ml-2" />
             </button>
           ))}
           {!isLoading && members.length === 0 && (
@@ -77,6 +87,34 @@ export const LeadershipListPage = () => {
       </div>
     </motion.div>
   );
+};
+
+const ATTENDANCE_STYLES = {
+  present:   { cls: 'bg-emerald/10 text-emerald border border-emerald/20', label: 'Present' },
+  absent:    { cls: 'bg-red-500/10 text-red-500 border border-red-500/20', label: 'Absent' },
+  half_day:  { cls: 'bg-amber-500/10 text-amber-600 border border-amber-500/20', label: 'Half Day' },
+};
+
+const AttendanceBadge = ({ status }) => {
+  const style = status ? ATTENDANCE_STYLES[status] : null;
+  if (style) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider whitespace-nowrap ${style.cls}`}>
+        <span className={`w-1 h-1 rounded-full ${status === 'present' ? 'bg-emerald animate-pulse' : status === 'absent' ? 'bg-red-500' : 'bg-amber-500'}`} />
+        {style.label}
+      </span>
+    );
+  }
+  // undefined means not yet in attendanceMap (data loading) — show nothing
+  // null means data loaded but no attendance record
+  if (status === null) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-navy/5 text-navy/30 border border-navy/8 whitespace-nowrap">
+        Not Marked
+      </span>
+    );
+  }
+  return null;
 };
 
 export default LeadershipListPage;

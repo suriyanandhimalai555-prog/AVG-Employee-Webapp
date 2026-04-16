@@ -45,13 +45,18 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   // Mutation (not lazy query) so each call generates a fresh presigned URL — never a stale cached one
   const [getUploadUrl] = useGetUploadUrlMutation();
 
-  // Treat an auto-absent record (status='absent') the same as no record — show check-in buttons.
-  // The only exception is when the user submitted this session (optimistic fallback):
-  // even if the DB still shows absent (worker hasn't overwritten it yet), we know
-  // the check-in is queued so we hold the "present" optimistic state.
+  // Derive the effective today record with three cases:
+  //   1. submittedThisSession  — optimistic present while the check-in job is still in queue
+  //   2. self-marked absent    — rawToday.status === 'absent' && check_in_time is set
+  //                              (self-absent sets check_in_time; auto-absent leaves it null)
+  //                              → surface the absent record so the UI shows "Marked Absent"
+  //   3. auto-absent           — rawToday.status === 'absent' && check_in_time is null
+  //                              → treat as no record so the employee can still check in
   const rawToday = summary?.today;
-  const todayRecord =
-    (rawToday && rawToday.status !== 'absent')
+  const isSelfMarkedAbsent = rawToday?.status === 'absent' && rawToday?.check_in_time;
+  const todayRecord = isSelfMarkedAbsent
+    ? rawToday
+    : (rawToday && rawToday.status !== 'absent')
       ? rawToday
       : (submittedThisSession ? { status: 'present', mode: 'office' } : null);
 

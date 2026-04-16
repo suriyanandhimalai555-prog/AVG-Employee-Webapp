@@ -97,8 +97,16 @@ export const AdminSignOffSchema = SignOffSchema.extend({
   targetUserId: z.string().uuid(),
 });
 
+// Define validation for an employee self-marking themselves absent for today
+export const SelfAbsentSchema = z.object({
+  // Optional reason — stored in the attendance note for audit visibility
+  note: z.string().max(500).optional(),
+});
+
 // Inferred TypeScript Type: Represents the validated data for a user's attendance submission
 export type SubmitAttendanceInput = z.infer<typeof SubmitAttendanceSchema>;
+// Inferred TypeScript Type: Represents the data for a self-absent submission
+export type SelfAbsentInput = z.infer<typeof SelfAbsentSchema>;
 // Inferred TypeScript Type: Represents the data for an admin manually marking attendance
 export type AdminMarkInput = z.infer<typeof AdminMarkSchema>;
 // Inferred TypeScript Type: Represents the data required for a record correction

@@ -374,9 +374,10 @@ worker.on('stalled', (jobId) => console.warn(`⚠️ Job ${jobId} stalled — re
       }
     }
 
-    // Register the daily auto-absent repeatable job (23:30 IST = 18:00 UTC).
+    // Register the daily auto-absent repeatable job at 23:30 IST.
+    // tz: 'Asia/Kolkata' makes the pattern timezone-explicit — no UTC math required.
     await schedulerQueue.add('auto-absent', {}, {
-      repeat: { pattern: '0 18 * * *' },
+      repeat: { pattern: '30 23 * * *', tz: 'Asia/Kolkata' },
       jobId: 'auto-absent-daily',
     });
     console.log('✅ Auto-absent job scheduled (23:30 IST daily)');

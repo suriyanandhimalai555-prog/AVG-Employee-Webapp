@@ -15,6 +15,7 @@ import {
   UserHistoryQuerySchema,
   SignOffSchema,
   AdminSignOffSchema,
+  SelfAbsentSchema,
 } from './attendance.schema';
 // Import the base error class to check if errors are our custom app errors
 import { AppError } from '../../shared/errors';
@@ -120,6 +121,32 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
           message: 'Attendance submitted. Confirming shortly...',
           jobId: result.jobId,
         },
+      });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /self-absent (Employee self-marks absent) ───
+  fastify.post('/self-absent', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const body = SelfAbsentSchema.parse(req.body);
+
+      await AttendanceService.selfAbsent(
+        fastify.db,
+        fastify.redis,
+        req.user.id,
+        req.user.role,
+        req.user.branchId,
+        body
+      );
+
+      return reply.send({
+        success: true,
+        data: { message: 'Marked as absent for today' },
       });
     } catch (error) {
       return handleError(error, reply);

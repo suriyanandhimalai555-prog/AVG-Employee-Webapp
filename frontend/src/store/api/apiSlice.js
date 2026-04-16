@@ -185,6 +185,17 @@ export const apiSlice = createApi({
       providesTags: ['Attendance'],
     }),
 
+    // Employee self-marks absent — synchronous (200, not 202) since absent needs no photo/GPS
+    selfAbsent: builder.mutation({
+      query: (data = {}) => ({
+        url: '/attendance/self-absent',
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Summary', 'Attendance', 'Employees'],
+    }),
+
     adminMark: builder.mutation({
       query: (data) => ({
         url: '/attendance/admin-mark',
@@ -456,6 +467,7 @@ export const apiSlice = createApi({
 });
 
 export const {
+  useSelfAbsentMutation,
   useLoginMutation,
   useGetMeQuery,
   useLogoutMutation,

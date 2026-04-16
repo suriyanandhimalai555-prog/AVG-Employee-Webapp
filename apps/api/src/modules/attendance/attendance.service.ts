@@ -31,6 +31,7 @@ import type {
   UserHistoryQuery,
   SignOffInput,
   AdminSignOffInput,
+  SelfAbsentInput,
 } from './attendance.schema';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -119,6 +120,86 @@ export const AttendanceService = {
     await addAttendanceJob(jobData);
 
     return { queued: true, jobId: dupeKey };
+  },
+
+  // ─── SELF-ABSENT (Employee marks themselves absent) ───
+
+  async selfAbsent(
+    db: Pool,
+    redis: Redis,
+    userId: string,
+    role: string,
+    branchId: string | null,
+    payload: SelfAbsentInput
+  ): Promise<{ success: boolean }> {
+    // Permission check — same gate as self check-in (clients cannot mark attendance)
+    assertCanMarkAttendance(role as any);
+
+    // Require smartphone access — no-smartphone employees are marked by their branch admin
+    const userResult = await db.query(
+      'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (userResult.rows[0].has_smartphone === false) {
+      throw new ForbiddenError(
+        'You do not have smartphone access. Ask your branch admin to mark your attendance.'
+      );
+    }
+
+    const today = getCompanyToday();
+
+    // If a check-in job is already queued in Redis, reject absent marking
+    const checkInQueued = await redis.exists(`att:${userId}:${today}`);
+    if (checkInQueued) {
+      throw new ConflictError('A check-in has already been submitted for today');
+    }
+
+    // Dedupe: use a separate Redis key so it never interferes with the check-in
+    // pending-detection logic in getAttendanceSummary (which reads att:{userId}:{date})
+    const absentKey = `self-absent:${userId}:${today}`;
+    const claimed = await redis.set(absentKey, '1', 'EX', 86400, 'NX');
+    if (claimed === null) {
+      throw new ConflictError('Attendance already marked for today');
+    }
+
+    const resolvedBranchId = branchId ?? userResult.rows[0].branch_id ?? null;
+
+    try {
+      // Synchronous DB insert — no queue needed for absent (no photo, no GPS).
+      // Setting check_in_time = NOW() distinguishes self-marked absent from auto-absent
+      // (which has check_in_time = NULL). The summary and frontend use this to decide
+      // whether to show "Marked Absent" or still allow check-in.
+      const insertResult = await db.query(
+        `INSERT INTO attendance (user_id, branch_id, date, mode, status, check_in_time, marked_by, submitted_at)
+         VALUES ($1, $2, $3, 'office', 'absent', NOW(), $1, NOW())
+         ON CONFLICT (user_id, date) DO UPDATE SET
+           status        = 'absent',
+           check_in_time = NOW(),
+           submitted_at  = NOW(),
+           marked_by     = $1
+         WHERE attendance.status = 'absent'
+         RETURNING id`,
+        [userId, resolvedBranchId, today]
+      );
+
+      // rowCount = 0 means a non-absent record already exists (present/half_day) — DO NOTHING path
+      if (!insertResult.rowCount || insertResult.rowCount === 0) {
+        await redis.del(absentKey);
+        throw new ConflictError('Attendance already marked for today');
+      }
+
+      return { success: true };
+    } catch (err) {
+      if (err instanceof ConflictError) throw err;
+      // Release the Redis lock on unexpected DB errors so the user can retry
+      await redis.del(absentKey);
+      throw err;
+    }
   },
 
   // ─── ADMIN MARK ATTENDANCE (Branch Admin) ───
