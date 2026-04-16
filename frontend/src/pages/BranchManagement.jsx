@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Pencil, Trash2, Clock,
   ChevronLeft, Loader2, ShieldCheck,
@@ -11,7 +12,8 @@ import {
   useDeleteBranchMutation,
 } from '../store/api/apiSlice';
 
-export const BranchManagement = ({ onBack }) => {
+export const BranchManagement = () => {
+  const navigate = useNavigate();
   const { data: branches = [], isLoading } = useGetBranchesQuery();
   const [createBranch, { isLoading: createLoading }] = useCreateBranchMutation();
   const [updateBranch, { isLoading: updateLoading }] = useUpdateBranchMutation();
@@ -72,7 +74,7 @@ export const BranchManagement = ({ onBack }) => {
       {/* Header */}
       <header className="flex items-center gap-4 mb-10">
         <button
-          onClick={onBack}
+          onClick={() => navigate(-1)}
           className="p-3 rounded-2xl bg-white card-shadow border border-navy/5 text-navy/40 hover:text-navy tactile-press"
         >
           <ChevronLeft size={20} />

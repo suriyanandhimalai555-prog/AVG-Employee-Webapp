@@ -1,41 +1,31 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Loader2, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useGetEmployeesQuery } from '../store/api/apiSlice';
-import { EmployeeCalendarPage } from './EmployeeCalendarPage';
-
 
 /**
- * Full-screen overlay showing details for a single branch.
- * Used by MD / GM / Director when they tap a branch card on the Home tab.
- *
- * Props:
- *   branch  — branch object from summary.branches ({ id, name, present, absent, presentPercent, total })
- *   onBack  — callback to return to Home tab
+ * Full-screen page showing details for a single branch.
+ * Branch data is passed via router state when navigating: navigate('/branches/:id', { state: { branch } })
+ * Falls back gracefully if state is missing (e.g. on page refresh).
  */
-export const BranchDetailPage = ({ branch, onBack }) => {
+export const BranchDetailPage = () => {
+  const { branchId } = useParams();
+  const { state } = useLocation();
+  const navigate = useNavigate();
   const user = useSelector(selectCurrentUser);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  // Branch object from router state — populated by HomeTab on navigation
+  const branch = state?.branch ?? { id: branchId };
 
   const { data: employeesResult, isLoading } = useGetEmployeesQuery(
-    { viewerId: user?.id, branchId: branch?.id },
-    { skip: !user?.id || !branch?.id, refetchOnMountOrArgChange: true }
+    { viewerId: user?.id, branchId },
+    { skip: !user?.id || !branchId, refetchOnMountOrArgChange: true }
   );
 
   const employees = employeesResult?.data ?? [];
-
-  // Drill into individual employee calendar
-  if (selectedEmployee) {
-    return (
-      <EmployeeCalendarPage
-        employee={selectedEmployee}
-        onBack={() => setSelectedEmployee(null)}
-      />
-    );
-  }
 
   const present = branch?.present ?? 0;
   const absent = branch?.absent ?? 0;
@@ -54,7 +44,7 @@ export const BranchDetailPage = ({ branch, onBack }) => {
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">
         <button
-          onClick={onBack}
+          onClick={() => navigate(-1)}
           className="p-2 rounded-xl text-navy/40 hover:text-navy hover:bg-navy/5 transition-all tactile-press shrink-0"
         >
           <ArrowLeft size={20} />
@@ -134,7 +124,7 @@ export const BranchDetailPage = ({ branch, onBack }) => {
               {employees.map((emp) => (
                 <button
                   key={emp.id}
-                  onClick={() => setSelectedEmployee(emp)}
+                  onClick={() => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })}
                   className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
                 >
                   <div className="w-9 h-9 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">

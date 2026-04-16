@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ChevronRight, Clock, Home, Loader2, LogOut, MapPin, Search, UserCheck, XCircle, X, AlertCircle } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
 import { PageHeader } from '../../components/attendance/PageHeader';
-import { OfficeCheckIn } from './OfficeCheckIn';
-import { FieldCheckIn } from './FieldCheckIn';
 import { MarkModal } from './MarkModal';
 import { CorrectionModal } from './CorrectionModal';
 import { EmployeeHistoryModal } from '../../components/attendance/EmployeeHistoryModal';
@@ -16,8 +15,6 @@ import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetEmployeesQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
 
-
-const SELF_VIEWS = { LIST: 'list', OFFICE: 'office', FIELD: 'field' };
 
 const FILTERS = [
   { key: 'all',           label: 'All' },
@@ -33,7 +30,7 @@ const EmployeeAvatar = ({ name, profilePhotoUrl }) => (
 
 export const BranchAdminPanel = () => {
   const user = useSelector(selectCurrentUser);
-  const [selfView, setSelfView] = useState(SELF_VIEWS.LIST);
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Server-side pagination — branch is typically ≤100 staff so one page is fine for most cases
@@ -52,28 +49,15 @@ export const BranchAdminPanel = () => {
   // Employee whose full history the admin wants to inspect
   const [historyEmployee, setHistoryEmployee] = useState(null);
 
-  // Self check-in hook — branch admin marks their OWN attendance
+  // Self check-in hook — only todayRecord and error state needed; actual check-in happens on /attendance/office route
   const {
     todayRecord,
-    gpsStatus,
-    gpsPermissionDenied,
-    fetchGps,
-    fieldStep, setFieldStep,
-    fieldNote, setFieldNote,
-    fieldPhoto,
-    isSubmitting,
-    isUploading,
-    fileInputRef,
-    handlePhotoCapture,
-    handleCheckIn,
     checkInError,
     clearCheckInError,
   } = useCheckIn();
 
-  // Self sign-off hook — branch admin clocks out for themselves
+  // Self sign-off hook — branch admin clocks out for themselves from this panel
   const {
-    gpsStatus: signOffGpsStatus,
-    fetchGps: fetchSignOffGps,
     isSubmitting: isSigningOff,
     signOffError,
     clearSignOffError,
@@ -94,13 +78,6 @@ export const BranchAdminPanel = () => {
     correctionPhoto, correctionPhotoLoading,
     adminError, clearAdminError,
   } = useAdminAttendance();
-
-  // Pre-warm sign-off GPS when branch admin is checked in but not yet signed off
-  useEffect(() => {
-    if (todayRecord?.status === 'present' && !todayRecord?.check_out_time && !todayRecord?.signOffPending) {
-      fetchSignOffGps();
-    }
-  }, [todayRecord?.status, todayRecord?.check_out_time, todayRecord?.signOffPending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // No-smartphone employees with no check-in yet — need to be marked
   const needsMark = employees.filter((e) => !e.has_smartphone && !e.status);
@@ -151,52 +128,6 @@ export const BranchAdminPanel = () => {
       e.email?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;
   });
-
-  // Self check-in sub-views (office / field wizard) render full-screen
-  if (selfView === SELF_VIEWS.OFFICE) {
-    return (
-      <OfficeCheckIn
-        user={user}
-        gpsStatus={gpsStatus}
-        gpsPermissionDenied={gpsPermissionDenied}
-        isSubmitting={isSubmitting}
-        todayRecord={todayRecord}
-        onCheckIn={handleCheckIn}
-        onBack={() => setSelfView(SELF_VIEWS.LIST)}
-        onSwitchToField={() => { setSelfView(SELF_VIEWS.FIELD); setFieldStep(1); }}
-        onEnter={() => { fetchGps(); fetchSignOffGps(); }}
-        onSignOff={handleSignOff}
-        isSigningOff={isSigningOff}
-        signOffError={signOffError}
-      />
-    );
-  }
-
-  if (selfView === SELF_VIEWS.FIELD) {
-    return (
-      <FieldCheckIn
-        user={user}
-        gpsStatus={gpsStatus}
-        gpsPermissionDenied={gpsPermissionDenied}
-        fieldStep={fieldStep}
-        fieldNote={fieldNote}
-        fieldPhoto={fieldPhoto}
-        isSubmitting={isSubmitting}
-        isUploading={isUploading}
-        todayRecord={todayRecord}
-        fileInputRef={fileInputRef}
-        onPhotoCapture={handlePhotoCapture}
-        onCheckIn={handleCheckIn}
-        onBack={() => setSelfView(SELF_VIEWS.OFFICE)}
-        onStepChange={setFieldStep}
-        onNoteChange={setFieldNote}
-        onEnter={() => { fetchGps(); fetchSignOffGps(); }}
-        onSignOff={handleSignOff}
-        isSigningOff={isSigningOff}
-        signOffError={signOffError}
-      />
-    );
-  }
 
   return (
     <>
@@ -291,7 +222,7 @@ export const BranchAdminPanel = () => {
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => { setSelfView(SELF_VIEWS.OFFICE); fetchGps(); }}
+                onClick={() => navigate('/attendance/office')}
                 className="p-5 rounded-2xl bg-white card-shadow border-2 border-indigo flex flex-col items-center gap-2 tactile-press"
               >
                 <div className="w-10 h-10 rounded-xl bg-indigo/10 flex items-center justify-center text-indigo">
@@ -300,7 +231,7 @@ export const BranchAdminPanel = () => {
                 <p className="text-xs font-bold text-navy">Office</p>
               </button>
               <button
-                onClick={() => { setSelfView(SELF_VIEWS.FIELD); setFieldStep(1); fetchGps(); }}
+                onClick={() => navigate('/attendance/field')}
                 className="p-5 rounded-2xl bg-white card-shadow border-2 border-transparent flex flex-col items-center gap-2 tactile-press"
               >
                 <div className="w-10 h-10 rounded-xl bg-navy/5 flex items-center justify-center text-navy">

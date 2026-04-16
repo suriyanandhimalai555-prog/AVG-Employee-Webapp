@@ -56,12 +56,18 @@ export const useSignOff = ({ onSuccess } = {}) => {
   const handleSignOff = async () => {
     setSignOffError(null);
     try {
+      // GPS never started — trigger the permission prompt now
+      if (!gpsStatus) {
+        fetchGps();
+        return;
+      }
       // Re-trigger GPS if it previously errored
       if (gpsStatus === 'error') {
         fetchGps();
         return;
       }
-      if (!gpsStatus || gpsStatus === 'fetching') {
+      // GPS prompt is open but not resolved yet
+      if (gpsStatus === 'fetching') {
         setSignOffError('Waiting for GPS location...');
         return;
       }

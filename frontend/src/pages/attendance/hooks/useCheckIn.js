@@ -89,13 +89,19 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   const handleCheckIn = async (mode) => {
     setCheckInError(null);
     try {
+      // GPS never started — trigger the permission prompt now
+      if (!gpsStatus) {
+        fetchGps();
+        return;
+      }
       // If GPS errored, re-trigger the request — the browser will re-show the permission
       // dialog if the user previously chose "Ask again next time" (permission = 'prompt').
       if (gpsStatus === 'error') {
         fetchGps();
         return;
       }
-      if (!gpsStatus || gpsStatus === 'fetching') {
+      // GPS prompt is open but not resolved yet
+      if (gpsStatus === 'fetching') {
         setCheckInError('Waiting for GPS location...');
         return;
       }

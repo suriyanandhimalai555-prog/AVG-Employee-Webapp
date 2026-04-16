@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   UserPlus,
@@ -38,6 +39,7 @@ import { selectCurrentUser } from '../store/slices/authSlice';
 
 export const UserManagement = () => {
   const user = useSelector(selectCurrentUser);
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -294,8 +296,16 @@ export const UserManagement = () => {
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-6xl mx-auto px-4 py-8">
+      {/* Back button — was provided by AttendanceHome overlay wrapper, now inline */}
+      <button
+        onClick={() => navigate(-1)}
+        className="fixed top-4 left-4 z-[200] flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-md border border-navy/5 rounded-2xl shadow-xl text-[10px] font-bold text-navy uppercase tracking-widest tactile-press"
+      >
+        <ArrowRight className="rotate-180" size={14} /> Back
+      </button>
+
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 pt-12">
         <div className="flex items-center gap-5">
           <div className="w-16 h-16 rounded-[24px] bg-white shadow-premium flex items-center justify-center text-indigo border border-navy/5">
             <Users size={32} />

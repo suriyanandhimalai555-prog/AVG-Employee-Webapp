@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { getISTToday } from '../../lib/date';
 import { ArrowRight, AlertCircle, Building2, Users, ChevronRight } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
@@ -144,8 +145,9 @@ const LeadershipSection = ({ title, members = [], onOpenList, variant = 'indigo'
   );
 };
 
-export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCalendar, onBranchSelect, onOpenLeadershipList }) => {
+export const HomeTab = () => {
   const user = useSelector(selectCurrentUser);
+  const navigate = useNavigate();
 
   const nowDate = new Date();
   const [calMonth, setCalMonth] = useState(nowDate.getMonth() + 1);
@@ -216,7 +218,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
         <>
           <AlertCard
             isMarked={todayRecord}
-            onAction={onNavigateToAttendance}
+            onAction={() => navigate('/attendance')}
           />
           {/* myMonth holds this month's aggregated stats — not just today's */}
           <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
@@ -238,12 +240,12 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
         <>
           <AlertCard
             isMarked={todayRecord}
-            onAction={onNavigateToAttendance}
+            onAction={() => navigate('/attendance')}
           />
           <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
 
           {/* Team list — Sales Officers under this ABM */}
-          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
+          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
 
           <div className="px-6 pb-32">
             <HistoryCalendar
@@ -275,7 +277,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             }}
           />
           <button
-            onClick={onNavigateToAttendance}
+            onClick={() => navigate('/attendance')}
             className="w-full p-5 bg-white rounded-3xl card-shadow flex items-center gap-4 tactile-press group hover:shadow-lg hover:shadow-navy/6 transition-all duration-300"
           >
             <div className="w-12 h-12 rounded-2xl bg-indigo/8 flex items-center justify-center text-indigo transition-all duration-300 group-hover:bg-indigo group-hover:text-white group-hover:shadow-lg group-hover:shadow-indigo/25">
@@ -288,7 +290,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             <ArrowRight size={16} className="text-navy/25 transition-all duration-300 group-hover:text-navy/50 group-hover:translate-x-1 shrink-0" />
           </button>
 
-          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
+          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"
@@ -317,7 +319,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             <LeadershipSection
               title="General Managers"
               members={gmMembers}
-              onOpenList={() => onOpenLeadershipList?.('gms')}
+              onOpenList={() => navigate('/leadership/gms')}
               variant="gms"
             />
           )}
@@ -326,19 +328,19 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
               <LeadershipSection
                 title="Directors"
                 members={directorMembers}
-                onOpenList={() => onOpenLeadershipList?.('directors')}
+                onOpenList={() => navigate('/leadership/directors')}
                 variant="directors"
               />
               <LeadershipSection
                 title="General Managers"
                 members={gmMembers}
-                onOpenList={() => onOpenLeadershipList?.('gms')}
+                onOpenList={() => navigate('/leadership/gms')}
                 variant="gms"
               />
             </>
           )}
 
-          <StaffCard onOpen={onOpenUserManagement} />
+          <StaffCard onOpen={() => navigate('/user-management')} />
 
           {/* Per-branch breakdown — rendered if the API returns a branches array */}
           {summary?.branches?.length > 0 && (
@@ -346,7 +348,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
               {summary.branches.map((branch) => (
                 <button
                   key={branch.id}
-                  onClick={() => onBranchSelect?.(branch)}
+                  onClick={() => navigate(`/branches/${branch.id}`, { state: { branch } })}
                   className="w-full p-4 bg-white rounded-2xl card-shadow flex items-center gap-4 hover-lift tactile-press group text-left transition-all duration-200"
                 >
                   <div className="w-10 h-10 rounded-xl bg-indigo/8 flex items-center justify-center text-indigo shrink-0 group-hover:bg-indigo group-hover:text-white transition-all duration-300">
@@ -403,7 +405,7 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
 
           {needsActionCount > 0 && (
             <button
-              onClick={onNavigateToAttendance}
+              onClick={() => navigate('/attendance')}
               className="w-full p-5 rounded-3xl gradient-yellow flex items-center gap-4 tactile-press shadow-xl shadow-yellow/20"
             >
               <div className="w-12 h-12 rounded-2xl bg-navy/10 flex items-center justify-center text-navy">
@@ -421,9 +423,9 @@ export const HomeTab = ({ onNavigateToAttendance, onOpenUserManagement, onOpenCa
             </button>
           )}
 
-          <StaffCard onOpen={onOpenUserManagement} />
+          <StaffCard onOpen={() => navigate('/user-management')} />
 
-          <TeamListSection members={teamMembers} onOpenCalendar={onOpenCalendar} />
+          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"

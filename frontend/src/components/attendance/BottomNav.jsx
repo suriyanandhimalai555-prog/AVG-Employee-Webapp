@@ -1,7 +1,20 @@
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2 } from 'lucide-react';
+import { selectCurrentUser } from '../../store/slices/authSlice';
+import { useGetMoneyCollectionsQuery } from '../../store/api/apiSlice';
 
-const NavItem = ({ icon: Icon, label, active, onClick }) => (
+const NAV_TABS = [
+  { key: 'home',       icon: Home,        label: 'Home',       path: '/' },
+  { key: 'attendance', icon: Fingerprint, label: 'Attendance', path: '/attendance' },
+  { key: 'money',      icon: Wallet,      label: 'Money',      path: '/money' },
+  { key: 'alerts',     icon: Bell,        label: 'Alerts',     path: '/alerts' },
+  { key: 'profile',    icon: UserCircle2, label: 'Profile',    path: '/profile' },
+];
+
+const MD_TAB = { key: 'branches', icon: Building2, label: 'Branches', path: '/branches' };
+
+const NavItem = ({ icon: Icon, label, active, hasAlert, onClick }) => (
   <button
     onClick={onClick}
     className={`relative flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-[18px] transition-all duration-300 tactile-press ${
@@ -10,7 +23,12 @@ const NavItem = ({ icon: Icon, label, active, onClick }) => (
         : 'text-navy/35 hover:text-navy/70 hover:bg-navy/5'
     }`}
   >
-    <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+    <div className="relative">
+      <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+      {hasAlert && (
+        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 border-2 border-white" />
+      )}
+    </div>
     <span className={`text-[8px] font-extrabold uppercase tracking-widest transition-all duration-300 ${
       active ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
     }`}>
@@ -19,49 +37,47 @@ const NavItem = ({ icon: Icon, label, active, onClick }) => (
   </button>
 );
 
-export const BottomNav = ({ activeTab: propActiveTab, onTabChange, user }) => {
+const getActiveTab = (pathname) => {
+  if (pathname === '/') return 'home';
+  if (pathname.startsWith('/attendance')) return 'attendance';
+  if (pathname.startsWith('/branches')) return 'branches';
+  if (pathname.startsWith('/money')) return 'money';
+  if (pathname === '/alerts') return 'alerts';
+  if (pathname === '/profile') return 'profile';
+  return null;
+};
+
+export const BottomNav = ({ user }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const currentUser = useSelector(selectCurrentUser);
 
-  // Determine active tab from URL or props
-  let activeTab;
-  if (location.pathname === '/profile') {
-    activeTab = 'profile';
-  } else if (location.pathname === '/money') {
-    activeTab = 'money';
-  } else {
-    activeTab = propActiveTab || 'home';
-  }
+  // Pending alerts count — served from RTK cache (AlertsTab runs the same query)
+  const { data: collectionsResult } = useGetMoneyCollectionsQuery(
+    { status: 'pending' },
+    { skip: !currentUser?.id }
+  );
+  const pendingAlertCount = (collectionsResult?.data || []).filter(
+    c => c.assigned_verifier_id === currentUser?.id
+  ).length;
 
-  const handleTabClick = (tab) => {
-    if (tab === 'profile') {
-      navigate('/profile');
-    } else if (tab === 'money') {
-      navigate('/money');
-    } else {
-      // Home, Attendance, Branches, Alerts are currently handled by AttendanceHome at '/'
-      if (location.pathname !== '/') {
-        sessionStorage.setItem('attendanceHomeTab', tab);
-        navigate('/');
-      } else if (onTabChange) {
-        onTabChange(tab);
-      }
-    }
-  };
+  const activeTab = getActiveTab(location.pathname);
+  const tabs = user?.role === 'md' ? [...NAV_TABS, MD_TAB] : NAV_TABS;
 
   return (
-    <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl px-6 pb-6 pt-2 z-50 pointer-events-none">
+    <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl xl:max-w-[1360px] px-6 pb-6 pt-2 z-50 pointer-events-none transition-all duration-500">
       <nav className="p-1.5 flex items-center justify-around glass rounded-[26px] card-shadow pointer-events-auto overflow-x-auto no-scrollbar">
-        <NavItem icon={Home}        label="Home"       active={activeTab === 'home'}       onClick={() => handleTabClick('home')} />
-        <NavItem icon={Fingerprint} label="Attendance" active={activeTab === 'attendance'} onClick={() => handleTabClick('attendance')} />
-        <NavItem icon={Wallet}      label="Money"      active={activeTab === 'money'}      onClick={() => handleTabClick('money')} />
-        <NavItem icon={Bell}        label="Alerts"     active={activeTab === 'alerts'}     onClick={() => handleTabClick('alerts')} />
-        <NavItem icon={UserCircle2} label="Profile"    active={activeTab === 'profile'}    onClick={() => handleTabClick('profile')} />
-        {user?.role === 'md' && (
-          <NavItem icon={Building2} label="Branches"   active={activeTab === 'branches'}   onClick={() => handleTabClick('branches')} />
-        )}
+        {tabs.map((tab) => (
+          <NavItem
+            key={tab.key}
+            icon={tab.icon}
+            label={tab.label}
+            active={activeTab === tab.key}
+            hasAlert={tab.key === 'alerts' && pendingAlertCount > 0}
+            onClick={() => navigate(tab.path)}
+          />
+        ))}
       </nav>
     </footer>
   );
 };
-

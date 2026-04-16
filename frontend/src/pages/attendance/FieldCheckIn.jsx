@@ -1,35 +1,48 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/attendance/PageHeader';
+import { useCheckIn } from './hooks/useCheckIn';
+import { useSignOff } from './hooks/useSignOff';
+import { selectCurrentUser } from '../../store/slices/authSlice';
 
+export const FieldCheckIn = () => {
+  const user = useSelector(selectCurrentUser);
+  const navigate = useNavigate();
 
-export const FieldCheckIn = ({
-  user,
-  gpsStatus,
-  gpsPermissionDenied,
-  fieldStep,
-  fieldNote,
-  fieldPhoto,
-  isSubmitting,
-  isUploading,
-  todayRecord,
-  fileInputRef,
-  onPhotoCapture,
-  onCheckIn,
-  onBack,
-  onStepChange,
-  onNoteChange,
-  onEnter, // called on mount to start GPS fetch
-  // Sign-off props — only relevant after check-in is complete
-  onSignOff,
-  isSigningOff,
-  signOffError,
-}) => {
+  const {
+    todayRecord,
+    gpsStatus,
+    gpsPermissionDenied,
+    fetchGps,
+    fieldStep,
+    setFieldStep,
+    fieldNote,
+    setFieldNote,
+    fieldPhoto,
+    isSubmitting,
+    isUploading,
+    fileInputRef,
+    handlePhotoCapture,
+    handleCheckIn,
+  } = useCheckIn({ onSuccess: () => navigate('/') });
+
+  const {
+    fetchGps: fetchSignOffGps,
+    gpsStatus: signOffGpsStatus,
+    isSubmitting: isSigningOff,
+    signOffError,
+    handleSignOff,
+  } = useSignOff();
+
+  // Start GPS fetch on mount
   useEffect(() => {
-    onEnter?.();
+    fetchGps();
+    fetchSignOffGps();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -40,7 +53,7 @@ export const FieldCheckIn = ({
       exit={{ opacity: 0, x: -20 }}
       className="flex-1 flex flex-col"
     >
-      <PageHeader user={user} title="Workforce" showBack onBack={onBack} />
+      <PageHeader user={user} title="Workforce" showBack onBack={() => navigate('/attendance/office')} />
 
       {/* ── Step 1: Photo ── */}
       {fieldStep === 1 && (
@@ -86,7 +99,7 @@ export const FieldCheckIn = ({
               capture="environment"
               ref={fileInputRef}
               className="hidden"
-              onChange={onPhotoCapture}
+              onChange={handlePhotoCapture}
             />
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -96,7 +109,7 @@ export const FieldCheckIn = ({
             </button>
             {fieldPhoto && (
               <button
-                onClick={() => onStepChange(2)}
+                onClick={() => setFieldStep(2)}
                 className="w-full bg-white text-navy card-shadow py-5 rounded-2xl font-bold flex items-center justify-center gap-3 tactile-press"
               >
                 Use Photo <ArrowRight size={20} />
@@ -123,7 +136,7 @@ export const FieldCheckIn = ({
             </div>
             <textarea
               value={fieldNote}
-              onChange={(e) => onNoteChange(e.target.value)}
+              onChange={(e) => setFieldNote(e.target.value)}
               placeholder="Where are you? What are you doing today?"
               className="w-full flex-1 bg-transparent border-none outline-none text-navy font-medium placeholder:text-navy/20 resize-none text-base"
               maxLength={1000}
@@ -139,13 +152,13 @@ export const FieldCheckIn = ({
 
           <div className="pb-32 pt-8 flex gap-4">
             <button
-              onClick={() => onStepChange(1)}
+              onClick={() => setFieldStep(1)}
               className="p-5 rounded-2xl bg-white text-navy font-bold flex items-center gap-2 tactile-press card-shadow"
             >
               <ArrowRight size={20} className="rotate-180" /> Back
             </button>
             <button
-              onClick={() => onStepChange(3)}
+              onClick={() => setFieldStep(3)}
               disabled={!fieldNote.trim()}
               className="flex-1 gradient-primary text-white p-5 rounded-2xl font-bold flex items-center justify-center gap-3 tactile-press shadow-xl shadow-indigo/20 disabled:opacity-50"
             >
@@ -159,7 +172,7 @@ export const FieldCheckIn = ({
       {fieldStep === 3 && (
         <div className="px-6 flex-1 flex flex-col overflow-y-auto">
           <div className="flex items-center justify-between mb-8">
-            <button onClick={() => onStepChange(2)} className="p-2 -ml-2 text-navy/60">
+            <button onClick={() => setFieldStep(2)} className="p-2 -ml-2 text-navy/60">
               <ArrowRight className="rotate-180" size={20} />
             </button>
             <h3 className="text-base font-bold text-navy">Confirm Submission</h3>
@@ -190,7 +203,6 @@ export const FieldCheckIn = ({
             </Card>
 
             <div className="py-8 space-y-4">
-              {/* Show shift-complete state if both times recorded */}
               {todayRecord?.check_in_time && todayRecord?.check_out_time ? (
                 <div className="w-full bg-emerald/5 border border-emerald/20 rounded-2xl p-5 text-center space-y-1">
                   <CheckCircle2 size={22} className="text-emerald mx-auto mb-2" />
@@ -202,7 +214,6 @@ export const FieldCheckIn = ({
                   </p>
                 </div>
               ) : todayRecord?.check_in_time && !todayRecord?.check_out_time ? (
-                /* Checked in but not signed off */
                 <>
                   <div className="w-full bg-indigo/5 border border-indigo/20 rounded-2xl p-4 flex items-center gap-3">
                     <CheckCircle2 size={18} className="text-indigo shrink-0" />
@@ -214,13 +225,13 @@ export const FieldCheckIn = ({
                     </div>
                   </div>
                   <button
-                    disabled={isSigningOff || gpsStatus === 'fetching'}
-                    onClick={onSignOff}
+                    disabled={isSigningOff || signOffGpsStatus === 'fetching'}
+                    onClick={handleSignOff}
                     className="w-full bg-amber-500 text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-amber-500/20 tactile-press disabled:opacity-50"
                   >
                     {isSigningOff
                       ? <Loader2 className="animate-spin" size={22} />
-                      : gpsStatus === 'error'
+                      : signOffGpsStatus === 'error'
                         ? <><LogOut size={22} /> Retry Location & Sign Off</>
                         : <><LogOut size={22} /> Sign Off</>}
                   </button>
@@ -229,7 +240,7 @@ export const FieldCheckIn = ({
                       {signOffError}
                     </p>
                   )}
-                  {gpsStatus === 'error' && !signOffError && (
+                  {signOffGpsStatus === 'error' && !signOffError && (
                     <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
                       {gpsPermissionDenied
                         ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
@@ -238,11 +249,10 @@ export const FieldCheckIn = ({
                   )}
                 </>
               ) : (
-                /* Not checked in — normal submit flow */
                 <>
                   <button
                     disabled={isSubmitting || isUploading || gpsStatus === 'fetching'}
-                    onClick={() => onCheckIn('field')}
+                    onClick={() => handleCheckIn('field')}
                     className="w-full gradient-primary text-white py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
                   >
                     {isSubmitting || isUploading
@@ -251,7 +261,6 @@ export const FieldCheckIn = ({
                         ? <>Retry Location & Submit <ArrowRight size={20} /></>
                         : <>Upload & Submit Field Data <ArrowRight size={20} /></>}
                   </button>
-                  {/* Location error hint — tapping button re-triggers the GPS permission prompt */}
                   {gpsStatus === 'error' && (
                     <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
                       {gpsPermissionDenied

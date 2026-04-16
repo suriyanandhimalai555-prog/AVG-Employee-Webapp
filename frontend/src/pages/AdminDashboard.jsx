@@ -7,6 +7,7 @@ import {
   UserX, Building2, LogOut
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { Avatar } from '../components/Avatar';
 import { clearCredentials, selectCurrentUser } from '../store/slices/authSlice';
 import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
@@ -14,9 +15,7 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { StatusChip } from '../components/StatusChip';
 import { GlassModal } from '../components/GlassModal';
-import { EmployeeCalendarPage } from './EmployeeCalendarPage';
 import {
-
   useGetEmployeesQuery,
   useGetSummaryQuery,
   useAdminCorrectMutation,
@@ -26,9 +25,9 @@ import {
 
 export const AdminDashboard = () => {
   const user = useSelector(selectCurrentUser);
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [calendarEmployee, setCalendarEmployee] = useState(null);
   const [photoLoadError, setPhotoLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -142,16 +141,6 @@ export const AdminDashboard = () => {
     ? (summaryBranches.find((b) => b.id === selectedBranch.id) ?? null)
     : null;
 
-  // Full-screen overlay: individual employee calendar page
-  if (calendarEmployee) {
-    return (
-      <EmployeeCalendarPage
-        employee={calendarEmployee}
-        onBack={() => setCalendarEmployee(null)}
-      />
-    );
-  }
-
   if (empLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 py-20">
@@ -162,7 +151,7 @@ export const AdminDashboard = () => {
   }
 
   return (
-    <div className="p-4 md:p-8 lg:p-12 overflow-x-hidden">
+    <div className="p-4 md:p-8 lg:p-12 xl:p-16 xl:px-20 overflow-x-hidden transition-all duration-500">
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-12">
         <div className="flex items-center gap-5">
           <div className="p-4 rounded-[24px] bg-white shadow-premium border border-navy/5 text-indigo relative group">
@@ -410,7 +399,7 @@ export const AdminDashboard = () => {
                   <td className="px-8 py-6 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setCalendarEmployee(emp)}
+                        onClick={() => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })}
                         className="p-3 rounded-xl text-navy/20 hover:text-indigo hover:bg-indigo/5 transition-all"
                         title="View attendance history"
                       >

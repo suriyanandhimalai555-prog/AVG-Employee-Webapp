@@ -1,21 +1,26 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { HistoryCalendar } from '../components/HistoryCalendar';
 import { useGetHistoryQuery, useGetPhotoUrlQuery } from '../store/api/apiSlice';
 import { getISTToday } from '../lib/date';
 
-
 /**
  * Full-page calendar view for any employee.
- * Used by admin/manager roles (from AdminDashboard) and ABM (from Home tab).
- *
- * Props:
- *   employee  — user object from the admin table row (must have .id, .name, .role)
- *   onBack    — callback to return to the previous screen
+ * Employee object is passed via router state on navigation:
+ *   navigate('/people/:id/calendar', { state: { employee } })
+ * Falls back gracefully if state is missing (e.g. on page refresh).
  */
-export const EmployeeCalendarPage = ({ employee, onBack }) => {
+export const EmployeeCalendarPage = () => {
+  const { userId } = useParams();
+  const { state } = useLocation();
+  const navigate = useNavigate();
+
+  // Employee data from router state — populated by the navigating page
+  const employee = state?.employee ?? { id: userId };
+
   const today = getISTToday();
   const [yr, mo] = today.split('-');
   const [month, setMonth] = useState(parseInt(mo));
@@ -24,8 +29,8 @@ export const EmployeeCalendarPage = ({ employee, onBack }) => {
   const [photoLoadError, setPhotoLoadError] = useState(false);
 
   const { data: historyData = [], isFetching } = useGetHistoryQuery(
-    { userId: employee?.id, month, year },
-    { skip: !employee?.id }
+    { userId, month, year },
+    { skip: !userId }
   );
 
   const { data: photoData, isLoading: photoLoading } = useGetPhotoUrlQuery(
@@ -37,7 +42,6 @@ export const EmployeeCalendarPage = ({ employee, onBack }) => {
     if (!cell) return;
     setSelectedRecord(cell.record ?? null);
     setPhotoLoadError(false);
-    // Sync the query when the calendar navigates to a different month via day click
     const [y, m] = cell.isoStr.split('-');
     const parsedY = parseInt(y);
     const parsedM = parseInt(m);
@@ -60,7 +64,7 @@ export const EmployeeCalendarPage = ({ employee, onBack }) => {
       {/* Sticky header bar */}
       <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">
         <button
-          onClick={onBack}
+          onClick={() => navigate(-1)}
           className="p-2 rounded-xl text-navy/40 hover:text-navy hover:bg-navy/5 transition-all tactile-press shrink-0"
         >
           <ArrowLeft size={20} />
