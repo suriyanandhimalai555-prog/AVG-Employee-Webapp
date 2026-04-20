@@ -298,7 +298,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
     try {
       const req = request as AuthenticatedRequest;
       // abm added: HomeTab shows their Sales Officers team list via this endpoint
-      const allowedRoles = ['branch_admin', 'gm', 'md', 'director', 'branch_manager', 'abm'];
+      const allowedRoles = ['branch_admin', 'gm', 'md', 'director', 'branch_manager', 'abm', 'oa'];
       if (!allowedRoles.includes(req.user.role)) {
         return sendForbidden(reply, 'Only admins can view the employee list');
       }
