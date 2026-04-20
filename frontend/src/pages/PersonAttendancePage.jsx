@@ -1,19 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { HistoryCalendar } from '../components/HistoryCalendar';
-import { useGetHistoryQuery, useGetPhotoUrlQuery, useGetUsersQuery } from '../store/api/apiSlice';
-import { useSelector } from 'react-redux';
+import { useGetHistoryQuery, useGetPhotoUrlQuery, useGetUserByIdQuery } from '../store/api/apiSlice';
 import { Avatar } from '../components/Avatar';
-import { selectCurrentUser } from '../store/slices/authSlice';
 import { getISTToday } from '../lib/date';
 
 
 export const PersonAttendancePage = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
-  const me = useSelector(selectCurrentUser);
 
   const today = getISTToday();
   const [yr, mo] = today.split('-');
@@ -22,14 +19,7 @@ export const PersonAttendancePage = () => {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [photoLoadError, setPhotoLoadError] = useState(false);
 
-  const { data: usersResult = {} } = useGetUsersQuery(
-    { viewerId: me?.id, limit: 500 },
-    { skip: !me?.id }
-  );
-  const targetUser = useMemo(
-    () => (usersResult.data ?? []).find((u) => u.id === userId) ?? null,
-    [usersResult.data, userId]
-  );
+  const { data: targetUser = null } = useGetUserByIdQuery(userId, { skip: !userId });
 
   const { data: historyData = [], isFetching } = useGetHistoryQuery(
     { userId, month, year },

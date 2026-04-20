@@ -300,4 +300,23 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return handleError(error, reply);
     }
   });
+
+  // ─── GET /api/users/:id ───
+  // Returns a single user's profile (name, role, branch, avatar).
+  // Must be registered last so Fastify's router matches all static-segment routes
+  // (/manager-options, /superiors, /deactivated, etc.) before falling through here.
+  fastify.get('/:id', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = (request as AuthenticatedRequest).params as { id: string };
+      const data = await UserService.getUserById(fastify.db, fastify.redis, id);
+      if (!data) {
+        throw new AppError('User not found', 404, 'NOT_FOUND');
+      }
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
 }

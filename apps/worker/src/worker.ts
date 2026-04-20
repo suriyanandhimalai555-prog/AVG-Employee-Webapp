@@ -39,6 +39,12 @@ export const worker = new Worker('attendance', router, {
   connection: redis,
   concurrency: 20,
   limiter: { max: 100, duration: 1000 },
+  // Stall recovery: after a crash, jobs locked as "active" are re-queued
+  // once their lock expires. Tighter interval + higher count means faster
+  // recovery and more retry chances before the job is moved to failed.
+  lockDuration: 30000,     // job lock held for 30s while processing
+  stalledInterval: 10000,  // check for stalled locks every 10s (default: 30s)
+  maxStalledCount: 3,      // allow up to 3 stall recoveries before giving up
 });
 
 worker.on('completed', (job) => {

@@ -444,6 +444,12 @@ export const apiSlice = createApi({
       providesTags: ['Users'],
     }),
 
+    getUserById: builder.query({
+      query: (userId) => `/users/${userId}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['Users'],
+    }),
+
     getManagerOptions: builder.query({
       query: (roles) => `/users/manager-options?roles=${Array.isArray(roles) ? roles.join(',') : roles}`,
       transformResponse: (response) => response.data,
@@ -526,6 +532,7 @@ export const {
   useGetMoneyPhotoUrlQuery,
   useGetUserSuperiorsQuery,
   useGetUsersQuery,
+  useGetUserByIdQuery,
   useGetManagerOptionsQuery,
   useCreateUserMutation,
   useGetUserOversightBranchesQuery,

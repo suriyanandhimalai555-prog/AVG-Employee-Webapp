@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import { redis } from './redis';
 
-// Separate Queue instance — used only for registering repeatable jobs.
+// Separate Queue instance — used for registering repeatable jobs and recovery.
 // The Worker instance in worker.ts processes all jobs from this same queue.
 export const schedulerQueue = new Queue('attendance', { connection: redis });
 
@@ -37,4 +37,33 @@ export const registerScheduledJobs = async (): Promise<void> => {
     jobId:  'auto-deactivate-daily',
   });
   console.log('✅ Scheduled: auto-deactivate at 23:45 IST daily');
+};
+
+/**
+ * On every worker restart, scan for failed mark-attendance jobs from the last
+ * 24 hours and re-queue them. This covers the case where the worker crashed
+ * mid-startup (job went active → stalled → failed) while a user had already
+ * submitted attendance — the Redis key shows "checked in" but DB has no row.
+ *
+ * Safe to retry: the processor's ON CONFLICT clause is idempotent — a duplicate
+ * job writes nothing if a present/half_day row already exists.
+ */
+export const recoverFailedAttendanceJobs = async (): Promise<void> => {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // only today's jobs
+  const failedJobs = await schedulerQueue.getFailed(0, 500);
+
+  let recovered = 0;
+  for (const job of failedJobs) {
+    if (job.name === 'mark-attendance' && (job.timestamp ?? 0) > cutoff) {
+      await job.retry();
+      recovered++;
+      console.log(`♻️  Recovered failed attendance job ${job.id} — user ${job.data?.userId}`);
+    }
+  }
+
+  if (recovered > 0) {
+    console.log(`✅ Startup recovery: ${recovered} attendance job(s) re-queued`);
+  } else {
+    console.log('✅ Startup recovery: no failed attendance jobs to recover');
+  }
 };
