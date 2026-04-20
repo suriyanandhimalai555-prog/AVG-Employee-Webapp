@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, BarChart3, Building2, XCircle, CheckCircle2, Clock,
   TrendingUp, Trophy, Medal, Loader2, Wallet, AlertCircle
 } from 'lucide-react';
-import { PageHeader } from '../components/attendance/PageHeader';
-import { selectCurrentUser } from '../store/slices/authSlice';
 import {
   useGetBranchRankingsQuery,
   useGetMoneyBranchDrilldownQuery,
@@ -53,7 +50,6 @@ const RankBadge = ({ rank }) => {
 };
 
 export const BranchRankingsPage = () => {
-  const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
   const [rankingsFilter, setRankingsFilter] = useState('all');
   const [drillBranchId, setDrillBranchId] = useState(null);
@@ -78,8 +74,7 @@ export const BranchRankingsPage = () => {
   const drillBranchName = branchRankings.find(b => b.branchId === drillBranchId)?.branchName || 'Branch';
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f7f8fc]">
-      <PageHeader user={user} title="Branch Rankings" />
+    <div className="flex flex-col flex-1 bg-[#f7f8fc]">
       <motion.div
         key="branch_rankings"
         initial={{ opacity: 0, x: 20 }}

@@ -78,7 +78,7 @@ export const MoneyWalletPage = () => {
       <div className="px-6 space-y-4">
         {selectedForTransfer.length > 0 && (
           <div className="bg-white rounded-[32px] p-6 shadow-sm border border-indigo/10 space-y-4 mb-6">
-            <p className="text-[10px] uppercase tracking-widest font-bold text-navy/30">Transfer to Manager</p>
+            <p className="text-[10px] uppercase tracking-widest font-bold text-navy/30">Transfer to Hierarchy</p>
             <div className="flex flex-col gap-4">
               <div className="relative">
                 <select
@@ -105,7 +105,7 @@ export const MoneyWalletPage = () => {
           </div>
         )}
 
-        <p className="text-[10px] uppercase tracking-widest font-bold text-navy/30 mb-2">Approved Funds</p>
+        <p className="text-[10px] uppercase tracking-widest font-bold text-navy/30 mb-2">Cash On Hand — Select to Transfer</p>
 
         {isWalletLoading ? (
           <div className="flex justify-center p-10"><Loader2 className="animate-spin text-navy/20" size={32} /></div>

@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
-import { AppError } from '../../shared/errors';
+import { AppError, ForbiddenError } from '../../shared/errors';
 import { MoneyService } from './money.service';
 import {
   CreateProjectSchema,
@@ -125,6 +125,9 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
+      if (req.user.role === 'oa' || req.user.role === 'branch_admin' || req.user.role === 'client') {
+        throw new ForbiddenError('Your role cannot submit money collections');
+      }
       const body = SubmitCollectionSchema.parse(req.body);
       const data = await MoneyService.submitCollection(fastify.db, req.user.id, body);
       return reply.code(201).send({ success: true, data });

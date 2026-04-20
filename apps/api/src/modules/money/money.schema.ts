@@ -13,22 +13,15 @@ export const SubmitCollectionSchema = z.object({
   photoKey: z.string().optional(),
   handedOverTo: z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.mode === 'cash') {
-    if (!data.handedOverTo) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'handedOverTo is required for cash collections',
-        path: ['handedOverTo'],
-      });
-    }
-  } else {
-    if (!data.photoKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'photoKey is required for gpay and bank_receipt collections',
-        path: ['photoKey'],
-      });
-    }
+  // For non-cash modes, a photo receipt is always required.
+  // For cash, handedOverTo is optional — omitting it means the collector keeps
+  // the cash in their own wallet (auto-approved) to transfer later.
+  if (data.mode !== 'cash' && !data.photoKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'photoKey is required for gpay and bank_receipt collections',
+      path: ['photoKey'],
+    });
   }
 });
 

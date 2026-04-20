@@ -6,7 +6,6 @@ import { getISTToday } from '../../lib/date';
 import { ArrowRight, AlertCircle, Building2, Users, ChevronRight } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { AlertCard } from '../../components/attendance/AlertCard';
 import { StatsGrid } from '../../components/attendance/StatsGrid';
 import { StaffCard } from '../../components/attendance/StaffCard';
@@ -52,32 +51,39 @@ const TeamStatsCard = ({ summary, isLoading, thirdStat }) => (
   </Card>
 );
 
-const TEAM_LIST_ROLES = ['abm', 'branch_manager'];
+const TEAM_LIST_ROLES = ['abm', 'branch_manager', 'oa'];
 
-const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) => {
-  if (!members.length) return null;
-  return (
-    <div className="px-6 pb-4">
-      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
-        {title}
-      </p>
+const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) => (
+  <div className="px-6 pb-4">
+    <div className="flex items-center justify-between mb-3">
+      <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">{title}</p>
+      <span className="text-[9px] font-bold text-indigo/60 bg-indigo/6 px-2 py-0.5 rounded-full font-mono">
+        {members.length} {members.length === 1 ? 'member' : 'members'}
+      </span>
+    </div>
+    {members.length === 0 ? (
+      <div className="bg-white rounded-3xl card-shadow px-5 py-8 flex flex-col items-center gap-2 border border-dashed border-navy/10">
+        <Users size={22} className="text-navy/15" />
+        <p className="text-[10px] font-bold text-navy/25 uppercase tracking-widest">No members yet</p>
+      </div>
+    ) : (
       <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
         {members.map((emp) => (
           <button
             key={emp.id}
             onClick={() => onOpenCalendar?.(emp)}
-            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
+            className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/[0.02] transition-all duration-200 text-left tactile-press group"
           >
             <div className="w-8 h-8 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
               <Avatar url={emp?.profilePhotoUrl} name={emp.name} size={32} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-navy truncate">{emp.name}</p>
+              <p className="text-xs font-bold text-navy truncate group-hover:text-indigo transition-colors duration-200">{emp.name}</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-navy/35">
                   {(emp.role ?? '').replace(/_/g, ' ')}
                 </p>
-                <span className="text-[8px] text-navy/20">•</span>
+                <span className="text-[8px] text-navy/20">·</span>
                 <p className={`text-[9px] font-bold uppercase tracking-widest ${
                   emp.status === 'present' ? 'text-emerald' :
                   emp.status === 'absent'  ? 'text-red-400'  : 'text-navy/30'
@@ -86,13 +92,13 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
                 </p>
               </div>
             </div>
-            <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5 shrink-0" />
+            <ChevronRight size={14} className="text-navy/15 transition-all duration-200 group-hover:text-indigo/40 group-hover:translate-x-0.5 shrink-0" />
           </button>
         ))}
       </div>
-    </div>
-  );
-};
+    )}
+  </div>
+);
 
 const LeadershipSection = ({ title, members = [], onOpenList, variant = 'indigo' }) => {
   if (!members.length) return null;
@@ -204,8 +210,6 @@ export const HomeTab = () => {
       exit={{ opacity: 0 }}
       className="flex-1"
     >
-      <PageHeader user={user} title="Workforce" />
-
       <div className="px-6 mb-6">
         <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-1 font-mono">
           {todayFormatted}
@@ -245,7 +249,33 @@ export const HomeTab = () => {
           <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
 
           {/* Team list — Sales Officers under this ABM */}
-          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
+          <TeamListSection title="My Sales Officers" members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
+
+          <div className="px-6 pb-32">
+            <HistoryCalendar
+              historyData={teamHistoryData}
+              mode="team"
+              onDaySelect={(cell) => {
+                const [yr, mo] = cell.isoStr.split('-');
+                setCalMonth(parseInt(mo));
+                setCalYear(parseInt(yr));
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {/* ── Operations Assistant (OA) ── */}
+      {user?.role === 'oa' && (
+        <>
+          <AlertCard
+            isMarked={todayRecord}
+            onAction={() => navigate('/attendance')}
+          />
+          <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
+
+          {/* Team list — Sales Officers assigned to this OA */}
+          <TeamListSection title="My Sales Officers" members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
 
           <div className="px-6 pb-32">
             <HistoryCalendar
@@ -290,7 +320,7 @@ export const HomeTab = () => {
             <ArrowRight size={16} className="text-navy/25 transition-all duration-300 group-hover:text-navy/50 group-hover:translate-x-1 shrink-0" />
           </button>
 
-          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
+          <TeamListSection title="Direct Reports" members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"
@@ -425,7 +455,11 @@ export const HomeTab = () => {
 
           <StaffCard onOpen={() => navigate('/user-management')} />
 
-          <TeamListSection members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
+          <TeamListSection
+            title="Sales Officers"
+            members={teamMembers.filter(m => m.role === 'sales_officer')}
+            onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })}
+          />
           <HistoryCalendar
             historyData={teamHistoryData}
             mode="team"

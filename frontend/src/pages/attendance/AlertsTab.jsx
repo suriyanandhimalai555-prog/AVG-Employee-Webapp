@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { Bell, Check, X, AlertCircle, Loader2, Info, ArrowUpRight, ChevronRight } from 'lucide-react';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { 
   useGetMoneyCollectionsQuery,
@@ -60,8 +59,6 @@ export const AlertsTab = () => {
 
   return (
     <motion.div key="alerts" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-32">
-      <PageHeader user={user} title="Action Center" />
-      
       <div className="px-6 mb-6">
         <h2 className="text-3xl font-bold text-navy tracking-tight">Alerts</h2>
         <p className="text-xs font-medium text-navy/40 mt-1">Pending verification requests</p>

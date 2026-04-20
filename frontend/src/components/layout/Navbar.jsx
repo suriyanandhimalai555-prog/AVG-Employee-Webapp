@@ -1,12 +1,3 @@
-import { useSelector } from 'react-redux';
-import { selectCurrentUser } from '../../store/slices/authSlice';
-import { PageHeader } from '../attendance/PageHeader';
-
-/**
- * Navbar — wraps PageHeader with Redux user state injected.
- * Used once pages stop embedding PageHeader directly.
- */
-export const Navbar = ({ title }) => {
-  const user = useSelector(selectCurrentUser);
-  return <PageHeader user={user} title={title || 'Workforce'} />;
-};
+// Global navbar is now rendered directly by Layout — see PageHeader.jsx
+// This file is kept as a re-export for any legacy references.
+export { PageHeader as Navbar } from '../attendance/PageHeader';

@@ -62,7 +62,10 @@ export const BottomNav = ({ user }) => {
   ).length;
 
   const activeTab = getActiveTab(location.pathname);
-  const tabs = user?.role === 'md' ? [...NAV_TABS, MD_TAB] : NAV_TABS;
+  const baseTabs = currentUser?.role === 'oa'
+    ? NAV_TABS.filter((t) => t.key !== 'money')
+    : NAV_TABS;
+  const tabs = user?.role === 'md' ? [...baseTabs, MD_TAB] : baseTabs;
 
   return (
     <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl xl:max-w-[1360px] px-6 pb-6 pt-2 z-50 pointer-events-none transition-all duration-500">

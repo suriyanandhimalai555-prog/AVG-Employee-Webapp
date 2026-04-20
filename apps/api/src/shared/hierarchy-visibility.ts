@@ -65,12 +65,20 @@ export async function getHierarchyVisibleUserIds(
     ids = r.rows.map((row) => row.id);
   } else if (viewer.role === 'director' || viewer.role === 'gm') {
     ids = await getOversightScopeIds(db, viewer.id);
+  } else if (viewer.role === 'oa') {
+    // OA sees only their own directly-assigned SOs (manager_id = OA.id)
+    ids = await getSubtreeIds(viewer.id);
   } else {
     ids = await getSubtreeIds(viewer.id);
     const canFallbackByBranch = allowAbmBranchFallback && ['branch_manager', 'abm'].includes(viewer.role);
     if (canFallbackByBranch && ids.length <= 1 && viewer.branchId) {
       const descendants = getDescendantRoles(viewer.role);
       ids = await getBranchUserIdsByRoles(db, viewer.branchId, descendants);
+    }
+    // Branch Manager also sees OA and branch_admin in their branch (standalone roles, not in subtree)
+    if (viewer.role === 'branch_manager' && viewer.branchId) {
+      const standaloneIds = await getBranchUserIdsByRoles(db, viewer.branchId, ['oa', 'branch_admin']);
+      ids = [...ids, ...standaloneIds];
     }
   }
 

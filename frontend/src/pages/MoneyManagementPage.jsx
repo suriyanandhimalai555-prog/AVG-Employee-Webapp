@@ -8,7 +8,6 @@ import {
   Briefcase, TrendingUp, Building2, AlertTriangle,
   BarChart3, PenLine
 } from 'lucide-react';
-import { PageHeader } from '../components/attendance/PageHeader';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
   useGetMoneyCollectionsQuery,
@@ -272,7 +271,6 @@ export const MoneyManagementPage = () => {
 
     return (
       <div className="flex flex-col">
-        <PageHeader user={user} title="Financial Oversight" />
         <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
           <div className="px-6 mb-6">
             <h2 className="text-3xl font-bold text-navy tracking-tight">Finances</h2>
@@ -506,7 +504,6 @@ export const MoneyManagementPage = () => {
   // ─── NON-MD WORKFORCE HOME VIEW ───
   return (
     <div className="relative">
-      <PageHeader user={user} title="Collections" />
       <motion.div key="worker_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
           <div className="px-6 mb-8">

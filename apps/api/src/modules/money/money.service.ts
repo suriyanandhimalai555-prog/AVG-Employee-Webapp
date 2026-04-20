@@ -88,28 +88,32 @@ export const MoneyService = {
     userId: string,
     payload: SubmitCollectionInput
   ): Promise<any> {
-    // Determine assigned_verifier_id
+    // Determine assigned_verifier_id and whether this is self-held (auto-approved)
     let assignedVerifierId: string;
+    let selfHeld = false; // true when collector keeps cash in their own wallet
 
     if (payload.mode === 'cash') {
-      // Must be provided in the payload and exist
-      if (!payload.handedOverTo) {
-        throw new ValidationError('handedOverTo is required for cash');
+      if (payload.handedOverTo) {
+        // Handed over to a specific superior — they verify and it enters their wallet
+        const targetResult = await db.query('SELECT id FROM users WHERE id = $1 AND is_active = true', [payload.handedOverTo]);
+        if (targetResult.rows.length === 0) {
+          throw new NotFoundError('Selected receiver not found');
+        }
+        assignedVerifierId = payload.handedOverTo;
+      } else {
+        // No recipient — collector keeps cash in their own wallet.
+        // Auto-approve: no external verification needed since they are holding it.
+        assignedVerifierId = userId;
+        selfHeld = true;
       }
-      const targetResult = await db.query('SELECT id FROM users WHERE id = $1 AND is_active = true', [payload.handedOverTo]);
-      if (targetResult.rows.length === 0) {
-        throw new NotFoundError('Selected receiver not found');
-      }
-      assignedVerifierId = payload.handedOverTo;
     } else {
-      // mode is gpay or bank_receipt -> direct manager
+      // mode is gpay or bank_receipt -> direct manager verifies
       const userResult = await db.query('SELECT manager_id, role FROM users WHERE id = $1', [userId]);
       if (userResult.rows.length === 0) throw new NotFoundError('User not found');
-      
+
       const { manager_id, role } = userResult.rows[0];
       if (!manager_id) {
         if (role === 'md') {
-          // MD doesn't have a manager, they can self-verify or we can just set it to their own ID
           assignedVerifierId = userId;
         } else {
           throw new ConflictError('You do not have a direct manager assigned to verify this transaction.');
@@ -119,11 +123,15 @@ export const MoneyService = {
       }
     }
 
-    // Insert collection
+    // Insert collection — self-held cash is auto-approved so it lands in the wallet immediately
     const result = await db.query(
       `INSERT INTO money_collections (
-        user_id, project_id, amount, mode, client_name, client_phone, photo_key, assigned_verifier_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        user_id, project_id, amount, mode, client_name, client_phone, photo_key,
+        assigned_verifier_id, status, verified_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+        CASE WHEN $9 THEN 'approved'::text ELSE 'pending'::text END,
+        CASE WHEN $9 THEN NOW() ELSE NULL END
+      ) RETURNING *`,
       [
         userId,
         payload.projectId,
@@ -132,7 +140,8 @@ export const MoneyService = {
         payload.clientName,
         payload.clientPhone,
         payload.photoKey || null,
-        assignedVerifierId
+        assignedVerifierId,
+        selfHeld,
       ]
     );
 

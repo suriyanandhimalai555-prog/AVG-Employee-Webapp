@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, XCircle, CheckCircle2, DollarSign, Image as ImageIcon,
-  ChevronRight, Loader2, Send
+  ChevronRight, Loader2, Send, Wallet, ArrowUpRight
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -29,7 +29,8 @@ export const MoneySubmitPage = () => {
     mode: 'cash',
     clientName: '',
     clientPhone: '',
-    handedOverTo: ''
+    handedOverTo: '',
+    keepInWallet: true, // cash default: keep in own wallet
   });
   const [fieldPhoto, setFieldPhoto] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -59,8 +60,8 @@ export const MoneySubmitPage = () => {
     if (!formState.projectId || !formState.amount || !formState.clientName || !formState.clientPhone) {
       return setFormError('Please fill in all standard fields.');
     }
-    if (formState.mode === 'cash' && !formState.handedOverTo) {
-      return setFormError('You must select who you handed the cash to.');
+    if (formState.mode === 'cash' && !formState.keepInWallet && !formState.handedOverTo) {
+      return setFormError('Please select who you handed the cash to.');
     }
     if (formState.mode !== 'cash' && !fieldPhoto) {
       return setFormError('A photo receipt is required for GPay / Bank uploads.');
@@ -87,13 +88,20 @@ export const MoneySubmitPage = () => {
         mode: formState.mode,
         clientName: formState.clientName,
         clientPhone: formState.clientPhone,
-        handedOverTo: formState.mode === 'cash' ? formState.handedOverTo : undefined,
+        // cash + keepInWallet → omit handedOverTo so backend auto-approves into own wallet
+        handedOverTo: formState.mode === 'cash' && !formState.keepInWallet
+          ? formState.handedOverTo
+          : undefined,
         photoKey
       }).unwrap();
 
-      setSuccessMsg('Collection submitted successfully!');
+      setSuccessMsg(
+        formState.mode === 'cash' && formState.keepInWallet
+          ? 'Cash added to your wallet!'
+          : 'Collection submitted successfully!'
+      );
       setTimeout(() => {
-        setFormState({ projectId: '', amount: '', mode: 'cash', clientName: '', clientPhone: '', handedOverTo: '' });
+        setFormState({ projectId: '', amount: '', mode: 'cash', clientName: '', clientPhone: '', handedOverTo: '', keepInWallet: true });
         setFieldPhoto(null);
         setSuccessMsg(null);
         navigate('/money');
@@ -189,20 +197,74 @@ export const MoneySubmitPage = () => {
             <div className="absolute right-4 top-1/2 mt-1 pointer-events-none"><ChevronRight size={16} className="text-navy/20 rotate-90" /></div>
           </div>
 
-          {/* Mode specifics */}
+          {/* Cash destination toggle */}
           {formState.mode === 'cash' && (
-            <div className="bg-white rounded-[24px] p-4 shadow-sm border relative">
-              <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Handed Over To</p>
-              <select
-                required
-                className="w-full text-sm font-bold bg-transparent outline-none text-navy appearance-none"
-                value={formState.handedOverTo}
-                onChange={e => setFormState({...formState, handedOverTo: e.target.value})}
-              >
-                <option value="" disabled>Select Manager</option>
-                {superiors.map(mgr => <option key={mgr.id} value={mgr.id}>{mgr.name} ({mgr.role.replace('_', ' ')})</option>)}
-              </select>
-              <div className="absolute right-4 top-1/2 mt-1 pointer-events-none"><ChevronRight size={16} className="text-navy/20 rotate-90" /></div>
+            <div className="space-y-3">
+              <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30 px-1">Cash goes to</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormState({ ...formState, keepInWallet: true, handedOverTo: '' })}
+                  className={`p-4 rounded-[24px] border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
+                    formState.keepInWallet
+                      ? 'border-indigo bg-indigo/5 shadow-md shadow-indigo/10'
+                      : 'border-navy/10 bg-white'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors ${formState.keepInWallet ? 'bg-indigo text-white' : 'bg-navy/5 text-navy/30'}`}>
+                    <Wallet size={20} />
+                  </div>
+                  <div className="text-center">
+                    <p className={`text-xs font-bold ${formState.keepInWallet ? 'text-indigo' : 'text-navy/50'}`}>My Wallet</p>
+                    <p className="text-[9px] text-navy/30 mt-0.5">Keep &amp; transfer later</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormState({ ...formState, keepInWallet: false })}
+                  className={`p-4 rounded-[24px] border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
+                    !formState.keepInWallet
+                      ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-500/10'
+                      : 'border-navy/10 bg-white'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors ${!formState.keepInWallet ? 'bg-emerald-500 text-white' : 'bg-navy/5 text-navy/30'}`}>
+                    <ArrowUpRight size={20} />
+                  </div>
+                  <div className="text-center">
+                    <p className={`text-xs font-bold ${!formState.keepInWallet ? 'text-emerald-700' : 'text-navy/50'}`}>Hand Over</p>
+                    <p className="text-[9px] text-navy/30 mt-0.5">Give to manager now</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Manager selector — only when handing over */}
+              {!formState.keepInWallet && (
+                <div className="bg-white rounded-[24px] p-4 shadow-sm border relative">
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Handed Over To</p>
+                  <select
+                    className="w-full text-sm font-bold bg-transparent outline-none text-navy appearance-none"
+                    value={formState.handedOverTo}
+                    onChange={e => setFormState({ ...formState, handedOverTo: e.target.value })}
+                  >
+                    <option value="" disabled>Select Manager</option>
+                    {superiors.map(mgr => (
+                      <option key={mgr.id} value={mgr.id}>
+                        {mgr.name} ({mgr.role.replace(/_/g, ' ')})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 mt-1 pointer-events-none">
+                    <ChevronRight size={16} className="text-navy/20 rotate-90" />
+                  </div>
+                </div>
+              )}
+
+              {formState.keepInWallet && (
+                <p className="text-[10px] text-navy/35 text-center leading-relaxed px-2">
+                  Cash will appear in your wallet. Transfer it to your manager when ready.
+                </p>
+              )}
             </div>
           )}
 

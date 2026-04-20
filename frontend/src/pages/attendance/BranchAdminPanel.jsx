@@ -5,7 +5,6 @@ import { CheckCircle2, ChevronRight, Clock, Home, Loader2, LogOut, MapPin, Searc
 import { Avatar } from '../../components/Avatar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusChip } from '../../components/StatusChip';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { MarkModal } from './MarkModal';
 import { CorrectionModal } from './CorrectionModal';
 import { EmployeeHistoryModal } from '../../components/attendance/EmployeeHistoryModal';
@@ -132,8 +131,6 @@ export const BranchAdminPanel = () => {
   return (
     <>
       <div className="flex-1">
-        <PageHeader user={user} title="Workforce" />
-
         <div className="px-6 mb-6">
           <h2 className="text-3xl font-bold text-navy tracking-tight">Attendance</h2>
         </div>

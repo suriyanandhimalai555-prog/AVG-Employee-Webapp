@@ -1,17 +1,13 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Home, MapPin, CheckCircle2, Loader2, LogOut, XCircle } from 'lucide-react';
 import { Card } from '../../components/Card';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { useCheckIn } from './hooks/useCheckIn';
 import { useSignOff } from './hooks/useSignOff';
 import { useMarkAbsent } from './hooks/useMarkAbsent';
-import { selectCurrentUser } from '../../store/slices/authSlice';
 
 export const OfficeCheckIn = () => {
-  const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
   const [currentTime, setCurrentTime] = useState(
@@ -72,8 +68,6 @@ export const OfficeCheckIn = () => {
       exit={{ opacity: 0, x: -20 }}
       className="flex-1"
     >
-      <PageHeader user={user} title="Workforce" showBack onBack={() => navigate('/attendance')} />
-
       <div className="px-6 mb-8">
         <p className="text-[10px] font-bold text-indigo uppercase tracking-[0.2em] mb-1 font-mono">
           Operations Mode

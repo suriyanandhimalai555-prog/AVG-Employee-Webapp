@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Home, MapPin, CheckCircle2, XCircle, X, LogOut, Loader2 } from 'lucide-react';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { BranchAdminPanel } from './BranchAdminPanel';
 import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { AdminDashboard } from '../AdminDashboard';
@@ -13,7 +12,7 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetHistoryQuery } from '../../store/api/apiSlice';
 
 // Roles that mark their own attendance and should see a personal history calendar
-const ROLES_WITH_OWN_CALENDAR = ['abm', 'branch_manager', 'gm', 'director'];
+const ROLES_WITH_OWN_CALENDAR = ['abm', 'branch_manager', 'gm', 'director', 'oa'];
 
 export const AttendanceTab = () => {
   const user = useSelector(selectCurrentUser);
@@ -94,7 +93,6 @@ export const AttendanceTab = () => {
         )}
       </AnimatePresence>
 
-      <PageHeader user={user} title="Workforce" />
       <div className="px-6 mb-8">
         <h2 className="text-3xl font-bold text-navy tracking-tight">Attendance</h2>
       </div>

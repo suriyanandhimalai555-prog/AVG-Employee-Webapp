@@ -37,9 +37,9 @@ export const UserService = {
     // GM: can create branch_manager, abm, sales_officer, branch_admin, client
     // Branch Admin: can create branch_manager, abm, sales_officer, client (own branch only)
     const creatableByRole: Record<string, string[]> = {
-      md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
-      gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
-      branch_admin: ['branch_manager', 'abm', 'sales_officer', 'client'],
+      md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
+      gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
+      branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa', 'client'],
     };
 
     const allowed = creatableByRole[requesterRole];

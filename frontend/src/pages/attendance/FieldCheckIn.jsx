@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
-import { PageHeader } from '../../components/attendance/PageHeader';
 import { useCheckIn } from './hooks/useCheckIn';
 import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
@@ -53,8 +52,6 @@ export const FieldCheckIn = () => {
       exit={{ opacity: 0, x: -20 }}
       className="flex-1 flex flex-col"
     >
-      <PageHeader user={user} title="Workforce" showBack onBack={() => navigate('/attendance/office')} />
-
       {/* ── Step 1: Photo ── */}
       {fieldStep === 1 && (
         <div className="flex-1 flex flex-col px-6">

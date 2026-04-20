@@ -18,7 +18,7 @@ const ALLOWED_MANAGER_ROLES: Record<string, string[]> = {
   gm: ['director'],
   branch_manager: ['gm'],
   abm: ['branch_manager'],
-  sales_officer: ['abm', 'branch_manager'],
+  sales_officer: ['abm', 'oa', 'branch_admin'],
   client: ['sales_officer', 'abm', 'branch_manager'],
 };
 

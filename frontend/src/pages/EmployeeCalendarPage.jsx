@@ -59,7 +59,7 @@ export const EmployeeCalendarPage = () => {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 30 }}
       transition={{ duration: 0.2 }}
-      className="min-h-screen bg-surface"
+      className="flex-1 bg-surface"
     >
       {/* Sticky header bar */}
       <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">

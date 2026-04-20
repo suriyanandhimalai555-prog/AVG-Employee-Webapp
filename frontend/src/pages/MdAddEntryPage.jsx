@@ -1,10 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, XCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import { PageHeader } from '../components/attendance/PageHeader';
-import { selectCurrentUser } from '../store/slices/authSlice';
 import {
   useGetMoneyProjectsQuery,
   useGetBranchesQuery,
@@ -15,7 +12,6 @@ const newUuid = () =>
   crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export const MdAddEntryPage = () => {
-  const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
   const { data: projects = [] } = useGetMoneyProjectsQuery();
@@ -74,8 +70,7 @@ export const MdAddEntryPage = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f7f8fc]">
-      <PageHeader user={user} title="Add Collection Entry" />
+    <div className="flex flex-col flex-1 bg-[#f7f8fc]">
       <motion.div
         key="md_entry"
         initial={{ opacity: 0, x: 20 }}

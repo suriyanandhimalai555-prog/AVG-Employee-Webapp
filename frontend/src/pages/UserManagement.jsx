@@ -120,16 +120,22 @@ export const UserManagement = () => {
     gm: ['director'],
     branch_manager: ['gm'],
     abm: ['branch_manager'],
-    sales_officer: ['abm', 'branch_manager'],
+    sales_officer: ['abm', 'oa', 'branch_admin'],
     client: ['sales_officer', 'abm', 'branch_manager'],
   };
   const needsManager = (role) => Array.isArray(managerRoleMap[role]);
   const managerRequiredRoles = new Set(['director', 'gm', 'abm', 'sales_officer', 'client']);
 
+  // Roles whose managers must be in the same branch — filter dropdown by selected branch
+  const BRANCH_SCOPED_ROLES = new Set(['abm', 'sales_officer', 'client', 'branch_manager', 'oa']);
   const managerOptions = needsManager(formData.role)
     ? (() => {
         const allowedRoles = managerRoleMap[formData.role] ?? [];
-        const visible = allUsers.filter((u) => allowedRoles.includes(u.role));
+        let visible = allUsers.filter((u) => allowedRoles.includes(u.role));
+        // When a branch is selected and the role is branch-scoped, restrict to that branch
+        if (BRANCH_SCOPED_ROLES.has(formData.role) && formData.branchId) {
+          visible = visible.filter((u) => u.branchId === formData.branchId);
+        }
         // Fallback: include the logged-in user when they are a valid manager role
         // but not present in the fetched list (pagination/cache timing edge cases).
         if (user?.id && user?.name && allowedRoles.includes(user.role) && !visible.some((u) => u.id === user.id)) {
@@ -261,14 +267,15 @@ export const UserManagement = () => {
     { value: 'branch_admin', label: 'Branch Admin' },
     { value: 'branch_manager', label: 'Branch Manager' },
     { value: 'abm', label: 'Assistant Branch Manager' },
+    { value: 'oa', label: 'Operations Assistant' },
     { value: 'sales_officer', label: 'Sales Officer' },
     { value: 'client', label: 'Client' },
   ];
 
   const creatableRoles = {
-    md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
-    gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'client'],
-    branch_admin: ['branch_manager', 'abm', 'sales_officer', 'client'],
+    md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
+    gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
+    branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa', 'client'],
   };
 
   const roles = user?.role
@@ -701,7 +708,7 @@ export const UserManagement = () => {
                     required
                     className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                     value={formData.branchId}
-                    onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, branchId: e.target.value, managerId: '' })}
                   >
                     <option value="">Select Branch...</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}

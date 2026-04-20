@@ -1,9 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle, CheckCircle2, Fingerprint, MapPin } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Fingerprint, MapPin, XCircle } from 'lucide-react';
+
+// self-marked absent: status === 'absent' AND check_in_time is set
+// auto-absent (worker sweep): status === 'absent' AND check_in_time is null → still prompt check-in
+const isSelfMarkedAbsent = (record) =>
+  record?.status === 'absent' && record?.check_in_time;
 
 export const AlertCard = ({ isMarked, onAction }) => (
   <AnimatePresence mode="wait">
-    {!isMarked || isMarked.status === 'absent' ? (
+    {!isMarked || (isMarked.status === 'absent' && !isMarked.check_in_time) ? (
       <motion.div
         key="alert"
         initial={{ opacity: 0, y: 8 }}
@@ -27,6 +32,29 @@ export const AlertCard = ({ isMarked, onAction }) => (
         >
           <Fingerprint size={15} /> Mark Attendance
         </button>
+      </motion.div>
+    ) : isSelfMarkedAbsent(isMarked) ? (
+      <motion.div
+        key="absent"
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        className="mx-6 mb-8 p-5 rounded-3xl bg-red-50 border border-red-200 flex items-center gap-4"
+      >
+        <div className="w-11 h-11 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+          <XCircle size={22} className="text-red-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-bold text-navy">Marked Absent</h4>
+          <p className="text-xs text-navy/40 font-medium mt-0.5">
+            Recorded at{' '}
+            {new Date(isMarked.check_in_time).toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })}
+          </p>
+        </div>
       </motion.div>
     ) : (
       <motion.div
