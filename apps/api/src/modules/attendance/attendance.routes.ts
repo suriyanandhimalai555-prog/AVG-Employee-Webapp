@@ -313,6 +313,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
         {
           search: q.search || undefined,
           filterBranchId: q.branchId || undefined,
+          filterRole: q.role || undefined,
           page: q.page ? parseInt(q.page, 10) : 1,
           limit: q.limit ? parseInt(q.limit, 10) : 50,
         }

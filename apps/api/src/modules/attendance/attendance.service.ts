@@ -688,6 +688,7 @@ export const AttendanceService = {
     filters: {
       search?: string;
       filterBranchId?: string;
+      filterRole?: string;
       page?: number;
       limit?: number;
     } = {}
@@ -727,6 +728,12 @@ export const AttendanceService = {
     if (filters.filterBranchId) {
       baseWhere += ` AND u.branch_id = $${paramIndex++}`;
       params.push(filters.filterBranchId);
+    }
+
+    // Role filter
+    if (filters.filterRole?.trim()) {
+      baseWhere += ` AND u.role = $${paramIndex++}`;
+      params.push(filters.filterRole.trim());
     }
 
     // Full-text search on name or email
@@ -769,7 +776,7 @@ export const AttendanceService = {
       db.query(`SELECT COUNT(*) FROM (${selectSql}) AS _c`, params),
       db.query(
         `${selectSql}
-         ORDER BY CASE WHEN a.id IS NULL THEN 0 ELSE 1 END, u.name ASC
+         ORDER BY CASE WHEN a.id IS NULL THEN 0 ELSE 1 END, u.role ASC, u.name ASC
          LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limit, (page - 1) * limit]
       ),

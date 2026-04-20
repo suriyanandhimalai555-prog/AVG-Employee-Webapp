@@ -1,37 +1,61 @@
+import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Loader2, ChevronRight } from 'lucide-react';
+import {
+  ArrowLeft, Building2, Loader2, ChevronRight, Search, ChevronLeft, X,
+} from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Avatar } from '../components/Avatar';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useGetEmployeesQuery } from '../store/api/apiSlice';
 
-/**
- * Full-screen page showing details for a single branch.
- * Branch data is passed via router state when navigating: navigate('/branches/:id', { state: { branch } })
- * Falls back gracefully if state is missing (e.g. on page refresh).
- */
+const PAGE_SIZE = 50;
+
 export const BranchDetailPage = () => {
   const { branchId } = useParams();
   const { state } = useLocation();
   const navigate = useNavigate();
   const user = useSelector(selectCurrentUser);
 
-  // Branch object from router state — populated by HomeTab on navigation
   const branch = state?.branch ?? { id: branchId };
 
-  const { data: employeesResult, isLoading } = useGetEmployeesQuery(
-    { viewerId: user?.id, branchId },
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  // Debounce: fire query 350ms after the user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const handleSearchChange = useCallback((e) => {
+    setSearchInput(e.target.value);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchInput('');
+    setSearch('');
+    setPage(1);
+  }, []);
+
+  const { data: employeesResult, isLoading, isFetching } = useGetEmployeesQuery(
+    { viewerId: user?.id, branchId, search: search || undefined, page, limit: PAGE_SIZE },
     { skip: !user?.id || !branchId, refetchOnMountOrArgChange: true }
   );
 
   const employees = employeesResult?.data ?? [];
+  const total = employeesResult?.total ?? 0;
+  const totalPages = employeesResult?.totalPages ?? 1;
 
   const present = branch?.present ?? 0;
   const absent = branch?.absent ?? 0;
-  const total = branch?.total ?? (present + absent);
-  const notMarked = Math.max(0, total - present - absent);
-  const pct = branch?.presentPercent ?? (total > 0 ? Math.round((present / total) * 100) : 0);
+  const branchTotal = branch?.total ?? (present + absent);
+  const notMarked = Math.max(0, branchTotal - present - absent);
+  const pct = branch?.presentPercent ?? (branchTotal > 0 ? Math.round((present / branchTotal) * 100) : 0);
 
   return (
     <motion.div
@@ -58,7 +82,7 @@ export const BranchDetailPage = () => {
             Branch Overview
           </p>
         </div>
-        {isLoading && <Loader2 className="animate-spin text-indigo shrink-0" size={16} />}
+        {isFetching && <Loader2 className="animate-spin text-indigo shrink-0" size={16} />}
       </div>
 
       <div className="max-w-2xl mx-auto px-5 py-6 pb-24 space-y-6">
@@ -105,33 +129,68 @@ export const BranchDetailPage = () => {
           </div>
         </div>
 
+        {/* Search bar */}
+        <div className="relative group">
+          <Search
+            size={16}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/25 group-focus-within:text-indigo transition-colors duration-200 pointer-events-none"
+          />
+          <input
+            type="text"
+            placeholder="Search by name or role…"
+            value={searchInput}
+            onChange={handleSearchChange}
+            className="w-full pl-10 pr-10 py-3.5 bg-white rounded-2xl card-shadow text-sm font-bold text-navy placeholder:text-navy/20 outline-none focus:ring-2 focus:ring-indigo/20 transition-all duration-200"
+          />
+          {searchInput && (
+            <button
+              onClick={clearSearch}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-navy/25 hover:text-navy/60 transition-colors duration-200"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
         {/* Employee list */}
         <div>
-          <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">
-            Team Members
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">
+              Team Members
+            </p>
+            {!isLoading && (
+              <span className="text-[9px] font-bold text-indigo/60 bg-indigo/6 px-2 py-0.5 rounded-full font-mono">
+                {total} {total === 1 ? 'person' : 'people'}
+              </span>
+            )}
+          </div>
 
           {isLoading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="animate-spin text-indigo/40" size={28} />
             </div>
           ) : employees.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-sm font-bold text-navy/30">No employees found</p>
+            <div className="bg-white rounded-3xl card-shadow px-5 py-12 flex flex-col items-center gap-2 border border-dashed border-navy/10">
+              <Search size={22} className="text-navy/15" />
+              <p className="text-sm font-bold text-navy/25">
+                {searchInput ? `No results for "${searchInput}"` : 'No employees found'}
+              </p>
             </div>
           ) : (
-            <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
+            <div className={`bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden transition-opacity duration-200 ${isFetching ? 'opacity-60' : 'opacity-100'}`}>
               {employees.map((emp) => (
                 <button
                   key={emp.id}
                   onClick={() => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/3 transition-all duration-200 text-left tactile-press group"
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-navy/[0.02] transition-all duration-200 text-left tactile-press group"
                 >
                   <div className="w-9 h-9 rounded-full bg-navy/5 overflow-hidden shrink-0 ring-1 ring-navy/8">
                     <Avatar url={emp?.profilePhotoUrl} name={emp.name} size={36} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-navy truncate leading-tight">{emp.name}</p>
+                    <p className="text-xs font-bold text-navy truncate leading-tight group-hover:text-indigo transition-colors duration-200">
+                      {emp.name}
+                    </p>
                     <p className="text-[9px] font-medium text-navy/40 uppercase tracking-widest mt-0.5 truncate">
                       {emp.role?.replace(/_/g, ' ')}
                     </p>
@@ -144,10 +203,33 @@ export const BranchDetailPage = () => {
                     }`}>
                       {emp.status ? emp.status.replace('_', ' ') : 'Not marked'}
                     </span>
-                    <ChevronRight size={13} className="text-navy/15 transition-all duration-200 group-hover:text-navy/35 group-hover:translate-x-0.5" />
+                    <ChevronRight size={13} className="text-navy/15 transition-all duration-200 group-hover:text-indigo/40 group-hover:translate-x-0.5" />
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <button
+                disabled={page <= 1 || isFetching}
+                onClick={() => setPage(p => p - 1)}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white card-shadow text-[10px] font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all font-mono tactile-press"
+              >
+                <ChevronLeft size={13} /> PREV
+              </button>
+              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest font-mono">
+                {page} / {totalPages}
+              </p>
+              <button
+                disabled={page >= totalPages || isFetching}
+                onClick={() => setPage(p => p + 1)}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white card-shadow text-[10px] font-bold text-navy/40 hover:text-navy disabled:opacity-30 transition-all font-mono tactile-press"
+              >
+                NEXT <ChevronRight size={13} />
+              </button>
             </div>
           )}
         </div>

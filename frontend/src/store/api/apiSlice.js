@@ -163,12 +163,13 @@ export const apiSlice = createApi({
     // ─── Admin ───
     getEmployees: builder.query({
       // viewerId is not sent — it scopes the RTK cache key so two logged-in users don't share data
-      query: ({ viewerId: _viewerId, page = 1, limit = 50, search, branchId } = {}) => {
+      query: ({ viewerId: _viewerId, page = 1, limit = 50, search, branchId, role } = {}) => {
         const qs = new URLSearchParams();
         qs.set('page', String(page));
         qs.set('limit', String(limit));
         if (search) qs.set('search', search);
         if (branchId) qs.set('branchId', branchId);
+        if (role) qs.set('role', role);
         return `/attendance/employees?${qs}`;
       },
       // Response shape: { data: [], total, page, limit, totalPages }
