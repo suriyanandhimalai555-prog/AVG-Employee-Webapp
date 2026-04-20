@@ -888,4 +888,74 @@ export const MoneyService = {
       client.release();
     }
   },
+
+  /**
+   * Returns all cash collections currently held by a specific user (MD only).
+   * "Held" = approved, not yet forwarded, mode is cash or cash_transfer.
+   */
+  async getCashHolderDetail(
+    db: Pool,
+    holderId: string,
+    _requesterId: string,
+    requesterRole: string
+  ): Promise<{ holder: any; collections: any[] }> {
+    if (requesterRole !== 'md') {
+      throw new ForbiddenError('Only MD can view cash holder details');
+    }
+
+    const holderResult = await db.query(
+      `SELECT u.id, u.name, u.role, b.name AS branch_name,
+              COALESCE(SUM(mc.amount), 0) AS amount_held
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       LEFT JOIN money_collections mc
+         ON mc.assigned_verifier_id = u.id
+        AND mc.status = 'approved'
+        AND mc.is_forwarded = false
+        AND mc.mode IN ('cash', 'cash_transfer')
+       WHERE u.id = $1
+       GROUP BY u.id, u.name, u.role, b.name`,
+      [holderId]
+    );
+
+    if (holderResult.rows.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+
+    const collectionsResult = await db.query(
+      `SELECT
+         mc.id, mc.amount, mc.mode, mc.status,
+         mc.submitted_at,
+         -- For cash_transfer, pull client names from the original source collections;
+         -- for direct cash, use the inline client_name column.
+         CASE
+           WHEN mc.mode = 'cash_transfer' AND mc.source_collection_ids IS NOT NULL THEN (
+             SELECT string_agg(DISTINCT src.client_name, ', ' ORDER BY src.client_name)
+             FROM money_collections src
+             WHERE src.id = ANY(mc.source_collection_ids)
+               AND src.client_name IS NOT NULL
+               AND src.client_name != 'Grouped Transfer'
+           )
+           ELSE mc.client_name
+         END AS client_name,
+         submitter.name AS submitter_name,
+         submitter.role AS submitter_role,
+         p.name         AS project_name,
+         mc.photo_key
+       FROM money_collections mc
+       JOIN users submitter ON mc.user_id = submitter.id
+       JOIN projects p      ON mc.project_id = p.id
+       WHERE mc.assigned_verifier_id = $1
+         AND mc.status = 'approved'
+         AND mc.is_forwarded = false
+         AND mc.mode IN ('cash', 'cash_transfer')
+       ORDER BY mc.submitted_at DESC`,
+      [holderId]
+    );
+
+    return {
+      holder: holderResult.rows[0],
+      collections: collectionsResult.rows,
+    };
+  },
 };

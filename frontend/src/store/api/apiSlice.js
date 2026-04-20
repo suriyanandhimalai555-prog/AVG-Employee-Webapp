@@ -92,6 +92,18 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
     }),
 
+    getDeactivatedUsers: builder.query({
+      query: () => '/users/deactivated',
+      providesTags: ['DeactivatedUsers'],
+      transformResponse: (response) => response.data,
+    }),
+
+    reactivateUser: builder.mutation({
+      query: (id) => ({ url: `/users/${id}/reactivate`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['DeactivatedUsers', 'Users'],
+    }),
+
     updateProfileAssets: builder.mutation({
       query: (data) => ({
         url: '/auth/profile-assets',
@@ -386,6 +398,11 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
     }),
 
+    getCashHolderDetail: builder.query({
+      query: (holderId) => `/money/admin/holders/${holderId}`,
+      transformResponse: (response) => response.data,
+    }),
+
     getBranchRankings: builder.query({
       query: ({ startDate, endDate } = {}) => {
         const qs = new URLSearchParams();
@@ -423,6 +440,12 @@ export const apiSlice = createApi({
         return `/users?${qs}`;
       },
       // Response shape: { data: [], total, page, limit, totalPages }
+      transformResponse: (response) => response.data,
+      providesTags: ['Users'],
+    }),
+
+    getManagerOptions: builder.query({
+      query: (roles) => `/users/manager-options?roles=${Array.isArray(roles) ? roles.join(',') : roles}`,
       transformResponse: (response) => response.data,
       providesTags: ['Users'],
     }),
@@ -503,6 +526,7 @@ export const {
   useGetMoneyPhotoUrlQuery,
   useGetUserSuperiorsQuery,
   useGetUsersQuery,
+  useGetManagerOptionsQuery,
   useCreateUserMutation,
   useGetUserOversightBranchesQuery,
   useLazyGetUserOversightBranchesQuery,
@@ -513,10 +537,13 @@ export const {
   useGetMoneySourcesQuery,
   useGetMoneyAdminOverviewQuery,
   useGetMoneyBranchDrilldownQuery,
+  useGetCashHolderDetailQuery,
   useGetBranchRankingsQuery,
   useMdAddCollectionEntryMutation,
   useGetMyDocumentsQuery,
   useAddDocumentMutation,
   useDeleteDocumentMutation,
   useGetUserDocumentsQuery,
+  useGetDeactivatedUsersQuery,
+  useReactivateUserMutation,
 } = apiSlice;

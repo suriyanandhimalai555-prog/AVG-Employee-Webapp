@@ -6,7 +6,7 @@ import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Loader2, Clock, AlertCircle,
   Briefcase, TrendingUp, Building2, AlertTriangle,
-  BarChart3, PenLine
+  BarChart3, PenLine, MapPin
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -126,6 +126,84 @@ export const MoneyManagementPage = () => {
           </div>
         </div>
 
+        {/* Org-wide cash holders (MD-only) — clickable cards → detail page */}
+        {isMd && allHolders.length > 0 && (
+          <div className="px-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Who is Holding Cash</p>
+              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2.5 py-1 rounded-full">
+                {allHolders.length} {allHolders.length === 1 ? 'holder' : 'holders'}
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {allHolders.map((h, idx) => (
+                <button
+                  key={h.id}
+                  onClick={() => navigate(`/money/holders/${h.id}`)}
+                  className="w-full bg-white rounded-[22px] p-4 card-shadow border border-amber-100/60 flex items-center gap-4 group tactile-press text-left hover:border-amber-200 transition-colors"
+                >
+                  {/* Rank badge */}
+                  <div className="w-7 h-7 rounded-xl bg-amber-50 flex items-center justify-center text-[11px] font-bold text-amber-500 shrink-0">
+                    {idx + 1}
+                  </div>
+
+                  {/* Icon */}
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center text-white shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Wallet size={16} />
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-navy truncate group-hover:text-amber-600 transition-colors">
+                      {h.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-[9px] font-bold text-navy/30 uppercase tracking-wider capitalize">
+                        {h.role?.replace(/_/g, ' ')}
+                      </span>
+                      {h.branch_name && (
+                        <span className="flex items-center gap-0.5 text-[9px] text-navy/25 font-medium">
+                          <MapPin size={8} />{h.branch_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Amount + chevron */}
+                  <div className="shrink-0 text-right">
+                    <p className="text-base font-bold text-amber-600">
+                      ₹{parseFloat(h.amount_held).toLocaleString()}
+                    </p>
+                    <ChevronRight size={13} className="text-amber-300 group-hover:translate-x-0.5 transition-transform ml-auto mt-0.5" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Manage Projects (MD-only) */}
+        {isMd && (
+          <div className="px-4 mb-6">
+            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Administration</p>
+            <button
+              onClick={() => navigate('/money/projects')}
+              className="w-full bg-white rounded-[28px] p-5 flex items-center justify-between card-shadow border border-navy/5 group tactile-press"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Briefcase size={22} />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-bold text-navy">Manage Projects</p>
+                  <p className="text-[10px] font-medium text-navy/30">Edit names, activate/deactivate</p>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-navy/20 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        )}
+
         {/* Stuck Cash Alerts (MD-only) */}
         {isMd && stuckCash.length > 0 && (
           <div className="px-4 mb-6">
@@ -213,53 +291,6 @@ export const MoneyManagementPage = () => {
             )}
           </div>
         </div>
-
-        {/* Org-wide cash holders (MD-only) */}
-        {isMd && allHolders.length > 0 && (
-          <div className="px-4 mb-6">
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Who is Holding Cash</p>
-            <div className="space-y-2">
-              {allHolders.map(h => (
-                <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30">
-                      <Wallet size={16} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-navy">{h.name}</p>
-                      <p className="text-[9px] font-medium text-navy/40 capitalize">
-                        {h.role?.replace(/_/g, ' ')} · {h.branch_name || 'No branch'}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Manage Projects (MD-only) */}
-        {isMd && (
-          <div className="px-4">
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Administration</p>
-            <button
-              onClick={() => navigate('/money/projects')}
-              className="w-full bg-white rounded-[28px] p-5 flex items-center justify-between card-shadow border border-navy/5 group tactile-press"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Briefcase size={22} />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-bold text-navy">Manage Projects</p>
-                  <p className="text-[10px] font-medium text-navy/30">Edit names, activate/deactivate</p>
-                </div>
-              </div>
-              <ChevronRight size={20} className="text-navy/20 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        )}
 
       </div>
     );

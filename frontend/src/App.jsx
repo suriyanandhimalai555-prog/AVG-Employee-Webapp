@@ -17,6 +17,7 @@ import { MoneyWalletPage } from './pages/MoneyWalletPage';
 import { BranchRankingsPage } from './pages/BranchRankingsPage';
 import { MdAddEntryPage } from './pages/MdAddEntryPage';
 import { ProjectManagementPage } from './pages/ProjectManagementPage';
+import { CashHolderDetailPage } from './pages/CashHolderDetailPage';
 import { LeadershipListPage } from './pages/LeadershipListPage';
 import { PersonAttendancePage } from './pages/PersonAttendancePage';
 import { AttendanceTab } from './pages/attendance/AttendanceTab';
@@ -91,6 +92,7 @@ function App() {
         <Route path="/money/rankings"            element={<BranchRankingsPage />} />
         <Route path="/money/add-entry"           element={<MdAddEntryPage />} />
         <Route path="/money/projects"            element={<ProjectManagementPage />} />
+        <Route path="/money/holders/:holderId"   element={<CashHolderDetailPage />} />
 
         {/* Leadership */}
         <Route path="/leadership/:kind"          element={<LeadershipListPage />} />

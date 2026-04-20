@@ -25,6 +25,7 @@ const ALLOWED_MANAGER_ROLES: Record<string, string[]> = {
 const MANAGER_REQUIRED_ROLES = new Set([
   'director',
   'gm',
+  'branch_manager',
   'abm',
   'sales_officer',
   'client',

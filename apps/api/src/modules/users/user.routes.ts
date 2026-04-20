@@ -102,6 +102,30 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ─── GET /api/users/manager-options?roles=director,gm ───
+  // Returns all active users of the given role(s) — used to populate manager dropdowns.
+  fastify.get('/manager-options', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { roles } = req.query as { roles?: string };
+      if (!roles) {
+        throw new AppError('roles query param required', 400, 'MISSING_PARAMS');
+      }
+      const roleList = roles.split(',').map(r => r.trim()).filter(Boolean);
+      const data = await UserService.getManagerOptions(
+        fastify.db,
+        req.user.id,
+        req.user.role,
+        roleList
+      );
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   // ─── GET /api/users/superiors ───
   // Lists all the user's ancestors (upper hierarchy) up to the MD
   fastify.get('/superiors', {
@@ -237,6 +261,41 @@ export default async function userRoutes(fastify: FastifyInstance) {
       );
 
       return reply.send({ success: true, data: result });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /api/users/deactivated ───
+  // MD only — lists auto-deactivated ABM/SO/OA accounts with absence duration.
+  fastify.get('/deactivated', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'md') {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+      const data = await UserService.getDeactivatedUsers(fastify.db, fastify.redis);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /api/users/:id/reactivate ───
+  // MD only — restores an auto-deactivated account.
+  fastify.post('/:id/reactivate', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (req.user.role !== 'md') {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+      const { id } = req.params as { id: string };
+      const data = await UserService.reactivateUser(fastify.db, fastify.redis, id, req.user.id);
+      return reply.send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);
     }

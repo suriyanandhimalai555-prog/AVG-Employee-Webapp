@@ -3,14 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users,
   UserPlus,
-  Shield,
   Building2,
   Mail,
   Key,
   Search,
   CheckCircle2,
   XCircle,
-  ChevronRight,
   ChevronLeft,
   ArrowRight,
   Loader2,
@@ -24,6 +22,7 @@ import { clearCredentials } from '../store/slices/authSlice';
 import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import {
   useGetUsersQuery,
+  useGetManagerOptionsQuery,
   useCreateUserMutation,
   useGetBranchesQuery,
   useLazyGetUserOversightBranchesQuery,
@@ -63,13 +62,31 @@ export const UserManagement = () => {
     total: usersResult.total ?? 0,
     totalPages: usersResult.totalPages ?? 0,
   };
-  // Separate unfiltered query used to populate the "Reports To" manager dropdown
-  // Fetch up to 500 so we get all potential managers (MDs and Directors are few)
-  const { data: allUsersResult = {} } = useGetUsersQuery(
-    { viewerId: user?.id, limit: 500 },
-    { skip: !user?.id }
-  );
-  const allUsers = allUsersResult.data ?? [];
+  // Form state declared early — hooks below depend on formData.role
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'branch_admin',
+    branchId: '',
+    managerId: '',
+    oversightBranchIds: [],
+    oversightGmIds: [],
+    hasSmartphone: true,
+  });
+  const [error, setError] = useState('');
+
+  // Fetch potential managers by the roles that the selected new-user role can report to.
+  // Exclude sales_officer from the upfront fetch — only needed for `client` creation and
+  // there can be hundreds of them. We handle that lazily via the same endpoint below.
+  const MANAGER_ROLES_UPFRONT = ['md', 'director', 'gm', 'branch_manager', 'abm', 'oa', 'branch_admin'];
+  const { data: allUsers = [] } = useGetManagerOptionsQuery(MANAGER_ROLES_UPFRONT, { skip: !user?.id });
+
+  // Fetch SOs only when creating a client (lazy — avoids loading hundreds of SOs upfront)
+  const { data: salesOfficers = [] } = useGetManagerOptionsQuery(['sales_officer'], {
+    skip: !user?.id || formData.role !== 'client',
+  });
+
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
   const [fetchOversightBranches] = useLazyGetUserOversightBranchesQuery();
@@ -85,72 +102,72 @@ export const UserManagement = () => {
   const [viewDocsUserId, setViewDocsUserId] = useState(null);
   const [viewDocsUserName, setViewDocsUserName] = useState('');
   const { data: userDocs = [], isLoading: isDocsLoading } = useGetUserDocumentsQuery(viewDocsUserId, {
-    skip: !viewDocsUserId
+    skip: !viewDocsUserId,
   });
 
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
 
   const handleLogout = async () => {
-    try {
-      await logoutApi().unwrap();
-    } catch { /* ignore */ }
+    try { await logoutApi().unwrap(); } catch { /* ignore */ }
     dispatch(apiSlice.util.resetApiState());
     dispatch(clearCredentials());
   };
 
-  // Form State
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: 'branch_admin',
-    branchId: '',
-    managerId: '',
-    oversightBranchIds: [],
-    oversightGmIds: [],
-    hasSmartphone: true,
-  });
-
-  const [error, setError] = useState('');
-
   const isOversightRole = (role) => role === 'director' || role === 'gm';
-  const managerRoleMap = {
-    director: ['md'],
-    gm: ['director'],
-    branch_manager: ['gm'],
-    abm: ['branch_manager'],
-    sales_officer: ['abm', 'oa', 'branch_admin'],
-    client: ['sales_officer', 'abm', 'branch_manager'],
-  };
-  const needsManager = (role) => Array.isArray(managerRoleMap[role]);
-  const managerRequiredRoles = new Set(['director', 'gm', 'abm', 'sales_officer', 'client']);
 
-  // Roles whose managers must be in the same branch — filter dropdown by selected branch
-  const BRANCH_SCOPED_ROLES = new Set(['abm', 'sales_officer', 'client', 'branch_manager', 'oa']);
-  const managerOptions = needsManager(formData.role)
-    ? (() => {
-        const allowedRoles = managerRoleMap[formData.role] ?? [];
-        let visible = allUsers.filter((u) => allowedRoles.includes(u.role));
-        // When a branch is selected and the role is branch-scoped, restrict to that branch
-        if (BRANCH_SCOPED_ROLES.has(formData.role) && formData.branchId) {
-          visible = visible.filter((u) => u.branchId === formData.branchId);
-        }
-        // Fallback: include the logged-in user when they are a valid manager role
-        // but not present in the fetched list (pagination/cache timing edge cases).
-        if (user?.id && user?.name && allowedRoles.includes(user.role) && !visible.some((u) => u.id === user.id)) {
-          return [
-            ...visible,
-            {
-              id: user.id,
-              name: user.name,
-              role: user.role,
-            },
-          ];
-        }
-        return visible;
-      })()
-    : [];
+  // Defines which roles a given role must report to.
+  // Must stay in sync with ALLOWED_MANAGER_ROLES in apps/api/src/shared/hierarchy-policy.ts
+  const MANAGER_ROLE_MAP = {
+    director:       ['md'],
+    gm:             ['director'],
+    branch_manager: ['gm'],
+    abm:            ['branch_manager'],
+    sales_officer:  ['abm', 'oa', 'branch_admin'],
+    client:         ['sales_officer', 'abm', 'branch_manager'],
+  };
+
+  // Must stay in sync with MANAGER_REQUIRED_ROLES in hierarchy-policy.ts
+  const MANAGER_REQUIRED = new Set(['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'client']);
+
+  const needsManager = (role) => Boolean(MANAGER_ROLE_MAP[role]);
+
+  // Roles whose MANAGERS live in the same branch (i.e. the manager has branch_id set).
+  // branch_manager is intentionally excluded: its manager is a GM, and GMs are
+  // oversight-based (branch_id = null). The backend validates GM-branch oversight separately.
+  const BRANCH_SCOPED_ROLES = new Set(['abm', 'sales_officer', 'client', 'oa']);
+
+  const managerOptions = (() => {
+    if (!needsManager(formData.role)) return [];
+
+    const allowedRoles = MANAGER_ROLE_MAP[formData.role];
+
+    // Combine the upfront pool + lazily-fetched SOs (only populated when role = client)
+    const pool = formData.role === 'client'
+      ? [...allUsers, ...salesOfficers]
+      : allUsers;
+
+    let visible = pool.filter((u) => allowedRoles.includes(u.role));
+
+    // For branch-scoped roles, restrict to managers in the same branch once a branch is chosen.
+    // This does NOT apply to branch_manager (whose GM manager has no branch_id).
+    if (BRANCH_SCOPED_ROLES.has(formData.role) && formData.branchId) {
+      visible = visible.filter((u) => u.branchId === formData.branchId);
+    }
+
+    // Self-inclusion fallback: if the logged-in user is a valid direct manager for this
+    // role but wasn't returned by the server (timing edge case), add them.
+    if (
+      user?.id &&
+      allowedRoles.includes(user.role) &&
+      !visible.some((u) => u.id === user.id)
+    ) {
+      visible = [...visible, { id: user.id, name: user.name, role: user.role, branchId: user.branchId ?? null }];
+    }
+
+    return visible;
+  })();
+
   const gmOptions = allUsers.filter((u) => u.role === 'gm');
 
   const toggleOversightBranch = (branchId) => {
@@ -284,7 +301,7 @@ export const UserManagement = () => {
 
   // Filter options should follow visible directory data, not create permissions.
   const filterRoles = Array.from(
-    new Set((allUsers ?? []).map((u) => u.role).filter(Boolean))
+    new Set((users ?? []).map((u) => u.role).filter(Boolean))
   )
     .filter((role) => role !== 'md')
     .sort()
@@ -388,62 +405,64 @@ export const UserManagement = () => {
             key={u.id}
             className="group hover-lift border-white/50 bg-white/70 backdrop-blur-sm cursor-default p-0 overflow-hidden"
           >
-            <div className="p-6 flex items-center justify-between gap-5">
-              <div className="flex items-center gap-5 min-w-0">
-                <div className="w-14 h-14 rounded-2xl bg-indigo/5 flex items-center justify-center text-indigo shrink-0 group-hover:scale-110 transition-transform duration-500">
-                  <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm">
-                    <Avatar url={u?.profilePhotoUrl} name={u.name} size={40} />
+            <div className="p-5 sm:p-6">
+              {/* Top row: avatar + name + role chip */}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-indigo/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-500">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-sm">
+                      <Avatar url={u?.profilePhotoUrl} name={u.name} size={40} />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-bold text-navy leading-tight truncate group-hover:text-indigo transition-colors">
+                      {u.name}
+                    </h3>
+                    {u.hasSmartphone && (
+                      <span className="text-[8px] font-bold text-emerald uppercase tracking-[0.2em] flex items-center gap-1 bg-emerald/5 px-2 py-0.5 rounded-full mt-1 w-fit">
+                        Mobile Ready
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-lg font-bold text-navy leading-none truncate group-hover:text-indigo transition-colors">{u.name}</h3>
-                  <div className="flex flex-col gap-1 mt-2">
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
-                      <Mail size={12} className="text-indigo/40" />
-                      <span className="truncate">{u.email}</span>
-                    </span>
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
-                      <Building2 size={12} className="text-indigo/40" />
-                      {u.branchName || 'Unassigned'}
-                    </span>
-                  </div>
+                <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                  <StatusChip status={u.role} label={u.role.replace(/_/g, ' ')} />
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
-                {user?.role === 'md' && (u.role === 'director' || u.role === 'gm') && (
-                  <button
-                    onClick={() => openOversightEditor(u)}
-                    title={u.role === 'director' ? 'Edit GM assignments' : 'Edit branch assignments'}
-                    className="p-2 rounded-xl bg-indigo/5 text-indigo hover:bg-indigo hover:text-white transition-all text-[10px] font-bold flex items-center gap-1.5 tactile-press"
-                  >
-                    <Building2 size={14} />
-                    {u.role === 'director' ? 'GMs' : 'Branches'}
-                  </button>
-                )}
-                {user?.role === 'md' && (
+              {/* Meta row: email + branch */}
+              <div className="flex flex-col gap-1 mb-4 pl-1">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+                  <Mail size={11} className="text-indigo/40 shrink-0" />
+                  <span className="truncate">{u.email}</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-navy/30 uppercase tracking-widest">
+                  <Building2 size={11} className="text-indigo/40 shrink-0" />
+                  {u.branchName || 'Unassigned'}
+                </span>
+              </div>
+
+              {/* Action buttons (MD only) */}
+              {user?.role === 'md' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(u.role === 'director' || u.role === 'gm') && (
+                    <button
+                      onClick={() => openOversightEditor(u)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo/5 text-indigo hover:bg-indigo hover:text-white transition-all text-[10px] font-bold tactile-press"
+                    >
+                      <Building2 size={12} />
+                      {u.role === 'director' ? 'GMs' : 'Branches'}
+                    </button>
+                  )}
                   <button
                     onClick={() => { setViewDocsUserId(u.id); setViewDocsUserName(u.name); }}
-                    title="View uploaded proofs"
-                    className="p-2 rounded-xl bg-navy/5 text-navy/40 hover:bg-navy hover:text-white transition-all text-[10px] font-bold flex items-center gap-1.5 tactile-press"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-navy/5 text-navy/40 hover:bg-navy hover:text-white transition-all text-[10px] font-bold tactile-press"
                   >
-                    <FileText size={14} />
+                    <FileText size={12} />
                     Docs
                   </button>
-                )}
-                <div className="text-right flex flex-col items-end gap-2">
-                   <StatusChip
-                    status={u.role}
-                    label={u.role.replace(/_/g, ' ')}
-                  />
-                  {u.hasSmartphone && (
-                    <span className="text-[8px] font-bold text-emerald uppercase tracking-[0.2em] flex items-center gap-1 bg-emerald/5 px-2 py-0.5 rounded-full">
-                      Mobile Ready
-                    </span>
-                  )}
                 </div>
-                <ChevronRight size={20} className="text-navy/10 group-hover:text-indigo group-hover:translate-x-1 transition-all duration-300" />
-              </div>
+              )}
             </div>
           </Card>
         ))}
@@ -624,7 +643,7 @@ export const UserManagement = () => {
                     Reports To <span className="text-red-400">*</span>
                   </label>
                   <select
-                    required={managerRequiredRoles.has(formData.role)}
+                    required={MANAGER_REQUIRED.has(formData.role)}
                     className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
                     value={formData.managerId}
                     onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
@@ -766,6 +785,7 @@ export const UserManagement = () => {
                 isCreating
                 || (formData.role === 'gm' && formData.oversightBranchIds.length === 0)
                 || (formData.role === 'director' && formData.oversightGmIds.length === 0)
+                || (MANAGER_REQUIRED.has(formData.role) && !formData.managerId)
               }
             >
               {isCreating ? (

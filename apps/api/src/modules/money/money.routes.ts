@@ -319,4 +319,24 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
       return handleError(error, reply);
     }
   });
+
+  // ─── CASH HOLDER DETAIL (MD-only) ───
+  // Returns all un-forwarded cash collections currently held by a specific user.
+  fastify.get('/admin/holders/:holderId', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      const { holderId } = req.params as { holderId: string };
+      const data = await MoneyService.getCashHolderDetail(
+        fastify.db,
+        holderId,
+        req.user.id,
+        req.user.role
+      );
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
 }

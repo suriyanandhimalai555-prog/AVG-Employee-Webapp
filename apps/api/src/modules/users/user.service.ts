@@ -496,6 +496,42 @@ export const UserService = {
     };
   },
 
+  // ─── MANAGER OPTIONS (for dropdowns) ───
+  // Returns all active users of the requested roles, no pagination.
+  // Used exclusively to populate the "Reports To" manager dropdown when creating a user.
+  // MD only — they are the only role that creates directors/GMs from a full org list.
+  async getManagerOptions(
+    db: Pool,
+    _requesterId: string,
+    requesterRole: string,
+    roles: string[]
+  ): Promise<{ id: string; name: string; role: string; branchId: string | null; branchName: string | null }[]> {
+    if (requesterRole !== 'md') {
+      // Non-MD callers: return users visible to them of the requested roles (already capped by hierarchy)
+      const result = await db.query(
+        `SELECT u.id, u.name, u.role, u.branch_id AS "branchId", b.name AS "branchName"
+         FROM users u
+         LEFT JOIN branches b ON u.branch_id = b.id
+         WHERE u.role = ANY($1::text[])
+           AND u.is_active = true
+         ORDER BY u.name ASC`,
+        [roles]
+      );
+      return result.rows;
+    }
+
+    const result = await db.query(
+      `SELECT u.id, u.name, u.role, u.branch_id AS "branchId", b.name AS "branchName"
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE u.role = ANY($1::text[])
+         AND u.is_active = true
+       ORDER BY u.name ASC`,
+      [roles]
+    );
+    return result.rows;
+  },
+
   // ─── USER DOCUMENTS (PROOFS) ───
 
   async getPresignedProfileUploadUrl(userId: string, kind: 'photo' | 'proof', contentType: string) {
@@ -542,5 +578,62 @@ export const UserService = {
     const docs = result.rows;
     await populateAvatarUrls(redis, docs, d => d.s3Key, (d, url) => d.downloadUrl = url);
     return docs;
-  }
+  },
+
+  // ─── DEACTIVATED USERS (MD only) ───
+
+  async getDeactivatedUsers(db: Pool, redis: Redis): Promise<any[]> {
+    const result = await db.query(
+      `SELECT
+         u.id,
+         u.name,
+         u.email,
+         u.role,
+         u.branch_id,
+         u.deactivated_at,
+         u.deactivation_reason,
+         u.profile_photo_key,
+         b.name AS branch_name,
+         EXTRACT(DAY FROM NOW() - u.deactivated_at)::int AS days_inactive,
+         (
+           SELECT a.date
+           FROM attendance a
+           WHERE a.user_id = u.id
+             AND a.status IN ('present', 'half_day', 'field')
+           ORDER BY a.date DESC
+           LIMIT 1
+         ) AS last_present_date
+       FROM users u
+       LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE u.is_active = false
+         AND u.deactivation_reason = 'auto_absent_60d'
+       ORDER BY u.deactivated_at DESC`
+    );
+
+    const users = result.rows;
+    await populateAvatarUrls(redis, users, u => u.profile_photo_key, (u, url) => u.profilePhotoUrl = url);
+    users.forEach(u => delete u.profile_photo_key);
+    return users;
+  },
+
+  async reactivateUser(db: Pool, _redis: Redis, targetUserId: string, _actingMdId: string): Promise<any> {
+    const result = await db.query(
+      `UPDATE users
+       SET is_active           = true,
+           deactivated_at      = NULL,
+           deactivation_reason = NULL
+       WHERE id = $1
+         AND is_active = false
+         AND deactivation_reason = 'auto_absent_60d'
+       RETURNING id, name, role`,
+      [targetUserId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('User not found or is not auto-deactivated');
+    }
+
+    await bustHierarchyCache(targetUserId);
+    return result.rows[0];
+  },
 };

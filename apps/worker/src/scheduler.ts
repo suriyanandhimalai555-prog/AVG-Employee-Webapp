@@ -1,0 +1,40 @@
+import { Queue } from 'bullmq';
+import { redis } from './redis';
+
+// Separate Queue instance — used only for registering repeatable jobs.
+// The Worker instance in worker.ts processes all jobs from this same queue.
+export const schedulerQueue = new Queue('attendance', { connection: redis });
+
+const REPEATABLE_JOB_NAMES = new Set(['auto-absent', 'auto-deactivate']);
+
+/**
+ * Removes any stale repeatable jobs from prior deployments and registers
+ * the canonical schedules.
+ *
+ * BullMQ keys repeatable jobs by (name + cron + jobId). Changing the cron
+ * expression produces a new key while leaving old timestamps in the delayed
+ * set — causing double-fires. Purging first ensures exactly one schedule.
+ */
+export const registerScheduledJobs = async (): Promise<void> => {
+  const existing = await schedulerQueue.getRepeatableJobs();
+  for (const job of existing) {
+    if (REPEATABLE_JOB_NAMES.has(job.name)) {
+      await schedulerQueue.removeRepeatableByKey(job.key);
+      console.log(`🧹 Removed stale repeatable job: ${job.key}`);
+    }
+  }
+
+  // 23:30 IST — mark all unmarked employees absent for the day
+  await schedulerQueue.add('auto-absent', {}, {
+    repeat: { pattern: '30 23 * * *', tz: 'Asia/Kolkata' },
+    jobId:  'auto-absent-daily',
+  });
+  console.log('✅ Scheduled: auto-absent at 23:30 IST daily');
+
+  // 23:45 IST — deactivate chronic absentees (after absent sweep finalises)
+  await schedulerQueue.add('auto-deactivate', {}, {
+    repeat: { pattern: '45 23 * * *', tz: 'Asia/Kolkata' },
+    jobId:  'auto-deactivate-daily',
+  });
+  console.log('✅ Scheduled: auto-deactivate at 23:45 IST daily');
+};
