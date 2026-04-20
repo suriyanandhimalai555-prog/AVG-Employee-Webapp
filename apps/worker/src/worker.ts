@@ -27,7 +27,7 @@ const router = async (job: Job): Promise<{ success: boolean }> => {
       await processSignOff(job);
       return { success: true };
 
-    case 'attendance':
+    case 'mark-attendance':
       return processAttendance(job);
 
     default:
