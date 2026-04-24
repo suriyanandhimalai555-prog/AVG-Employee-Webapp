@@ -18,6 +18,10 @@ import { BranchRankingsPage } from './pages/BranchRankingsPage';
 import { MdAddEntryPage } from './pages/MdAddEntryPage';
 import { ProjectManagementPage } from './pages/ProjectManagementPage';
 import { CashHolderDetailPage } from './pages/CashHolderDetailPage';
+import { MoneyPendingTransfersPage } from './pages/MoneyPendingTransfersPage';
+import { GoldSchemePage } from './pages/GoldSchemePage';
+import { GoldSchemeAddPage } from './pages/GoldSchemeAddPage';
+import { GoldMemberDetailPage } from './pages/GoldMemberDetailPage';
 import { LeadershipListPage } from './pages/LeadershipListPage';
 import { PersonAttendancePage } from './pages/PersonAttendancePage';
 import { AttendanceTab } from './pages/attendance/AttendanceTab';
@@ -93,6 +97,12 @@ function App() {
         <Route path="/money/add-entry"           element={<MdAddEntryPage />} />
         <Route path="/money/projects"            element={<ProjectManagementPage />} />
         <Route path="/money/holders/:holderId"   element={<CashHolderDetailPage />} />
+        <Route path="/money/pending-transfers"   element={<MoneyPendingTransfersPage />} />
+
+        {/* Gold Savings Scheme */}
+        <Route path="/gold"                      element={<GoldSchemePage />} />
+        <Route path="/gold/add"                  element={<GoldSchemeAddPage />} />
+        <Route path="/gold/:id"                  element={<GoldMemberDetailPage />} />
 
         {/* Leadership */}
         <Route path="/leadership/:kind"          element={<LeadershipListPage />} />

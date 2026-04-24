@@ -29,14 +29,21 @@ export const MoneyHistoryPage = () => {
   const navigate = useNavigate();
 
   const { data: collectionsResult, isLoading: isCollectionsLoading } = useGetMoneyCollectionsQuery();
-  const collections = collectionsResult?.data || [];
+  const collections = [...(collectionsResult?.data || [])].sort(
+    (a, b) => new Date(b.submitted_at) - new Date(a.submitted_at)
+  );
   const [verifyCollection, { isLoading: isVerifying }] = useVerifyMoneyCollectionMutation();
 
+  const [statusFilter, setStatusFilter] = useState('all');
   const [verifyingId, setVerifyingId] = useState(null);
   const [rejectNote, setRejectNote] = useState('');
   const [rejectingId, setRejectingId] = useState(null);
   const [inspectingId, setInspectingId] = useState(null);
   const [formError, setFormError] = useState(null);
+
+  const filteredCollections = statusFilter === 'all'
+    ? collections
+    : collections.filter(c => c.status === statusFilter);
 
   const handleApprove = async (id) => {
     setVerifyingId(id);
@@ -70,20 +77,46 @@ export const MoneyHistoryPage = () => {
       exit={{ opacity: 0, x: 20 }}
       className="pb-32 pt-4"
     >
-      <div className="px-4 flex items-center mb-6">
+      <div className="px-4 flex items-center mb-4">
         <button onClick={() => navigate('/money')} className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press">
           <ArrowRight className="rotate-180" size={20} />
         </button>
         <h3 className="text-lg font-bold text-navy ml-4">My Collections</h3>
       </div>
 
+      {/* Status filter tabs */}
+      <div className="px-4 mb-4">
+        <div className="p-1 bg-navy/5 rounded-2xl grid grid-cols-4 gap-1">
+          {[
+            { key: 'all',      label: 'All' },
+            { key: 'pending',  label: 'Pending' },
+            { key: 'approved', label: 'Approved' },
+            { key: 'rejected', label: 'Rejected' },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setStatusFilter(key)}
+              className={`py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                statusFilter === key
+                  ? 'bg-white shadow-sm text-indigo'
+                  : 'text-navy/40 hover:text-navy/60'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="px-6 space-y-4">
         {isCollectionsLoading ? (
           <div className="flex justify-center p-10"><Loader2 className="animate-spin text-navy/20" size={32} /></div>
-        ) : collections.length === 0 ? (
-          <p className="text-center text-sm text-navy/40 py-8 font-medium">You haven't submitted or verified any collections.</p>
+        ) : filteredCollections.length === 0 ? (
+          <p className="text-center text-sm text-navy/40 py-8 font-medium">
+            {statusFilter === 'all' ? "You haven't submitted or verified any collections." : `No ${statusFilter} collections.`}
+          </p>
         ) : (
-          collections.map(col => (
+          filteredCollections.map(col => (
             <div key={col.id} className="bg-white p-5 rounded-3xl card-shadow border border-navy/5 space-y-3 relative overflow-hidden">
               {col.status === 'rejected' && <div className="absolute top-0 right-0 w-12 h-12 bg-red-500 blur-3xl opacity-20" />}
               {col.status === 'approved' && <div className="absolute top-0 right-0 w-12 h-12 bg-emerald-500 blur-3xl opacity-20" />}

@@ -22,6 +22,7 @@ import branchRoutes from './modules/branches/branch.routes';
 import transactionRoutes from './modules/transactions/transaction.routes';
 import moneyRoutes from './modules/money/money.routes';
 import userRoutes from './modules/users/user.routes';
+import goldRoutes from './modules/gold/gold.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -125,6 +126,10 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the User Management module (MD only for creation)
   // Mounts under the '/api/users' prefix
   await app.register(userRoutes, { prefix: '/api/users' });
+
+  // Register the Gold Savings Scheme module (branch_admin writes, managers read)
+  // Mounts under the '/api/gold' prefix
+  await app.register(goldRoutes, { prefix: '/api/gold' });
 
   return app;
 };

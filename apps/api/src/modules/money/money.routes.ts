@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
-import { AppError, ForbiddenError } from '../../shared/errors';
+import { AppError, ForbiddenError, ValidationError } from '../../shared/errors';
+import { getCompanyToday } from '../../shared/date';
 import { MoneyService } from './money.service';
 import {
   CreateProjectSchema,
@@ -125,9 +126,43 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role === 'oa' || req.user.role === 'branch_admin' || req.user.role === 'client') {
+      if (req.user.role === 'oa' || req.user.role === 'client') {
         throw new ForbiddenError('Your role cannot submit money collections');
       }
+
+      // Cycle restriction: branch_admin may only submit from the 6th of the month
+      // onward (cycle: 6th of this month → 5th of next month). Days 1–5 are outside
+      // any active cycle and submissions are blocked.
+      if (req.user.role === 'branch_admin') {
+        const today = getCompanyToday(); // YYYY-MM-DD in IST
+        const [ty, tm] = today.split('-').map(Number);
+        const td = parseInt(today.split('-')[2], 10);
+        if (td < 6) {
+          const mm = String(tm).padStart(2, '0');
+          throw new ValidationError(
+            `Collection entries are only allowed from the 6th of each month. The current cycle opens on ${ty}-${mm}-06.`
+          );
+        }
+
+        // Validate submitted collectionDate falls within the active cycle if provided.
+        // Active cycle: 6th of current month (YYYY-MM-06) → 5th of next month (YYYY-NM-05).
+        const body = SubmitCollectionSchema.parse(req.body);
+        if (body.collectionDate) {
+          const nextMonth = tm === 12 ? 1 : tm + 1;
+          const nextYear  = tm === 12 ? ty + 1 : ty;
+          const cycleStart = `${ty}-${String(tm).padStart(2, '0')}-06`;
+          const cycleEnd   = `${nextYear}-${String(nextMonth).padStart(2, '0')}-06`;
+          if (body.collectionDate < cycleStart || body.collectionDate > cycleEnd) {
+            throw new ValidationError(
+              `Collection date must be within the current cycle (${cycleStart} to ${cycleEnd}).`
+            );
+          }
+        }
+
+        const data = await MoneyService.submitCollection(fastify.db, req.user.id, body);
+        return reply.code(201).send({ success: true, data });
+      }
+
       const body = SubmitCollectionSchema.parse(req.body);
       const data = await MoneyService.submitCollection(fastify.db, req.user.id, body);
       return reply.code(201).send({ success: true, data });

@@ -518,8 +518,8 @@ export const AttendanceService = {
 
     // Round 1: fetch filtered user list, requester's today record, and monthly stats in parallel.
     // today and myMonth only depend on requesterId/date — independent of scopeUserIds.
-    const fetchToday = requesterRole !== 'branch_admin';
-    const fetchMyMonth = requesterRole !== 'branch_admin' && requesterRole !== 'md';
+    const fetchToday = true; // all roles including branch_admin mark their own attendance
+    const fetchMyMonth = requesterRole !== 'md';
 
     const [filterResult, rawTodayResult, rawMonthResult] = await Promise.all([
       db.query(
@@ -593,7 +593,7 @@ export const AttendanceService = {
 
     // Monthly aggregate for the requester's own record.
     // Used by the "Your Month at a Glance" stats grid on the employee home tab.
-    // Not computed for branch_admin (they don't have their own attendance record in this context).
+    // Not computed for md — the command center has no personal monthly stats grid.
     let myMonth: { present: number; absent: number; field: number } | null =
       fetchMyMonth && rawMonthResult ? rawMonthResult.rows[0] : null;
 

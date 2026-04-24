@@ -519,7 +519,7 @@ export const UserManagement = () => {
               : `${editOversightUser?.role?.replace(/_/g, ' ')} · select all branches this person oversees`}
           </p>
           {editOversightUser?.role === 'director' ? (
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
               {gmOptions.map((gm) => (
                 <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
                   <input
@@ -538,7 +538,7 @@ export const UserManagement = () => {
               )}
             </div>
           ) : (
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
               {branches.map((b) => (
                 <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
                   <input
@@ -598,11 +598,11 @@ export const UserManagement = () => {
               <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Full Name</label>
               <div className="relative">
                 <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-                <input 
+                <input
                   required
                   type="text"
                   placeholder="Enter full name..."
-                  className="w-full pl-12 pr-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 transition-all font-bold"
+                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
@@ -613,11 +613,11 @@ export const UserManagement = () => {
               <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-                <input 
+                <input
                   required
                   type="email"
                   placeholder="name@company.com"
-                  className="w-full pl-12 pr-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 transition-all font-bold"
+                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                 />
@@ -628,7 +628,7 @@ export const UserManagement = () => {
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Role</label>
                 <select
-                  className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
+                  className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value, branchId: '', managerId: '', oversightBranchIds: [], oversightGmIds: [] })}
                 >
@@ -644,7 +644,7 @@ export const UserManagement = () => {
                   </label>
                   <select
                     required={MANAGER_REQUIRED.has(formData.role)}
-                    className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
+                    className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                     value={formData.managerId}
                     onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
                   >
@@ -667,7 +667,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Assigned GMs <span className="text-red-400">*</span>
                   </label>
-                  <div className="max-h-40 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
                     {gmOptions.map((gm) => (
                       <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
                         <input
@@ -697,7 +697,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Oversight Branches <span className="text-red-400">*</span>
                   </label>
-                  <div className="max-h-40 overflow-y-auto rounded-xl bg-navy/[0.03] p-3 space-y-2">
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
                     {branches.map((b) => (
                       <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
                         <input
@@ -725,7 +725,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Branch Assignment</label>
                   <select
                     required
-                    className="w-full px-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 transition-all cursor-pointer"
+                    className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                     value={formData.branchId}
                     onChange={(e) => setFormData({ ...formData, branchId: e.target.value, managerId: '' })}
                   >
@@ -741,19 +741,19 @@ export const UserManagement = () => {
                 <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Access Password</label>
                 <div className="relative">
                   <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/20" size={18} />
-                  <input 
+                  <input
                     required
                     type="password"
                     placeholder="Set password..."
-                    className="w-full pl-12 pr-4 py-3.5 bg-navy/[0.03] border-none rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 transition-all font-bold"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                     value={formData.password}
                     onChange={(e) => setFormData({...formData, password: e.target.value})}
                   />
                 </div>
               </div>
 
-              <div 
-                className="space-y-1.5 flex flex-col justify-center bg-navy/[0.03] rounded-xl px-4 mt-5 cursor-pointer select-none transition-colors hover:bg-navy/[0.05]" 
+              <div
+                className="space-y-1.5 flex flex-col justify-center bg-white border border-navy/8 rounded-xl px-4 mt-5 cursor-pointer select-none transition-colors hover:bg-navy/[0.02]"
                 onClick={() => setFormData({...formData, hasSmartphone: !formData.hasSmartphone})}
               >
                 <div className="flex items-center justify-between">

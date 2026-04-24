@@ -6,7 +6,7 @@ import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Loader2, Clock, AlertCircle,
   Briefcase, TrendingUp, Building2, AlertTriangle,
-  BarChart3, PenLine, MapPin
+  BarChart3, PenLine, MapPin, ArrowUpRight, Gem
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -41,10 +41,22 @@ export const MoneyManagementPage = () => {
   const { data: adminOverview, isLoading: isOverviewLoading } = useGetMoneyAdminOverviewQuery({}, { skip: user?.role !== 'md' });
   const { data: drilldown, isLoading: isDrilldownLoading } = useGetMoneyBranchDrilldownQuery(drillBranchId, { skip: !drillBranchId });
 
-  // Collections — used on home to detect pending approvals
+  // Collections — used on home to detect pending approvals for non-MD roles
   const { data: collectionsResult } = useGetMoneyCollectionsQuery(undefined, { skip: user?.role === 'md' });
   const collections = collectionsResult?.data || [];
-  const pendingToVerify = collections.filter(c => c.status === 'pending' && c.assigned_verifier_id === user?.id);
+  const pendingToVerify = collections.filter(c => c.status === 'pending' && c.assigned_verifier_id === user?.id && c.mode !== 'cash_transfer');
+  const pendingCashTransfers = collections.filter(c => c.status === 'pending' && c.mode === 'cash_transfer' && (c.assigned_verifier_id === user?.id || c.user_id === user?.id));
+
+  // MD pending: cash_transfers assigned to MD are excluded from the admin overview "Pending"
+  // KPI (to avoid double-counting). Fetch them separately so MD still sees a notification.
+  const { data: mdPendingResult } = useGetMoneyCollectionsQuery(
+    { status: 'pending' },
+    { skip: user?.role !== 'md' }
+  );
+  // MD sees ALL pending cash transfers system-wide (in-transit visibility)
+  const mdPendingToVerify = (mdPendingResult?.data || []).filter(
+    c => c.mode === 'cash_transfer'
+  );
 
   // Wallet — used on home to show available total
   const { data: walletItems = [] } = useGetMoneyWalletQuery(undefined, {
@@ -336,6 +348,47 @@ export const MoneyManagementPage = () => {
             </button>
           </div>
 
+          {/* Pending cash transfers assigned to MD — always visible, not counted in collection totals */}
+          <div className="px-4 mb-6">
+            <button
+              onClick={() => navigate('/money/pending-transfers')}
+              className={`w-full rounded-[28px] p-5 tactile-press group text-left space-y-3 border ${
+                mdPendingToVerify.length > 0
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-white border-navy/5 card-shadow'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
+                    mdPendingToVerify.length > 0 ? 'bg-amber-100' : 'bg-navy/5'
+                  }`}>
+                    <ArrowUpRight size={20} className={mdPendingToVerify.length > 0 ? 'text-amber-600' : 'text-navy/40'} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-navy">Pending Cash Transfers</p>
+                    <p className="text-[10px] font-medium text-navy/40">
+                      {mdPendingToVerify.length > 0
+                        ? `${mdPendingToVerify.length} transfer${mdPendingToVerify.length > 1 ? 's' : ''} awaiting your approval`
+                        : 'No pending transfers right now'}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className={`group-hover:translate-x-1 transition-transform shrink-0 ${mdPendingToVerify.length > 0 ? 'text-amber-400' : 'text-navy/20'}`} />
+              </div>
+              {mdPendingToVerify.length > 0 && (
+                <div className="flex items-center justify-between border-t border-amber-200/60 pt-3">
+                  <p className="text-xl font-bold text-amber-700">
+                    ₹{mdPendingToVerify.reduce((s, c) => s + parseFloat(c.amount), 0).toLocaleString()}
+                  </p>
+                  <span className="text-[9px] font-bold text-amber-500 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full uppercase tracking-wider">
+                    Not counted in totals
+                  </span>
+                </div>
+              )}
+            </button>
+          </div>
+
           <AdminOverviewContent />
         </motion.div>
 
@@ -585,6 +638,23 @@ export const MoneyManagementPage = () => {
               </button>
             )}
 
+            <button onClick={() => navigate('/money/pending-transfers')} className={`p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border ${pendingCashTransfers.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-navy/5'}`}>
+              <div className="relative z-10 w-3/4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform ${pendingCashTransfers.length > 0 ? 'bg-amber-100 text-amber-600' : 'bg-navy/5 text-navy/40'}`}>
+                  <ArrowUpRight size={24} />
+                </div>
+                <p className="text-xl font-bold text-navy mb-1">Cash Transfers</p>
+                <p className="text-xs font-medium text-navy/40">
+                  {pendingCashTransfers.length > 0
+                    ? `${pendingCashTransfers.length} transfer${pendingCashTransfers.length > 1 ? 's' : ''} awaiting your approval`
+                    : 'No pending cash transfers'}
+                </p>
+              </div>
+              <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center mt-2 transition-colors ${pendingCashTransfers.length > 0 ? 'bg-amber-100 group-hover:bg-amber-200' : 'bg-navy/5 group-hover:bg-navy/10'}`}>
+                <ArrowRight size={20} className={pendingCashTransfers.length > 0 ? 'text-amber-600' : 'text-navy/40'} />
+              </div>
+            </button>
+
             {user?.role !== 'md' && (
               <button onClick={() => navigate('/money/wallet')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
                 <div className="relative z-10 w-3/4">
@@ -599,6 +669,21 @@ export const MoneyManagementPage = () => {
                 </div>
               </button>
             )}
+
+            {/* Gold Savings Scheme — visible to branch_admin and managers */}
+            <button onClick={() => navigate('/gold')} className="bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+              <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
+              <div className="relative z-10 w-3/4">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
+                  <Gem size={24} />
+                </div>
+                <p className="text-xl font-bold text-white mb-1">Gold Scheme</p>
+                <p className="text-xs font-medium text-white/70">12-month savings scheme members</p>
+              </div>
+              <div className="relative z-10 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mt-2 group-hover:bg-white/30 transition-colors">
+                <ArrowRight size={20} className="text-white" />
+              </div>
+            </button>
           </div>
         </motion.div>
       </motion.div>

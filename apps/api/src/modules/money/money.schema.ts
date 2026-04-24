@@ -12,6 +12,9 @@ export const SubmitCollectionSchema = z.object({
   clientPhone: z.string().min(1).max(20),
   photoKey: z.string().optional(),
   handedOverTo: z.string().uuid().optional(),
+  // Optional override for branch_admin — must be within the active cycle (6th of
+  // current month → 5th of next month). Defaults to current server time if omitted.
+  collectionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
 }).superRefine((data, ctx) => {
   // For non-cash modes, a photo receipt is always required.
   // For cash, handedOverTo is optional — omitting it means the collector keeps

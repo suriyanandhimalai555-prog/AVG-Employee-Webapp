@@ -4,9 +4,10 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, XCircle, CheckCircle2, DollarSign, Image as ImageIcon,
-  ChevronRight, Loader2, Send, Wallet, ArrowUpRight
+  ChevronRight, Loader2, Send, Wallet, ArrowUpRight, CalendarClock
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
+import { getISTToday } from '../lib/date';
 import {
   useGetMoneyProjectsQuery,
   useGetUserSuperiorsQuery,
@@ -18,8 +19,35 @@ export const MoneySubmitPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
+  // Cycle restriction for branch_admin: submissions allowed only on day 6+ of each month.
+  // Active cycle: 6th of current month → 5th of next month. Days 1–5 are outside.
+  const cycleInfo = (() => {
+    if (user?.role !== 'branch_admin') return null;
+    const today = getISTToday(); // YYYY-MM-DD
+    const [year, month, dayStr] = today.split('-');
+    const day = parseInt(dayStr, 10);
+    const y = parseInt(year, 10);
+    const m = parseInt(month, 10);
+    const nextMonth = m === 12 ? 1 : m + 1;
+    const nextYear = m === 12 ? y + 1 : y;
+    const nm = String(nextMonth).padStart(2, '0');
+    const ny = String(nextYear);
+    // cycleStartStr: first valid date (6th of current month)
+    const cycleStartStr = `${year}-${month}-06`;
+    // cycleEndMaxStr: last valid date for the picker (6th of next month, inclusive)
+    const cycleEndMaxStr = `${ny}-${nm}-06`;
+    // cycleEndDisplayStr: same as max — shown in the banner
+    const cycleEndDisplayStr = `${ny}-${nm}-06`;
+    const isOutsideCycle = day < 6;
+    return { isOutsideCycle, cycleStartStr, cycleEndMaxStr, cycleEndDisplayStr, today };
+  })();
+  const isBlockedByCycle = cycleInfo?.isOutsideCycle === true;
+
   const { data: projects = [] } = useGetMoneyProjectsQuery();
-  const { data: superiors = [] } = useGetUserSuperiorsQuery(undefined, { skip: user?.role === 'md' });
+  // branch_admin has no manager hierarchy — skip superiors query entirely
+  const { data: superiors = [] } = useGetUserSuperiorsQuery(undefined, {
+    skip: user?.role === 'md' || user?.role === 'branch_admin',
+  });
   const [submitCollection, { isLoading: isSubmitting }] = useSubmitMoneyCollectionMutation();
   const [getUploadUrl] = useGetMoneyUploadUrlMutation();
 
@@ -31,6 +59,7 @@ export const MoneySubmitPage = () => {
     clientPhone: '',
     handedOverTo: '',
     keepInWallet: true, // cash default: keep in own wallet
+    collectionDate: getISTToday(), // used only by branch_admin date picker
   });
   const [fieldPhoto, setFieldPhoto] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -92,7 +121,9 @@ export const MoneySubmitPage = () => {
         handedOverTo: formState.mode === 'cash' && !formState.keepInWallet
           ? formState.handedOverTo
           : undefined,
-        photoKey
+        photoKey,
+        // branch_admin picks a specific date within the cycle; others always use server time
+        collectionDate: user?.role === 'branch_admin' ? formState.collectionDate : undefined,
       }).unwrap();
 
       setSuccessMsg(
@@ -101,7 +132,7 @@ export const MoneySubmitPage = () => {
           : 'Collection submitted successfully!'
       );
       setTimeout(() => {
-        setFormState({ projectId: '', amount: '', mode: 'cash', clientName: '', clientPhone: '', handedOverTo: '', keepInWallet: true });
+        setFormState({ projectId: '', amount: '', mode: 'cash', clientName: '', clientPhone: '', handedOverTo: '', keepInWallet: true, collectionDate: getISTToday() });
         setFieldPhoto(null);
         setSuccessMsg(null);
         navigate('/money');
@@ -126,6 +157,27 @@ export const MoneySubmitPage = () => {
         </button>
         <h3 className="text-lg font-bold text-navy ml-4">Submit Entry</h3>
       </div>
+
+      {/* Cycle info banner — always visible for branch_admin */}
+      {cycleInfo && (
+        <div className={`p-4 rounded-2xl border flex items-start gap-3 ${cycleInfo.isOutsideCycle ? 'bg-amber-50 border-amber-200' : 'bg-indigo/5 border-indigo/10'}`}>
+          <CalendarClock size={16} className={`shrink-0 mt-0.5 ${cycleInfo.isOutsideCycle ? 'text-amber-600' : 'text-indigo'}`} />
+          <div>
+            {cycleInfo.isOutsideCycle ? (
+              <>
+                <p className="text-xs font-bold text-amber-700">Outside submission cycle</p>
+                <p className="text-[10px] text-amber-600 mt-0.5 leading-relaxed">
+                  Entries are allowed from the 6th of each month. The next cycle opens on <strong>{cycleInfo.cycleStartStr}</strong>.
+                </p>
+              </>
+            ) : (
+              <p className="text-[10px] text-indigo font-bold leading-relaxed">
+                Current cycle: <strong>{cycleInfo.cycleStartStr}</strong> → <strong>{cycleInfo.cycleEndDisplayStr}</strong>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {(formError || successMsg) && (
@@ -182,6 +234,23 @@ export const MoneySubmitPage = () => {
             </div>
           </div>
 
+          {/* Collection Date — branch_admin only, constrained to active cycle */}
+          {user?.role === 'branch_admin' && !isBlockedByCycle && cycleInfo && (
+            <div className="bg-white rounded-[24px] p-4 shadow-sm border">
+              <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Collection Date</p>
+              <input
+                type="date"
+                required
+                min={cycleInfo.cycleStartStr}
+                max={cycleInfo.cycleEndMaxStr}
+                className="w-full text-sm font-bold bg-transparent outline-none text-navy"
+                value={formState.collectionDate}
+                onChange={e => setFormState({...formState, collectionDate: e.target.value})}
+              />
+              <p className="text-[9px] text-navy/30 mt-1">Dates outside the cycle are not selectable.</p>
+            </div>
+          )}
+
           {/* Project */}
           <div className="bg-white rounded-[24px] p-4 shadow-sm border relative">
             <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Assigned Project</p>
@@ -197,8 +266,8 @@ export const MoneySubmitPage = () => {
             <div className="absolute right-4 top-1/2 mt-1 pointer-events-none"><ChevronRight size={16} className="text-navy/20 rotate-90" /></div>
           </div>
 
-          {/* Cash destination toggle */}
-          {formState.mode === 'cash' && (
+          {/* Cash destination toggle — branch_admin always keeps cash in wallet (no hand-over chain) */}
+          {formState.mode === 'cash' && user?.role !== 'branch_admin' && (
             <div className="space-y-3">
               <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30 px-1">Cash goes to</p>
               <div className="grid grid-cols-2 gap-3">
@@ -268,6 +337,14 @@ export const MoneySubmitPage = () => {
             </div>
           )}
 
+          {/* Branch admin cash info label */}
+          {formState.mode === 'cash' && user?.role === 'branch_admin' && (
+            <div className="flex items-center gap-3 p-4 bg-indigo/5 border border-indigo/10 rounded-2xl">
+              <Wallet size={16} className="text-indigo shrink-0" />
+              <p className="text-xs font-bold text-indigo">Cash will be added to your wallet.</p>
+            </div>
+          )}
+
           {formState.mode !== 'cash' && (
             <div className="bg-white rounded-3xl p-6 shadow-sm border flex flex-col items-center justify-center">
               <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handlePhotoCapture} className="hidden" />
@@ -289,7 +366,7 @@ export const MoneySubmitPage = () => {
         </div>
 
         <button
-          disabled={isSubmitting || isUploading}
+          disabled={isSubmitting || isUploading || isBlockedByCycle}
           type="submit"
           className="w-full p-5 rounded-[24px] gradient-primary text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
         >

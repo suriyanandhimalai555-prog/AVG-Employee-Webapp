@@ -20,14 +20,15 @@ const MODE_LABELS = {
 };
 
 const PhotoViewer = ({ photoKey }) => {
-  const { data: photoUrl, isLoading } = useGetMoneyPhotoUrlQuery(photoKey, { skip: !photoKey });
-  
+  const { data, isLoading } = useGetMoneyPhotoUrlQuery(photoKey, { skip: !photoKey });
+
   if (!photoKey) return null;
   if (isLoading) return <div className="w-full aspect-video bg-navy/5 animate-pulse rounded-2xl" />;
-  
+  if (!data?.url) return null;
+
   return (
     <div className="w-full aspect-video bg-navy/5 rounded-2xl overflow-hidden mt-3 border border-navy/10">
-      <img src={photoUrl} alt="Receipt" className="w-full h-full object-contain" />
+      <img src={data.url} alt="Receipt" className="w-full h-full object-contain" />
     </div>
   );
 };
@@ -41,8 +42,10 @@ export const AlertsTab = () => {
   const [rejectionNote, setRejectionNote] = useState('');
   const [inspectingId, setInspectingId] = useState(null);
 
-  // Filter so we ONLY see alerts where the current user is the specific VERIFIER requested
-  const pendingAlerts = (collectionsResult?.data || []).filter(c => c.assigned_verifier_id === user?.id);
+  // Filter to alerts where the current user is the verifier, newest first
+  const pendingAlerts = [...(collectionsResult?.data || [])]
+    .filter(c => c.assigned_verifier_id === user?.id)
+    .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
 
   const handleVerify = async (id, status) => {
     if (status === 'rejected' && !rejectionNote.trim()) return alert('Rejection note is required.');

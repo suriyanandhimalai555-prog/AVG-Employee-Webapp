@@ -8,6 +8,7 @@ import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { AdminDashboard } from '../AdminDashboard';
 import { useCheckIn } from './hooks/useCheckIn';
 import { useSignOff } from './hooks/useSignOff';
+import { useAttendanceSocket } from './hooks/useAttendanceSocket';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetHistoryQuery } from '../../store/api/apiSlice';
 
@@ -17,6 +18,10 @@ const ROLES_WITH_OWN_CALENDAR = ['abm', 'branch_manager', 'gm', 'director', 'oa'
 export const AttendanceTab = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
+
+  // Keep a live socket connection on this route so that 202 (queued) mutations
+  // — adminMark, adminSignOff — get their cache invalidated when the worker confirms.
+  useAttendanceSocket();
 
   const nowDate = new Date();
   const [calMonth, setCalMonth] = useState(nowDate.getMonth() + 1);

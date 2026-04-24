@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -216,7 +216,9 @@ export const apiSlice = createApi({
         body: data,
       }),
       transformResponse: (response) => response.data,
-      invalidatesTags: ['Attendance', 'Summary', 'Employees'],
+      // Returns 202 (queued) — cache invalidation happens via useAttendanceSocket
+      // on attendance:confirmed. Invalidating immediately causes stale-cache flicker
+      // because the worker hasn't written to DB yet.
     }),
 
     // Employee self sign-off (clock-out) — returns 202 like submitAttendance
@@ -421,6 +423,65 @@ export const apiSlice = createApi({
       invalidatesTags: ['MoneyCollections', 'MoneyWallet'],
     }),
 
+    // ─── Gold Savings Scheme ───
+
+    getGoldMembers: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status)     qs.set('status', params.status);
+        if (params.referrerId) qs.set('referrerId', params.referrerId);
+        if (params.search)     qs.set('search', params.search);
+        if (params.page)       qs.set('page', String(params.page));
+        if (params.limit)      qs.set('limit', String(params.limit));
+        const q = qs.toString();
+        return `/gold${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['GoldMembers'],
+    }),
+
+    getGoldMember: builder.query({
+      query: (id) => `/gold/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldMembers'],
+    }),
+
+    addGoldMember: builder.mutation({
+      query: (data) => ({ url: '/gold', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldMembers', 'GoldSummary'],
+    }),
+
+    updateGoldMemberStatus: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/status`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldMembers', 'GoldSummary'],
+    }),
+
+    getGoldEmployees: builder.query({
+      query: () => '/gold/employees',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldEmployees'],
+    }),
+
+    getGoldSummary: builder.query({
+      query: () => '/gold/summary',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldSummary'],
+    }),
+
+    getGoldPayments: builder.query({
+      query: (memberId) => `/gold/${memberId}/payments`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, memberId) => [{ type: 'GoldPayments', id: memberId }],
+    }),
+
+    addGoldPayment: builder.mutation({
+      query: ({ memberId, ...data }) => ({ url: `/gold/${memberId}/payments`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { memberId }) => [{ type: 'GoldPayments', id: memberId }, 'GoldMembers'],
+    }),
+
     // ─── User Management (Staff & Admins) ───
     getUserSuperiors: builder.query({
       query: () => '/users/superiors',
@@ -553,4 +614,12 @@ export const {
   useGetUserDocumentsQuery,
   useGetDeactivatedUsersQuery,
   useReactivateUserMutation,
+  useGetGoldMembersQuery,
+  useGetGoldMemberQuery,
+  useAddGoldMemberMutation,
+  useUpdateGoldMemberStatusMutation,
+  useGetGoldEmployeesQuery,
+  useGetGoldSummaryQuery,
+  useGetGoldPaymentsQuery,
+  useAddGoldPaymentMutation,
 } = apiSlice;

@@ -108,13 +108,21 @@ export const MoneyService = {
       }
     } else {
       // mode is gpay or bank_receipt -> direct manager verifies
-      const userResult = await db.query('SELECT manager_id, role FROM users WHERE id = $1', [userId]);
+      const userResult = await db.query('SELECT manager_id, role, branch_id FROM users WHERE id = $1', [userId]);
       if (userResult.rows.length === 0) throw new NotFoundError('User not found');
 
-      const { manager_id, role } = userResult.rows[0];
+      const { manager_id, role, branch_id } = userResult.rows[0];
       if (!manager_id) {
         if (role === 'md') {
           assignedVerifierId = userId;
+        } else if (role === 'branch_admin') {
+          // Branch admin has no manager_id — assign to the branch_manager of their branch.
+          // The branch_manager reviews the screenshot proof. If no BM exists yet, self-assign.
+          const bmResult = await db.query(
+            `SELECT id FROM users WHERE branch_id = $1 AND role = 'branch_manager' AND is_active = true LIMIT 1`,
+            [branch_id]
+          );
+          assignedVerifierId = bmResult.rows.length > 0 ? bmResult.rows[0].id : userId;
         } else {
           throw new ConflictError('You do not have a direct manager assigned to verify this transaction.');
         }
@@ -123,14 +131,17 @@ export const MoneyService = {
       }
     }
 
-    // Insert collection — self-held cash is auto-approved so it lands in the wallet immediately
+    // Insert collection — self-held cash is auto-approved so it lands in the wallet immediately.
+    // collectionDate (YYYY-MM-DD) is set by branch_admin to backdate within the active cycle;
+    // all other roles always use NOW() as submitted_at.
     const result = await db.query(
       `INSERT INTO money_collections (
         user_id, project_id, amount, mode, client_name, client_phone, photo_key,
-        assigned_verifier_id, status, verified_at
+        assigned_verifier_id, status, verified_at, submitted_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
         CASE WHEN $9 THEN 'approved'::text ELSE 'pending'::text END,
-        CASE WHEN $9 THEN NOW() ELSE NULL END
+        CASE WHEN $9 THEN NOW() ELSE NULL END,
+        COALESCE($10::date, NOW())
       ) RETURNING *`,
       [
         userId,
@@ -142,6 +153,7 @@ export const MoneyService = {
         payload.photoKey || null,
         assignedVerifierId,
         selfHeld,
+        payload.collectionDate || null,
       ]
     );
 

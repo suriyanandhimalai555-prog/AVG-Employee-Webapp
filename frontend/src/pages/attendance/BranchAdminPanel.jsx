@@ -12,7 +12,8 @@ import { useAdminAttendance } from './hooks/useAdminAttendance';
 import { useCheckIn } from './hooks/useCheckIn';
 import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetEmployeesQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
+import { useGetEmployeesQuery, useGetSummaryQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
+import { StatsGrid } from '../../components/attendance/StatsGrid';
 
 
 const FILTERS = [
@@ -55,6 +56,11 @@ export const BranchAdminPanel = () => {
     clearCheckInError,
   } = useCheckIn();
 
+  const { data: summary, isLoading: summaryLoading } = useGetSummaryQuery(
+    { viewerId: user?.id },
+    { skip: !user?.id },
+  );
+
   // Self sign-off hook — branch admin clocks out for themselves from this panel
   const {
     isSubmitting: isSigningOff,
@@ -79,13 +85,11 @@ export const BranchAdminPanel = () => {
   } = useAdminAttendance();
 
   // No-smartphone employees with no check-in yet — need to be marked
-  const needsMark = employees.filter((e) => !e.has_smartphone && !e.status);
+  const needsMark = employees.filter((e) => e.has_smartphone === false && !e.status);
   // No-smartphone employees who are present but haven't signed off yet
   const needsSignOff = employees.filter(
-    (e) => !e.has_smartphone && e.status === 'present' && e.check_in_time && !e.check_out_time
+    (e) => e.has_smartphone === false && e.status === 'present' && e.check_in_time && !e.check_out_time
   );
-  // Combined "needs action" count shown in section header
-  const needsAction = [...needsMark, ...needsSignOff.filter((e) => !needsMark.find((m) => m.id === e.id))];
 
   const handleAdminSignOff = async (emp) => {
     setAdminSignOffLoading(emp.id);
@@ -257,6 +261,9 @@ export const BranchAdminPanel = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Monthly stats grid ── */}
+        <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
 
         <div className="px-6 pb-32 space-y-8">
 
