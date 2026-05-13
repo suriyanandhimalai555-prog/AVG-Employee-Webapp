@@ -8,7 +8,6 @@ export const UserRole = z.enum([
   'branch_manager',
   'abm',
   'sales_officer',
-  'client',
   'branch_admin',
   'oa'
 ]);

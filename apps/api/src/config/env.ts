@@ -38,8 +38,11 @@ const envSchema = z.object({
 
   // Server Environment
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.preprocess((val) => Number(val), z.number().default(3000)),
+  PORT: z.preprocess((val) => Number(val), z.number().default(3001)),
   FRONTEND_URL: z.string().url(),
+
+  // Optional comma-separated CORS allowlist (e.g. "https://app.example.com,https://admin.example.com")
+  ALLOWED_ORIGINS: z.string().optional(),
 });
 
 // Infer the TypeScript type from the Zod schema for compile-time type safety

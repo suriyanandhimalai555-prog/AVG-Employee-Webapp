@@ -82,10 +82,7 @@ export const UserManagement = () => {
   const MANAGER_ROLES_UPFRONT = ['md', 'director', 'gm', 'branch_manager', 'abm', 'oa', 'branch_admin'];
   const { data: allUsers = [] } = useGetManagerOptionsQuery(MANAGER_ROLES_UPFRONT, { skip: !user?.id });
 
-  // Fetch SOs only when creating a client (lazy — avoids loading hundreds of SOs upfront)
-  const { data: salesOfficers = [] } = useGetManagerOptionsQuery(['sales_officer'], {
-    skip: !user?.id || formData.role !== 'client',
-  });
+  const salesOfficers = [];
 
   const { data: branches = [] } = useGetBranchesQuery();
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
@@ -124,18 +121,17 @@ export const UserManagement = () => {
     branch_manager: ['gm'],
     abm:            ['branch_manager'],
     sales_officer:  ['abm', 'oa', 'branch_admin'],
-    client:         ['sales_officer', 'abm', 'branch_manager'],
   };
 
   // Must stay in sync with MANAGER_REQUIRED_ROLES in hierarchy-policy.ts
-  const MANAGER_REQUIRED = new Set(['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'client']);
+  const MANAGER_REQUIRED = new Set(['director', 'gm', 'branch_manager', 'abm', 'sales_officer']);
 
   const needsManager = (role) => Boolean(MANAGER_ROLE_MAP[role]);
 
   // Roles whose MANAGERS live in the same branch (i.e. the manager has branch_id set).
   // branch_manager is intentionally excluded: its manager is a GM, and GMs are
   // oversight-based (branch_id = null). The backend validates GM-branch oversight separately.
-  const BRANCH_SCOPED_ROLES = new Set(['abm', 'sales_officer', 'client', 'oa']);
+  const BRANCH_SCOPED_ROLES = new Set(['abm', 'sales_officer', 'oa']);
 
   const managerOptions = (() => {
     if (!needsManager(formData.role)) return [];
@@ -286,13 +282,12 @@ export const UserManagement = () => {
     { value: 'abm', label: 'Assistant Branch Manager' },
     { value: 'oa', label: 'Operations Assistant' },
     { value: 'sales_officer', label: 'Sales Officer' },
-    { value: 'client', label: 'Client' },
   ];
 
   const creatableRoles = {
-    md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
-    gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
-    branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa', 'client'],
+    md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa'],
+    gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa'],
+    branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa'],
   };
 
   const roles = user?.role

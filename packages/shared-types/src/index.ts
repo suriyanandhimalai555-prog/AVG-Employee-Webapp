@@ -1,7 +1,18 @@
 // shared-types/src/index.ts
 
-// Define standard roles used across the entire workforce management platform
-export type Role = 'md' | 'director' | 'gm' | 'super_admin' | 'hr_manager' | 'branch_admin' | 'employee' | 'client';
+// Canonical role identifiers. Must stay in lockstep with the Zod enum at
+// apps/api/src/modules/users/user.schema.ts and the Role object in
+// apps/api/src/shared/role-constants.ts.
+export type Role =
+  | 'md'
+  | 'director'
+  | 'gm'
+  | 'branch_manager'
+  | 'abm'
+  | 'sales_officer'
+  | 'branch_admin'
+  | 'oa'
+  | 'client';
 
 // Define the core user profile object used in session management and UI display
 export interface UserProfile {

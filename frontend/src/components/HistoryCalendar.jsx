@@ -31,7 +31,7 @@ const pad  = (n) => String(n).padStart(2, '0');
 
 // mode='self'  → single-user records (default, Sales Officer behaviour unchanged)
 // mode='team'  → TeamHistoryDay aggregates; dot and detail panel show counts, not IN/OUT
-export const HistoryCalendar = ({ historyData = [], onDaySelect, mode = 'self' }) => {
+export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, mode = 'self' }) => {
   const today = new Date();
   const [viewDate, setViewDate]   = useState({ month: today.getMonth(), year: today.getFullYear() });
   const [selectedIso, setSelectedIso] = useState(getISTToday());
@@ -72,11 +72,15 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, mode = 'self' }
 
   const prevMonth = () => setViewDate(v => {
     const d = new Date(v.year, v.month - 1, 1);
-    return { month: d.getMonth(), year: d.getFullYear() };
+    const next = { month: d.getMonth(), year: d.getFullYear() };
+    onMonthChange?.({ month: next.month + 1, year: next.year });
+    return next;
   });
   const nextMonth = () => setViewDate(v => {
     const d = new Date(v.year, v.month + 1, 1);
-    return { month: d.getMonth(), year: d.getFullYear() };
+    const next = { month: d.getMonth(), year: d.getFullYear() };
+    onMonthChange?.({ month: next.month + 1, year: next.year });
+    return next;
   });
 
   const handleDayClick = (cell) => {

@@ -1,7 +1,5 @@
 // src/modules/attendance/attendance.routes.ts
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-// Import the Zod error class so we can detect validation failures in the catch block
-import { ZodError } from 'zod';
 // Import the AttendanceService object containing all business logic
 import { AttendanceService } from './attendance.service';
 import { AuthService } from '../auth/auth.service';
@@ -17,65 +15,12 @@ import {
   AdminSignOffSchema,
   SelfAbsentSchema,
 } from './attendance.schema';
-// Import the base error class to check if errors are our custom app errors
-import { AppError } from '../../shared/errors';
 // Import the timezone-aware date helper so the summary default date uses IST, not server UTC
 import { getCompanyToday } from '../../shared/date';
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SHARED ERROR HANDLER
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// Define a reusable function to handle all errors consistently across every route handler
-const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
-  // Check if the error is a Zod validation error (invalid request body or query params)
-  if (error instanceof ZodError) {
-    return reply.code(400).send({
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid input',
-        // Include the detailed list of field-level errors from Zod
-        details: error.issues,
-      },
-    });
-  }
-
-  // Check if the error is one of our custom AppError subclasses (has statusCode and code)
-  if (error instanceof AppError) {
-    return reply.code(error.statusCode).send({
-      success: false,
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    });
-  }
-
-  // If the error is unexpected, log it and return a generic 500 response
-  console.error('❌ Unexpected error:', error);
-  return reply.code(500).send({
-    success: false,
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    },
-  });
-};
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SHARED 403 RESPONSE HELPER
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-const sendForbidden = (reply: FastifyReply, message: string): FastifyReply => {
-  return reply.code(403).send({
-    success: false,
-    error: {
-      code: 'FORBIDDEN',
-      message,
-    },
-  });
-};
+// Shared error envelope + 403 helper, single source of truth for every module
+import { handleError, sendForbidden } from '../../shared/route-error-handler';
+// Canonical role identifiers — replaces hardcoded role arrays scattered across handlers
+import { Role, ADMIN_MARK_ROLES } from '../../shared/role-constants';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TYPE DECLARATION FOR request.user
@@ -98,8 +43,12 @@ interface AuthenticatedRequest extends FastifyRequest {
 export default async function attendanceRoutes(fastify: FastifyInstance): Promise<void> {
 
   // ─── POST / (Self-mark) ───
+  // Per-endpoint cap protects against rapid retap (e.g. user double-tapping submit
+  // when the network is slow). 6/min is generous for legitimate users — the dupe-guard
+  // key in Redis already ensures only one accepted submission per day.
   fastify.post('/', {
     onRequest: [fastify.authenticate],
+    config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
@@ -159,8 +108,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const allowedRoles = ['branch_admin', 'md', 'gm'];
-      if (!allowedRoles.includes(req.user.role)) {
+      if (!(ADMIN_MARK_ROLES as readonly string[]).includes(req.user.role)) {
         return sendForbidden(reply, 'You do not have permission to use this endpoint');
       }
 
@@ -443,8 +391,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const allowedRoles = ['branch_admin', 'md', 'gm'];
-      if (!allowedRoles.includes(req.user.role)) {
+      if (!(ADMIN_MARK_ROLES as readonly string[]).includes(req.user.role)) {
         return sendForbidden(reply, 'You do not have permission to use this endpoint');
       }
 
@@ -477,8 +424,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const allowedRoles = ['branch_admin', 'md', 'gm'];
-      if (!allowedRoles.includes(req.user.role)) {
+      if (!(ADMIN_MARK_ROLES as readonly string[]).includes(req.user.role)) {
         return sendForbidden(reply, 'You do not have permission to correct attendance records');
       }
 
@@ -510,7 +456,7 @@ export default async function attendanceRoutes(fastify: FastifyInstance): Promis
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'branch_admin') {
+      if (req.user.role !== Role.BRANCH_ADMIN) {
         return sendForbidden(reply, 'Only branch admins can manage smartphone status');
       }
 

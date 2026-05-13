@@ -234,6 +234,7 @@ export const HomeTab = () => {
                 setCalMonth(parseInt(mo));
                 setCalYear(parseInt(yr));
               }}
+              onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
         </>
@@ -260,6 +261,7 @@ export const HomeTab = () => {
                 setCalMonth(parseInt(mo));
                 setCalYear(parseInt(yr));
               }}
+              onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
         </>
@@ -286,6 +288,7 @@ export const HomeTab = () => {
                 setCalMonth(parseInt(mo));
                 setCalYear(parseInt(yr));
               }}
+              onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
         </>
@@ -329,6 +332,7 @@ export const HomeTab = () => {
               setCalMonth(parseInt(mo));
               setCalYear(parseInt(yr));
             }}
+            onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
       )}
@@ -416,6 +420,7 @@ export const HomeTab = () => {
               setCalMonth(parseInt(mo));
               setCalYear(parseInt(yr));
             }}
+            onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
       )}
@@ -468,6 +473,7 @@ export const HomeTab = () => {
               setCalMonth(parseInt(mo));
               setCalYear(parseInt(yr));
             }}
+            onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
       )}

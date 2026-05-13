@@ -91,6 +91,7 @@ export const EmployeeCalendarPage = () => {
         <HistoryCalendar
           historyData={historyData}
           onDaySelect={handleDaySelect}
+          onMonthChange={({ month, year }) => { setMonth(month); setYear(year); }}
         />
 
         {/* Field photo — shown when a field record with a photo_key is selected */}

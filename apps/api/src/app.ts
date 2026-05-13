@@ -23,6 +23,10 @@ import transactionRoutes from './modules/transactions/transaction.routes';
 import moneyRoutes from './modules/money/money.routes';
 import userRoutes from './modules/users/user.routes';
 import goldRoutes from './modules/gold/gold.routes';
+import incentiveRoutes from './modules/incentives/incentives.routes';
+import salaryRoutes from './modules/salaries/salaries.routes';
+import tradingAcademyRoutes from './modules/trading-academy/trading-academy.routes';
+import customerRoutes from './modules/customers/customers.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -44,9 +48,17 @@ const buildApp = async (): Promise<FastifyInstance> => {
   });
 
   // Step 2: Register Global CORS policy
-  // Allows the frontend to interact with the API securely
+  // Origin list comes from ALLOWED_ORIGINS (comma-separated), then FRONTEND_URL,
+  // then a localhost regex fallback for developer machines. No hardcoded prod URLs.
+  const allowedOrigins = (env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
   await app.register(fastifyCors, {
-    origin: [env.FRONTEND_URL, /^http:\/\/localhost:\d+$/],
+    origin: [
+      ...new Set([env.FRONTEND_URL, ...allowedOrigins]),
+      /^http:\/\/localhost:\d+$/,
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
@@ -130,6 +142,22 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the Gold Savings Scheme module (branch_admin writes, managers read)
   // Mounts under the '/api/gold' prefix
   await app.register(goldRoutes, { prefix: '/api/gold' });
+
+  // Register the Incentive Wallet module (managers credit, employees view own)
+  // Mounts under the '/api/incentives' prefix
+  await app.register(incentiveRoutes, { prefix: '/api/incentives' });
+
+  // Register the Salary Management module (MD/Director set, employees view own)
+  // Mounts under the '/api/salaries' prefix
+  await app.register(salaryRoutes, { prefix: '/api/salaries' });
+
+  // Register the Trading Academy scheme module (branch_admin writes, managers read)
+  // Mounts under the '/api/trading-academy' prefix
+  await app.register(tradingAcademyRoutes, { prefix: '/api/trading-academy' });
+
+  // Register the Customers module (search, create, view scheme history)
+  // Mounts under the '/api/customers' prefix
+  await app.register(customerRoutes, { prefix: '/api/customers' });
 
   return app;
 };

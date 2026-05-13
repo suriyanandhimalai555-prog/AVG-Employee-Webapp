@@ -51,9 +51,9 @@ export const PageHeader = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-navy/[0.06] px-5 h-[68px] flex items-center gap-3 transition-all duration-300">
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-xl border-b border-navy/[0.06] px-5 md:px-8 h-[68px] flex items-center gap-3 transition-all duration-300">
 
-        {/* ── Left: back button OR AVG brand ── */}
+        {/* ── Left: back button OR AVG brand (brand hidden on desktop — Sidebar owns it) ── */}
         {showBack ? (
           <button
             onClick={() => navigate(-1)}
@@ -62,7 +62,7 @@ export const PageHeader = () => {
             <ChevronLeft size={22} />
           </button>
         ) : (
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex md:hidden items-center gap-2.5 shrink-0">
             <div className="w-9 h-9 rounded-[14px] gradient-primary flex items-center justify-center shadow-lg shadow-indigo/30">
               <span className="text-white text-[10px] font-black tracking-tight leading-none select-none">AVG</span>
             </div>
@@ -89,8 +89,8 @@ export const PageHeader = () => {
           )}
         </div>
 
-        {/* ── Right: action buttons + avatar ── */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* ── Right: action buttons + avatar (hidden on desktop — Sidebar owns them) ── */}
+        <div className="flex md:hidden items-center gap-1.5 shrink-0">
           <button
             onClick={handleLogout}
             title="Logout"

@@ -10,6 +10,8 @@ import {
   useAddGoldMemberMutation,
   useGetGoldEmployeesQuery,
 } from '../store/api/apiSlice';
+import { CustomerPicker } from '../components/CustomerPicker';
+import { PeriodDateInput } from '../components/PeriodDateInput';
 
 const Field = ({ label, required, children }) => (
   <div className="space-y-1.5">
@@ -31,11 +33,9 @@ export const GoldSchemeAddPage = () => {
 
   const today = new Date().toISOString().split('T')[0];
 
+  const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     chitNumber:       '',
-    memberName:       '',
-    memberPhone:      '',
-    memberAddress:    '',
     referrerId:       '',
     monthlyAmount:    '',
     startDate:        today,
@@ -51,17 +51,16 @@ export const GoldSchemeAddPage = () => {
     e.preventDefault();
     setError(null);
 
-    if (!form.chitNumber || !form.memberName || !form.monthlyAmount || !form.startDate) {
-      setError('Chit number, name, monthly amount, and start date are required.');
+    if (!customer) { setError('Please select or create a customer.'); return; }
+    if (!form.chitNumber || !form.monthlyAmount || !form.startDate) {
+      setError('Chit number, monthly amount, and start date are required.');
       return;
     }
 
     try {
       await addMember({
         chitNumber:       form.chitNumber.trim(),
-        memberName:       form.memberName.trim(),
-        memberPhone:      form.memberPhone.trim() || undefined,
-        memberAddress:    form.memberAddress.trim() || undefined,
+        customerId:       customer.id,
         referrerId:       form.referrerId || undefined,
         monthlyAmount:    parseFloat(form.monthlyAmount),
         startDate:        form.startDate,
@@ -70,7 +69,7 @@ export const GoldSchemeAddPage = () => {
         notes:            form.notes.trim() || undefined,
       }).unwrap();
 
-      navigate('/gold');
+      navigate('/money/schemes/gold');
     } catch (err) {
       setError(err?.data?.error?.message || 'Failed to save member.');
     }
@@ -96,7 +95,7 @@ export const GoldSchemeAddPage = () => {
       {/* Header */}
       <div className="px-4 flex items-center gap-4 mb-6">
         <button
-          onClick={() => navigate('/gold')}
+          onClick={() => navigate('/money/schemes/gold')}
           className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press"
         >
           <ArrowRight className="rotate-180" size={20} />
@@ -108,6 +107,15 @@ export const GoldSchemeAddPage = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="px-4 space-y-5">
+
+        {/* Customer picker */}
+        <Field label="Customer" required>
+          <CustomerPicker
+            value={customer}
+            onChange={setCustomer}
+            onClear={() => setCustomer(null)}
+          />
+        </Field>
 
         {/* Chit number + Start date side by side */}
         <div className="grid grid-cols-2 gap-3">
@@ -121,47 +129,14 @@ export const GoldSchemeAddPage = () => {
             />
           </Field>
           <Field label="Start Date" required>
-            <input
-              type="date"
+            <PeriodDateInput
               value={form.startDate}
               onChange={set('startDate')}
               className={inputClass}
+              required
             />
           </Field>
         </div>
-
-        {/* Member name */}
-        <Field label="Member Name" required>
-          <input
-            type="text"
-            placeholder="Full name"
-            value={form.memberName}
-            onChange={set('memberName')}
-            className={inputClass}
-          />
-        </Field>
-
-        {/* Phone */}
-        <Field label="Contact Number">
-          <input
-            type="tel"
-            placeholder="Phone number"
-            value={form.memberPhone}
-            onChange={set('memberPhone')}
-            className={inputClass}
-          />
-        </Field>
-
-        {/* Address */}
-        <Field label="Address">
-          <input
-            type="text"
-            placeholder="City / Area"
-            value={form.memberAddress}
-            onChange={set('memberAddress')}
-            className={inputClass}
-          />
-        </Field>
 
         {/* Referrer */}
         <Field label="Referred By">
@@ -216,7 +191,7 @@ export const GoldSchemeAddPage = () => {
           </div>
         )}
 
-        {/* Month 1 payment mode — auto-recorded on save */}
+        {/* Month 1 payment mode */}
         <Field label="Month 1 Payment Mode" required>
           <div className="grid grid-cols-3 gap-2">
             {[['cash','Cash'],['gpay','GPay'],['bank_receipt','Bank']].map(([val, label]) => (

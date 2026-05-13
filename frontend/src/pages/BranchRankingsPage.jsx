@@ -198,8 +198,8 @@ export const BranchRankingsPage = () => {
                       <p className="text-base font-bold text-navy">{drillBranchName}</p>
                     </div>
                   </div>
-                  <button onClick={() => setDrillBranchId(null)} className="p-2 hover:bg-navy/5 rounded-full">
-                    <XCircle size={20} className="text-navy/30" />
+                  <button onClick={() => setDrillBranchId(null)} type="button" aria-label="Close branch detail" className="p-2 hover:bg-navy/5 rounded-full">
+                    <XCircle size={20} className="text-navy/30" aria-hidden="true" />
                   </button>
                 </div>
 

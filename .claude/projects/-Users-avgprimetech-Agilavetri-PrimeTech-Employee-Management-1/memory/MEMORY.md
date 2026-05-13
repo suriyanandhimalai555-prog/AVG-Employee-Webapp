@@ -1,0 +1,1 @@
+- [7-to-7 Business Calendar](project_7to7_calendar.md) — financial periods run 7th-6th, not traditional months

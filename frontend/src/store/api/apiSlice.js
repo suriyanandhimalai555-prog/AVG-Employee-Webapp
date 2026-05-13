@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -230,6 +230,9 @@ export const apiSlice = createApi({
         body: data,
       }),
       transformResponse: (response) => response.data,
+      // Socket pushes the canonical update, but invalidate as a safety net so the
+      // history view refreshes even when the socket connection is degraded.
+      invalidatesTags: ['Attendance', 'Summary'],
     }),
 
     // Admin sign-off on behalf of a no-smartphone employee
@@ -240,6 +243,7 @@ export const apiSlice = createApi({
         body: data,
       }),
       transformResponse: (response) => response.data,
+      invalidatesTags: ['Attendance', 'Summary'],
     }),
 
     adminCorrect: builder.mutation({
@@ -433,6 +437,8 @@ export const apiSlice = createApi({
         if (params.search)     qs.set('search', params.search);
         if (params.page)       qs.set('page', String(params.page));
         if (params.limit)      qs.set('limit', String(params.limit));
+        if (params.startDate)  qs.set('startDate', params.startDate);
+        if (params.endDate)    qs.set('endDate', params.endDate);
         const q = qs.toString();
         return `/gold${q ? `?${q}` : ''}`;
       },
@@ -465,7 +471,13 @@ export const apiSlice = createApi({
     }),
 
     getGoldSummary: builder.query({
-      query: () => '/gold/summary',
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/gold/summary${q ? `?${q}` : ''}`;
+      },
       transformResponse: (response) => response.data,
       providesTags: ['GoldSummary'],
     }),
@@ -480,6 +492,152 @@ export const apiSlice = createApi({
       query: ({ memberId, ...data }) => ({ url: `/gold/${memberId}/payments`, method: 'POST', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: (result, error, { memberId }) => [{ type: 'GoldPayments', id: memberId }, 'GoldMembers'],
+    }),
+
+    // ─── Incentive Wallet & Commission Rules ───
+
+    getCommissionRules: builder.query({
+      query: (projectId) => projectId ? `/incentives/rules/${projectId}` : '/incentives/rules',
+      transformResponse: (response) => response.data,
+      providesTags: ['CommissionRules'],
+    }),
+
+    setCommissionRule: builder.mutation({
+      query: (data) => ({ url: '/incentives/rules', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['CommissionRules'],
+    }),
+
+    distributeIncentives: builder.mutation({
+      query: (data) => ({ url: '/incentives/distribute', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Incentives', 'IncentiveWallet'],
+    }),
+
+    getIncentiveWallet: builder.query({
+      query: (params = {}) => {
+        const base = params?.userId ? `/incentives/wallet/${params.userId}` : '/incentives/wallet';
+        const qs = new URLSearchParams();
+        if (params?.startDate) qs.set('startDate', params.startDate);
+        if (params?.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `${base}${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['IncentiveWallet'],
+    }),
+
+    getIncentives: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.userId)     qs.set('userId', params.userId);
+        if (params.sourceType) qs.set('sourceType', params.sourceType);
+        if (params.page)       qs.set('page', String(params.page));
+        if (params.limit)      qs.set('limit', String(params.limit));
+        if (params.startDate)  qs.set('startDate', params.startDate);
+        if (params.endDate)    qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/incentives${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['Incentives'],
+    }),
+
+    addIncentive: builder.mutation({
+      query: (data) => ({ url: '/incentives', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Incentives', 'IncentiveWallet'],
+    }),
+
+    // ─── Trading Academy Scheme ───
+
+    getTradingMembers: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.search)    qs.set('search', params.search);
+        if (params.page)      qs.set('page', String(params.page));
+        if (params.limit)     qs.set('limit', String(params.limit));
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/trading-academy${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['TradingMembers'],
+    }),
+
+    getTradingSummary: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/trading-academy/summary${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['TradingSummary'],
+    }),
+
+    getTradingEmployees: builder.query({
+      query: () => '/trading-academy/employees',
+      transformResponse: (response) => response.data,
+      providesTags: ['Employees'],
+    }),
+
+    addTradingMember: builder.mutation({
+      query: (data) => ({ url: '/trading-academy', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet'],
+    }),
+
+    // ─── Customers ───
+
+    searchCustomers: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.search) qs.set('search', params.search);
+        if (params.page)   qs.set('page', String(params.page));
+        if (params.limit)  qs.set('limit', String(params.limit));
+        const q = qs.toString();
+        return `/customers${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['Customers'],
+    }),
+
+    createCustomer: builder.mutation({
+      query: (data) => ({ url: '/customers', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Customers'],
+    }),
+
+    getCustomer: builder.query({
+      query: (id) => `/customers/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, id) => [{ type: 'Customers', id }],
+    }),
+
+    // ─── Salary Management ───
+
+    getCurrentSalary: builder.query({
+      query: (userId) => userId ? `/salaries/${userId}` : '/salaries/me',
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, userId) => [{ type: 'Salaries', id: userId || 'me' }],
+    }),
+
+    getSalaryHistory: builder.query({
+      query: ({ userId, page = 1, limit = 50 }) => {
+        const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+        return `/salaries/${userId}/history?${qs}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: (result, error, { userId }) => [{ type: 'Salaries', id: userId }],
+    }),
+
+    setSalary: builder.mutation({
+      query: (data) => ({ url: '/salaries', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Salaries'],
     }),
 
     // ─── User Management (Staff & Admins) ───
@@ -622,4 +780,21 @@ export const {
   useGetGoldSummaryQuery,
   useGetGoldPaymentsQuery,
   useAddGoldPaymentMutation,
+  useGetTradingMembersQuery,
+  useGetTradingSummaryQuery,
+  useGetTradingEmployeesQuery,
+  useAddTradingMemberMutation,
+  useGetCommissionRulesQuery,
+  useSetCommissionRuleMutation,
+  useDistributeIncentivesMutation,
+  useGetIncentiveWalletQuery,
+  useGetIncentivesQuery,
+  useAddIncentiveMutation,
+  useGetCurrentSalaryQuery,
+  useGetSalaryHistoryQuery,
+  useSetSalaryMutation,
+  useSearchCustomersQuery,
+  useLazySearchCustomersQuery,
+  useCreateCustomerMutation,
+  useGetCustomerQuery,
 } = apiSlice;

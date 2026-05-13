@@ -37,9 +37,9 @@ export const UserService = {
     // GM: can create branch_manager, abm, sales_officer, branch_admin, client
     // Branch Admin: can create branch_manager, abm, sales_officer, client (own branch only)
     const creatableByRole: Record<string, string[]> = {
-      md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
-      gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa', 'client'],
-      branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa', 'client'],
+      md:           ['director', 'gm', 'branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa'],
+      gm:           ['branch_manager', 'abm', 'sales_officer', 'branch_admin', 'oa'],
+      branch_admin: ['branch_manager', 'abm', 'sales_officer', 'oa'],
     };
 
     const allowed = creatableByRole[requesterRole];
@@ -121,22 +121,6 @@ export const UserService = {
       }
     }
 
-    // If a GM reports to a Director via manager_id, persist the explicit GM↔Director link too.
-    // This keeps MD assignment UI (which reads gm_director_links) in sync with hierarchy creation.
-    if (payload.role === 'gm' && payload.managerId) {
-      const managerRoleResult = await db.query<{ role: string }>(
-        `SELECT role FROM users WHERE id = $1`,
-        [payload.managerId]
-      );
-      if (managerRoleResult.rows[0]?.role === 'director') {
-        await db.query(
-          `INSERT INTO gm_director_links (gm_id, director_id)
-           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [newUserId, payload.managerId]
-        );
-      }
-    }
-
     // Director gets assigned to selected GMs, then inherits the combined GM branch scope.
     if (payload.role === 'director' && payload.oversightGmIds?.length) {
       const gmValidation = await db.query<{ id: string }>(
@@ -149,14 +133,6 @@ export const UserService = {
       );
       if (gmValidation.rows.length !== payload.oversightGmIds.length) {
         throw new NotFoundError('One or more selected GMs were not found');
-      }
-
-      for (const gmId of payload.oversightGmIds) {
-        await db.query(
-          `INSERT INTO gm_director_links (gm_id, director_id)
-           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [gmId, newUserId]
-        );
       }
 
       const gmBranches = await db.query<{ branch_id: string }>(
@@ -294,19 +270,12 @@ export const UserService = {
     );
 
     const gmResult = await db.query(
-      `SELECT DISTINCT gm_id
-       FROM (
-         SELECT gdl.gm_id
-         FROM gm_director_links gdl
-         WHERE gdl.director_id = $1
-         UNION
-         SELECT u.id AS gm_id
-         FROM users u
-         WHERE u.role = 'gm'
-           AND u.manager_id = $1
-           AND u.is_active = true
-       ) x
-       ORDER BY gm_id`,
+      `SELECT id AS gm_id
+       FROM users
+       WHERE role = 'gm'
+         AND manager_id = $1
+         AND is_active = true
+       ORDER BY id`,
       [targetUserId]
     );
 
@@ -370,15 +339,7 @@ export const UserService = {
         }
       }
 
-      await db.query(`DELETE FROM gm_director_links WHERE director_id = $1`, [targetUserId]);
       await db.query(`DELETE FROM user_oversight_branches WHERE user_id = $1`, [targetUserId]);
-
-      for (const gmId of gmIds) {
-        await db.query(
-          `INSERT INTO gm_director_links (gm_id, director_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [gmId, targetUserId]
-        );
-      }
 
       if (gmIds.length > 0) {
         const gmBranches = await db.query<{ branch_id: string }>(

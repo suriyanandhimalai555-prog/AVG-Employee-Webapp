@@ -3,9 +3,7 @@ import { z } from 'zod';
 // Schema for adding a new gold scheme member (chit slot)
 export const AddGoldMemberSchema = z.object({
   chitNumber:       z.string().min(1).max(20),
-  memberName:       z.string().min(1).max(200),
-  memberPhone:      z.string().max(20).optional(),
-  memberAddress:    z.string().max(500).optional(),
+  customerId:       z.string().uuid(),             // must exist in customers table
   referrerId:       z.string().uuid().optional(),
   monthlyAmount:    z.number().positive().max(10_000_000),
   startDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),

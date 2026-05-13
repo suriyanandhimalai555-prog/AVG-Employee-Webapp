@@ -88,13 +88,6 @@ async function deleteAllExceptMdAndBranchManagers() {
       [deleteIds]
     );
 
-    const gmDirectorLinksResult = await pool.query(
-      `DELETE FROM gm_director_links
-       WHERE gm_id = ANY($1::uuid[])
-          OR director_id = ANY($1::uuid[])`,
-      [deleteIds]
-    );
-
     const branchUnlinkResult = await pool.query(
       `UPDATE branches
        SET gm_id = NULL, admin_id = NULL
@@ -128,7 +121,6 @@ async function deleteAllExceptMdAndBranchManagers() {
     console.log(`   transactions: ${transactionsResult.rowCount}`);
     console.log(`   messages: ${messagesResult.rowCount}`);
     console.log(`   oversight links: ${oversightResult.rowCount}`);
-    console.log(`   gm-director links: ${gmDirectorLinksResult.rowCount}`);
     console.log(`   branch unlink rows: ${branchUnlinkResult.rowCount}`);
     console.log(`   manager unlink rows: ${managerUnlinkResult.rowCount}`);
   } catch (error) {

@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Plus, Search, Loader2, Users } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import { useGetGoldMembersQuery, useGetGoldSummaryQuery } from '../store/api/apiSlice';
+import { SchemeCalendar } from '../components/SchemeCalendar';
+import { getCurrentPeriod } from '../lib/schemePeriod';
 
 const STATUS_STYLES = {
   active:    'text-emerald-600 bg-emerald-50',
@@ -12,20 +14,30 @@ const STATUS_STYLES = {
   withdrawn: 'text-red-500 bg-red-50',
 };
 
+const REFERRER_ROLES = new Set(['sales_officer', 'abm', 'branch_manager', 'gm']);
+
 export const GoldSchemePage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
+  const isReferrerView = REFERRER_ROLES.has(user?.role);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [period, setPeriod] = useState(getCurrentPeriod);
 
+  // Backend auto-forces referrerId = user.id for referrer roles — no need to pass it from frontend
   const { data: membersResult, isLoading } = useGetGoldMembersQuery({
     status: statusFilter === 'all' ? undefined : statusFilter,
     search: search || undefined,
     limit: 200,
+    startDate: period.startDate,
+    endDate: period.endDate,
   });
-  const { data: summary } = useGetGoldSummaryQuery();
+  const { data: summary } = useGetGoldSummaryQuery({
+    startDate: period.startDate,
+    endDate: period.endDate,
+  });
   const members = membersResult?.data || [];
 
   const handleSearch = (e) => {
@@ -42,18 +54,27 @@ export const GoldSchemePage = () => {
     >
       {/* Header */}
       <div className="px-4 flex items-center gap-4 mb-5">
-        <button onClick={() => navigate('/money')} className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press">
-          <ArrowRight className="rotate-180" size={20} />
+        <button onClick={() => navigate('/money/schemes')} type="button" aria-label="Back to schemes" className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press">
+          <ArrowRight className="rotate-180" size={20} aria-hidden="true" />
         </button>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold text-navy tracking-tight">Gold Savings Scheme</h2>
-          <p className="text-[11px] font-medium text-navy/40 mt-0.5">12-month savings scheme members</p>
+          <h2 className="text-2xl font-bold text-navy tracking-tight">
+            {isReferrerView ? 'My Referrals' : 'Gold Savings Scheme'}
+          </h2>
+          <p className="text-[11px] font-medium text-navy/40 mt-0.5">
+            {isReferrerView ? 'Gold scheme · customers you referred' : '12-month savings scheme members'}
+          </p>
         </div>
         {user?.role === 'branch_admin' && (
-          <button onClick={() => navigate('/gold/add')} className="w-10 h-10 rounded-2xl bg-indigo flex items-center justify-center text-white shadow-md tactile-press">
-            <Plus size={20} />
+          <button onClick={() => navigate('/money/schemes/gold/add')} type="button" aria-label="Add gold scheme member" className="w-10 h-10 rounded-2xl bg-indigo flex items-center justify-center text-white shadow-md tactile-press">
+            <Plus size={20} aria-hidden="true" />
           </button>
         )}
+      </div>
+
+      {/* Period picker */}
+      <div className="px-4 mb-5">
+        <SchemeCalendar compact onPeriodChange={setPeriod} />
       </div>
 
       {/* Summary strip */}
@@ -61,10 +82,10 @@ export const GoldSchemePage = () => {
         <div className="px-4 mb-5">
           <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
             {[
-              { label: 'Total',     val: summary.totalChits },
-              { label: 'Active',    val: summary.activeChits,    cls: 'text-emerald-600' },
-              { label: 'Done',      val: summary.completedChits, cls: 'text-indigo' },
-              { label: 'Monthly',   val: `₹${(summary.monthlyCommitment||0).toLocaleString()}`, cls: 'text-amber-600' },
+              { label: 'Total',   val: summary.totalChits },
+              { label: 'Active',  val: summary.activeChits,    cls: 'text-emerald-600' },
+              { label: 'Done',    val: summary.completedChits, cls: 'text-indigo' },
+              { label: 'Monthly', val: `₹${(summary.monthlyCommitment||0).toLocaleString()}`, cls: 'text-amber-600' },
             ].map(({ label, val, cls }) => (
               <div key={label} className="text-center px-2">
                 <p className="text-[8px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
@@ -107,22 +128,27 @@ export const GoldSchemePage = () => {
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
             <Users size={28} className="text-navy/20 mb-3" />
-            <p className="text-sm font-bold text-navy">No Members Found</p>
+            <p className="text-sm font-bold text-navy">
+              {isReferrerView ? 'No referrals yet' : 'No Members Found'}
+            </p>
             <p className="text-xs font-medium text-navy/40 mt-1">
-              {user?.role === 'branch_admin' ? 'Tap + to add the first member.' : 'No members enrolled yet.'}
+              {user?.role === 'branch_admin'
+                ? 'Tap + to add the first member.'
+                : 'Customers you refer will appear here.'}
             </p>
           </div>
         ) : (
           <div className="bg-white rounded-3xl card-shadow border border-navy/5 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left border-collapse">
+              <table className="w-full min-w-[580px] text-left border-collapse">
                 <thead>
                   <tr className="border-b border-navy/5 bg-navy/2">
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">S.No</th>
-                    <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Name</th>
+                    <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Customer</th>
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Contact</th>
-                    <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Address</th>
-                    <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Reference</th>
+                    {!isReferrerView && (
+                      <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Referred By</th>
+                    )}
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap text-right">Amount</th>
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap text-center">Month</th>
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap text-center">Status</th>
@@ -132,14 +158,18 @@ export const GoldSchemePage = () => {
                   {members.map((m, idx) => (
                     <tr
                       key={m.id}
-                      onClick={() => navigate(`/gold/${m.id}`)}
+                      onClick={() => navigate(`/money/schemes/gold/${m.id}`)}
                       className={`border-b border-navy/5 cursor-pointer hover:bg-amber-50/60 transition-colors ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}
                     >
                       <td className="px-4 py-3 text-xs font-bold text-amber-600 whitespace-nowrap">{m.chit_number}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-navy whitespace-nowrap">{m.member_name}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-navy/60 whitespace-nowrap">{m.member_phone || '—'}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-navy/60 max-w-[140px] truncate">{m.member_address || '—'}</td>
-                      <td className="px-4 py-3 text-xs font-medium text-navy/60 whitespace-nowrap max-w-[130px] truncate">{m.referrer_name || '—'}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <p className="text-sm font-bold text-navy">{m.customer_name}</p>
+                        <p className="text-[10px] font-bold text-indigo/60">{m.customer_code}</p>
+                      </td>
+                      <td className="px-4 py-3 text-xs font-medium text-navy/60 whitespace-nowrap">{m.customer_phone || '—'}</td>
+                      {!isReferrerView && (
+                        <td className="px-4 py-3 text-xs font-medium text-navy/60 whitespace-nowrap max-w-[130px] truncate">{m.referrer_name || '—'}</td>
+                      )}
                       <td className="px-4 py-3 text-sm font-bold text-navy text-right whitespace-nowrap">₹{parseFloat(m.monthly_amount).toLocaleString()}</td>
                       <td className="px-4 py-3 text-xs font-bold text-navy/50 text-center whitespace-nowrap">
                         {Math.min(m.months_elapsed, m.total_months)}/{m.total_months}

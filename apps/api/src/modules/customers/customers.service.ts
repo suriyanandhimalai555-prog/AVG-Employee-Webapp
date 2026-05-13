@@ -1,0 +1,141 @@
+import { Pool, PoolClient } from 'pg';
+import { NotFoundError } from '../../shared/errors';
+import type { CreateCustomerInput, SearchCustomersQuery } from './customers.schema';
+
+export const CustomerService = {
+
+  // ─── AUTO-GENERATE customer_code (atomic, race-condition-safe) ───────────
+  // Uses UPDATE...RETURNING on customer_code_sequences so two concurrent inserts
+  // always get different numbers. Must be called inside a transaction.
+  async nextCustomerCode(client: PoolClient, branchId: string): Promise<string> {
+    // Fetch branch prefix
+    const prefixResult = await client.query(
+      `SELECT client_prefix FROM branches WHERE id = $1`,
+      [branchId]
+    );
+    const prefix: string = prefixResult.rows[0]?.client_prefix ?? 'CST';
+
+    // Atomically increment the sequence counter for this branch.
+    // INSERT...ON CONFLICT ensures the row exists; UPDATE increments it.
+    const seqResult = await client.query(
+      `INSERT INTO customer_code_sequences (branch_id, last_seq)
+       VALUES ($1, 1)
+       ON CONFLICT (branch_id)
+       DO UPDATE SET last_seq = customer_code_sequences.last_seq + 1
+       RETURNING last_seq`,
+      [branchId]
+    );
+    const seq: number = seqResult.rows[0].last_seq;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  },
+
+  // ─── CREATE ──────────────────────────────────────────────────────────────
+  // Runs inside a transaction to guarantee the code is unique.
+  async create(
+    db: Pool,
+    branchId: string,
+    createdBy: string,
+    payload: CreateCustomerInput
+  ): Promise<any> {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const customerCode = await CustomerService.nextCustomerCode(client, branchId);
+
+      const result = await client.query(
+        `INSERT INTO customers (customer_code, branch_id, name, phone, address, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [customerCode, branchId, payload.name, payload.phone ?? null, payload.address ?? null, payload.notes ?? null, createdBy]
+      );
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  // ─── SEARCH ──────────────────────────────────────────────────────────────
+  async search(
+    db: Pool,
+    branchId: string,
+    query: SearchCustomersQuery
+  ): Promise<{ data: any[]; total: number }> {
+    const params: any[] = [branchId];
+    let where = 'c.branch_id = $1';
+    let idx = 2;
+
+    if (query.search?.trim()) {
+      where += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
+      params.push(`%${query.search.trim()}%`);
+      idx++;
+    }
+
+    const countResult = await db.query(
+      `SELECT COUNT(*) FROM customers c WHERE ${where}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].count, 10);
+
+    const dataResult = await db.query(
+      `SELECT c.*, u.name AS created_by_name
+       FROM customers c
+       JOIN users u ON c.created_by = u.id
+       WHERE ${where}
+       ORDER BY c.name ASC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, query.limit, (query.page - 1) * query.limit]
+    );
+
+    return { data: dataResult.rows, total };
+  },
+
+  // ─── GET BY ID ────────────────────────────────────────────────────────────
+  async getById(db: Pool, id: string, branchId: string): Promise<any> {
+    const result = await db.query(
+      `SELECT c.*, u.name AS created_by_name
+       FROM customers c
+       JOIN users u ON c.created_by = u.id
+       WHERE c.id = $1 AND c.branch_id = $2`,
+      [id, branchId]
+    );
+    if (result.rows.length === 0) throw new NotFoundError('Customer not found');
+    return result.rows[0];
+  },
+
+  // ─── SCHEME HISTORY ───────────────────────────────────────────────────────
+  // Returns all scheme enrollments across all scheme tables for a customer.
+  async getSchemeHistory(db: Pool, customerId: string): Promise<any[]> {
+    const [trading, gold] = await Promise.all([
+      db.query(
+        `SELECT 'trading_academy' AS scheme, t.id, t.amount, t.enrollment_date AS date,
+                t.payment_mode, t.entered_by,
+                u.name AS entered_by_name
+         FROM trading_academy_members t
+         JOIN users u ON t.entered_by = u.id
+         WHERE t.customer_id = $1
+         ORDER BY t.enrollment_date DESC`,
+        [customerId]
+      ),
+      db.query(
+        `SELECT 'gold_scheme' AS scheme, g.id, g.monthly_amount AS amount, g.start_date AS date,
+                g.chit_number, g.status,
+                u.name AS entered_by_name
+         FROM gold_scheme_members g
+         JOIN users u ON g.entered_by = u.id
+         WHERE g.customer_id = $1
+         ORDER BY g.start_date DESC`,
+        [customerId]
+      ),
+    ]);
+
+    return [...trading.rows, ...gold.rows].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  },
+};

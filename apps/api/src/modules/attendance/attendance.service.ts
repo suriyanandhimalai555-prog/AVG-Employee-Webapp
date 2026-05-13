@@ -38,10 +38,32 @@ import type {
 // ATTENDANCE SERVICE IMPLEMENTATION
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Internal helper — fetches the smartphone/branch fields needed by self-mark
+// flows and enforces the two shared preconditions (user exists, has smartphone).
+// Extracted out of submitAttendance + selfAbsent so the rules stay in lockstep.
+async function getSelfMarkUserOrThrow(
+  db: Pool,
+  userId: string,
+): Promise<{ has_smartphone: boolean; branch_id: string | null }> {
+  const result = await db.query(
+    'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
+    [userId],
+  );
+  if (result.rows.length === 0) {
+    throw new NotFoundError('User not found');
+  }
+  if (result.rows[0].has_smartphone === false) {
+    throw new ForbiddenError(
+      'You do not have smartphone access. Ask your branch admin to mark your attendance.',
+    );
+  }
+  return result.rows[0];
+}
+
 // Export an object containing all pure business logic for attendance.
 // All functions now accept 'db' and 'redis' as arguments to support Dependency Injection.
 export const AttendanceService = {
-  
+
   // Generate a presigned URL mapping mapped to an AWS GET command to yield secure time-sensitive picture access
   async getPresignedDownloadUrl(photoKey: string) {
     // Generate the URL directly using the S3 utility wrapper handling AWS Signature V4
@@ -62,27 +84,14 @@ export const AttendanceService = {
     // Step 1: Permission check — throws ForbiddenError if the role is 'client'
     assertCanMarkAttendance(role as any);
 
-    // Step 2: Smartphone + branch check — one query covers both
+    // Step 2: Smartphone + branch check — shared helper enforces both preconditions.
     // Directors/GMs have no branch_id in users table; attendance.branch_id is nullable,
     // so their records are stored with branch_id = NULL (global scope, no branch leakage).
-    const userResult = await db.query(
-      'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      throw new NotFoundError('User not found');
-    }
-
-    if (userResult.rows[0].has_smartphone === false) {
-      throw new ForbiddenError(
-        'You do not have smartphone access. Ask your branch admin to mark your attendance.'
-      );
-    }
+    const userRow = await getSelfMarkUserOrThrow(db, userId);
 
     // Prefer JWT branchId → users.branch_id → first oversight branch (director/gm path).
     // If none is found, branch_id stays NULL — valid for Directors/GMs who operate globally.
-    let resolvedBranchId: string | null = branchId ?? userResult.rows[0].branch_id ?? null;
+    let resolvedBranchId: string | null = branchId ?? userRow.branch_id ?? null;
     if (!resolvedBranchId) {
       const oversightResult = await db.query(
         'SELECT branch_id FROM user_oversight_branches WHERE user_id = $1 LIMIT 1',
@@ -136,20 +145,7 @@ export const AttendanceService = {
     assertCanMarkAttendance(role as any);
 
     // Require smartphone access — no-smartphone employees are marked by their branch admin
-    const userResult = await db.query(
-      'SELECT has_smartphone, branch_id FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      throw new NotFoundError('User not found');
-    }
-
-    if (userResult.rows[0].has_smartphone === false) {
-      throw new ForbiddenError(
-        'You do not have smartphone access. Ask your branch admin to mark your attendance.'
-      );
-    }
+    const userRow = await getSelfMarkUserOrThrow(db, userId);
 
     const today = getCompanyToday();
 
@@ -161,13 +157,13 @@ export const AttendanceService = {
 
     // Dedupe: use a separate Redis key so it never interferes with the check-in
     // pending-detection logic in getAttendanceSummary (which reads att:{userId}:{date})
-    const absentKey = `self-absent:${userId}:${today}`;
+    const absentKey = `att:absent:${userId}:${today}`;
     const claimed = await redis.set(absentKey, '1', 'EX', 86400, 'NX');
     if (claimed === null) {
       throw new ConflictError('Attendance already marked for today');
     }
 
-    const resolvedBranchId = branchId ?? userResult.rows[0].branch_id ?? null;
+    const resolvedBranchId = branchId ?? userRow.branch_id ?? null;
 
     try {
       // Synchronous DB insert — no queue needed for absent (no photo, no GPS).

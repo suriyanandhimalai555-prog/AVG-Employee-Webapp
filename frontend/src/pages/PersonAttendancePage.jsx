@@ -82,6 +82,7 @@ export const PersonAttendancePage = () => {
         <HistoryCalendar
           historyData={historyData}
           onDaySelect={handleDaySelect}
+          onMonthChange={({ month, year }) => { setMonth(month); setYear(year); }}
         />
 
         {selectedRecord?.photo_key && (

@@ -57,6 +57,14 @@ export const getOversightScopeIds = async (
   poolDb: Pool,
   userId: string,
 ): Promise<string[]> => {
+  // Same TTL as `hier:subtree:` — busted by the same upstream hooks (bustHierarchyCache)
+  // because every change that affects subtree ids also affects the oversight scope.
+  const cacheKey = `hier:oversight:${userId}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached) as string[];
+  }
+
   const requesterResult = await poolDb.query<{ role: string }>(
     'SELECT role FROM users WHERE id = $1',
     [userId]
@@ -108,7 +116,12 @@ export const getOversightScopeIds = async (
   const gmCascadeIds: string[] = gmCascadeResult.rows.map((r: any) => r.id);
 
   // Union — deduplicate using Set
-  return [...new Set([...subtreeIds, ...oversightIds, ...gmCascadeIds])];
+  const ids = [...new Set([...subtreeIds, ...oversightIds, ...gmCascadeIds])];
+
+  // Cache for an hour — same TTL semantics as the subtree cache.
+  await redis.setex(cacheKey, 3600, JSON.stringify(ids));
+
+  return ids;
 };
 
 // Walks the manager_id chain upward from userId and busts hier:subtree:{id} for every ancestor.
@@ -127,8 +140,13 @@ export const bustHierarchyCache = async (userId: string): Promise<void> => {
     [userId]
   );
 
-  // Delete all ancestor cache keys in parallel — each row is one level up the tree
+  // Delete both subtree and oversight cache keys for every ancestor in parallel.
+  // The two caches share invalidation triggers (any subtree change also changes
+  // the oversight union), so they must be busted together.
   await Promise.all(
-    result.rows.map((row: { id: string }) => redis.del(`hier:subtree:${row.id}`))
+    result.rows.flatMap((row: { id: string }) => [
+      redis.del(`hier:subtree:${row.id}`),
+      redis.del(`hier:oversight:${row.id}`),
+    ])
   );
 };

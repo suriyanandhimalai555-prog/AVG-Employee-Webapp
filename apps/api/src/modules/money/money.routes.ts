@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ZodError } from 'zod';
-import { AppError, ForbiddenError, ValidationError } from '../../shared/errors';
+import { ForbiddenError, ValidationError } from '../../shared/errors';
+import { handleError, sendForbidden } from '../../shared/route-error-handler';
 import { getCompanyToday } from '../../shared/date';
 import { MoneyService } from './money.service';
 import {
@@ -13,48 +13,6 @@ import {
   MdCollectionEntrySchema,
   GetRankingsQuerySchema,
 } from './money.schema';
-
-const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
-  if (error instanceof ZodError) {
-    return reply.code(400).send({
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid input',
-        details: error.issues,
-      },
-    });
-  }
-
-  if (error instanceof AppError) {
-    return reply.code(error.statusCode).send({
-      success: false,
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    });
-  }
-
-  console.error('❌ Unexpected error in Money Module:', error);
-  return reply.code(500).send({
-    success: false,
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    },
-  });
-};
-
-const sendForbidden = (reply: FastifyReply, message: string): FastifyReply => {
-  return reply.code(403).send({
-    success: false,
-    error: {
-      code: 'FORBIDDEN',
-      message,
-    },
-  });
-};
 
 interface AuthenticatedUser {
   id: string;
@@ -121,8 +79,11 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
 
   // ─── COLLECTIONS ───
 
+  // Tight per-endpoint cap on collection submissions. Same rationale as
+  // attendance/submit — prevents rapid resubmits when the network stalls.
   fastify.post('/', {
     onRequest: [fastify.authenticate],
+    config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;

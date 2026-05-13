@@ -13,6 +13,9 @@ import {
   useAddGoldPaymentMutation,
   useUpdateGoldMemberStatusMutation,
 } from '../store/api/apiSlice';
+import { SchemeCalendar } from '../components/SchemeCalendar';
+import { PeriodDateInput } from '../components/PeriodDateInput';
+import { getCurrentPeriod } from '../lib/schemePeriod';
 
 const MODE_LABELS = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank' };
 const MODE_STYLES = {
@@ -85,7 +88,7 @@ const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-base font-bold text-navy">Record Payment</p>
-            <p className="text-[10px] font-medium text-navy/40 mt-0.5">{member.member_name} · Chit {member.chit_number}</p>
+            <p className="text-[10px] font-medium text-navy/40 mt-0.5">{member.customer_name} · Chit {member.chit_number}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-navy/5 rounded-full"><X size={18} className="text-navy/40" /></button>
         </div>
@@ -109,7 +112,7 @@ const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
             </div>
             <div>
               <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1.5">Date Paid</label>
-              <input type="date" value={form.paidDate} onChange={set('paidDate')} className={inputClass} />
+              <PeriodDateInput value={form.paidDate} onChange={set('paidDate')} className={inputClass} />
             </div>
           </div>
 
@@ -170,6 +173,7 @@ export const GoldMemberDetailPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [period, setPeriod] = useState(getCurrentPeriod);
 
   const { data: member, isLoading: isMemberLoading } = useGetGoldMemberQuery(id);
   const { data: payments = [], isLoading: isPaymentsLoading } = useGetGoldPaymentsQuery(id);
@@ -202,11 +206,11 @@ export const GoldMemberDetailPage = () => {
     >
       {/* Header */}
       <div className="px-4 flex items-center gap-4 mb-5">
-        <button onClick={() => navigate('/gold')} className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press">
+        <button onClick={() => navigate('/money/schemes/gold')} className="p-3 bg-white rounded-full shadow-md text-navy hover:bg-navy/5 tactile-press">
           <ArrowRight className="rotate-180" size={20} />
         </button>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold text-navy tracking-tight">{member.member_name}</h2>
+          <h2 className="text-2xl font-bold text-navy tracking-tight">{member.customer_name}</h2>
           <p className="text-[11px] font-medium text-navy/40 mt-0.5">Chit No. {member.chit_number}</p>
         </div>
         {user?.role === 'branch_admin' && member.status === 'active' && (
@@ -229,7 +233,7 @@ export const GoldMemberDetailPage = () => {
                 <User size={18} className="text-amber-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-navy">{member.member_name}</p>
+                <p className="text-sm font-bold text-navy">{member.customer_name}</p>
                 <p className="text-[10px] font-medium text-navy/40">Started {new Date(member.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
               </div>
             </div>
@@ -248,16 +252,16 @@ export const GoldMemberDetailPage = () => {
               <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Duration</p>
               <p className="text-sm font-bold text-navy mt-0.5">{member.total_months} months</p>
             </div>
-            {member.member_phone && (
+            {member.customer_phone && (
               <div className="flex items-center gap-1.5">
                 <Phone size={10} className="text-navy/30" />
-                <p className="text-xs font-medium text-navy">{member.member_phone}</p>
+                <p className="text-xs font-medium text-navy">{member.customer_phone}</p>
               </div>
             )}
-            {member.member_address && (
+            {member.customer_address && (
               <div className="flex items-center gap-1.5">
                 <MapPin size={10} className="text-navy/30" />
-                <p className="text-xs font-medium text-navy truncate">{member.member_address}</p>
+                <p className="text-xs font-medium text-navy truncate">{member.customer_address}</p>
               </div>
             )}
           </div>
@@ -299,6 +303,11 @@ export const GoldMemberDetailPage = () => {
         </div>
       </div>
 
+      {/* Period picker */}
+      <div className="px-4 mb-5">
+        <SchemeCalendar compact onPeriodChange={setPeriod} />
+      </div>
+
       {/* Month grid */}
       <div className="px-4 mb-5">
         <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">Monthly Payments</p>
@@ -333,10 +342,16 @@ export const GoldMemberDetailPage = () => {
         )}
       </div>
 
-      {/* Payment history table */}
-      {payments.length > 0 && (
+      {/* Payment history table — filtered to selected period */}
+      {(() => {
+        const periodPayments = payments.filter(p => {
+          const d = p.paid_date?.slice(0, 10);
+          return d >= period.startDate && d <= period.endDate;
+        });
+        if (periodPayments.length === 0) return null;
+        return (
         <div className="px-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">Payment History</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">Payment History · {period.label}</p>
           <div className="bg-white rounded-3xl card-shadow border border-navy/5 overflow-hidden">
             <table className="w-full text-left">
               <thead>
@@ -348,7 +363,7 @@ export const GoldMemberDetailPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p, idx) => (
+                {periodPayments.map((p, idx) => (
                   <tr key={p.id} className={`border-b border-navy/5 ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}>
                     <td className="px-4 py-3 text-sm font-bold text-navy">Month {p.month_number}</td>
                     <td className="px-4 py-3 text-xs font-medium text-navy/60">
@@ -366,7 +381,8 @@ export const GoldMemberDetailPage = () => {
             </table>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Mark complete */}
       {user?.role === 'branch_admin' && member.status === 'active' && allPaid && (

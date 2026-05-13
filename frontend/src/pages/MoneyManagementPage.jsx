@@ -6,7 +6,7 @@ import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Loader2, Clock, AlertCircle,
   Briefcase, TrendingUp, Building2, AlertTriangle,
-  BarChart3, PenLine, MapPin, ArrowUpRight, Gem
+  BarChart3, PenLine, MapPin, ArrowUpRight, Gem, Layers, Banknote
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -45,7 +45,6 @@ export const MoneyManagementPage = () => {
   const { data: collectionsResult } = useGetMoneyCollectionsQuery(undefined, { skip: user?.role === 'md' });
   const collections = collectionsResult?.data || [];
   const pendingToVerify = collections.filter(c => c.status === 'pending' && c.assigned_verifier_id === user?.id && c.mode !== 'cash_transfer');
-  const pendingCashTransfers = collections.filter(c => c.status === 'pending' && c.mode === 'cash_transfer' && (c.assigned_verifier_id === user?.id || c.user_id === user?.id));
 
   // MD pending: cash_transfers assigned to MD are excluded from the admin overview "Pending"
   // KPI (to avoid double-counting). Fetch them separately so MD still sees a notification.
@@ -421,8 +420,8 @@ export const MoneyManagementPage = () => {
                         </p>
                       </div>
                     </div>
-                    <button onClick={() => setDrillBranchId(null)} className="p-2 hover:bg-navy/5 rounded-full">
-                      <XCircle size={20} className="text-navy/30" />
+                    <button onClick={() => setDrillBranchId(null)} type="button" aria-label="Close branch detail" className="p-2 hover:bg-navy/5 rounded-full">
+                      <XCircle size={20} className="text-navy/30" aria-hidden="true" />
                     </button>
                   </div>
 
@@ -638,23 +637,6 @@ export const MoneyManagementPage = () => {
               </button>
             )}
 
-            <button onClick={() => navigate('/money/pending-transfers')} className={`p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border ${pendingCashTransfers.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-navy/5'}`}>
-              <div className="relative z-10 w-3/4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform ${pendingCashTransfers.length > 0 ? 'bg-amber-100 text-amber-600' : 'bg-navy/5 text-navy/40'}`}>
-                  <ArrowUpRight size={24} />
-                </div>
-                <p className="text-xl font-bold text-navy mb-1">Cash Transfers</p>
-                <p className="text-xs font-medium text-navy/40">
-                  {pendingCashTransfers.length > 0
-                    ? `${pendingCashTransfers.length} transfer${pendingCashTransfers.length > 1 ? 's' : ''} awaiting your approval`
-                    : 'No pending cash transfers'}
-                </p>
-              </div>
-              <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center mt-2 transition-colors ${pendingCashTransfers.length > 0 ? 'bg-amber-100 group-hover:bg-amber-200' : 'bg-navy/5 group-hover:bg-navy/10'}`}>
-                <ArrowRight size={20} className={pendingCashTransfers.length > 0 ? 'text-amber-600' : 'text-navy/40'} />
-              </div>
-            </button>
-
             {user?.role !== 'md' && (
               <button onClick={() => navigate('/money/wallet')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
                 <div className="relative z-10 w-3/4">
@@ -670,18 +652,32 @@ export const MoneyManagementPage = () => {
               </button>
             )}
 
-            {/* Gold Savings Scheme — visible to branch_admin and managers */}
-            <button onClick={() => navigate('/gold')} className="bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+            {/* Schemes hub — gold scheme and future plans */}
+            <button onClick={() => navigate('/money/schemes')} className="bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
               <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
-                  <Gem size={24} />
+                  <Layers size={24} />
                 </div>
-                <p className="text-xl font-bold text-white mb-1">Gold Scheme</p>
-                <p className="text-xs font-medium text-white/70">12-month savings scheme members</p>
+                <p className="text-xl font-bold text-white mb-1">Schemes</p>
+                <p className="text-xs font-medium text-white/70">Savings &amp; investment plans</p>
               </div>
               <div className="relative z-10 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mt-2 group-hover:bg-white/30 transition-colors">
                 <ArrowRight size={20} className="text-white" />
+              </div>
+            </button>
+
+            {/* Salary */}
+            <button onClick={() => navigate('/money/salaries')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
+              <div className="relative z-10 w-3/4">
+                <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy mb-4 group-hover:scale-110 transition-transform">
+                  <Banknote size={24} />
+                </div>
+                <p className="text-xl font-bold text-navy mb-1">Salary</p>
+                <p className="text-xs font-medium text-navy/40">View or manage employee salaries</p>
+              </div>
+              <div className="relative z-10 w-10 h-10 rounded-full bg-navy/5 flex items-center justify-center mt-2 group-hover:bg-navy/10 transition-colors">
+                <ArrowRight size={20} className="text-navy/40" />
               </div>
             </button>
           </div>

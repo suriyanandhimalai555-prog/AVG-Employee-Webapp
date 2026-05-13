@@ -13,9 +13,10 @@ with ~1,500 employees across multiple branches.
 Not a public app. Every user is an employee or a client
 tied to the business.
 
-Currently building: ATTENDANCE MODULE only.
-Next after attendance: Money tracking module.
-After that: Messaging module.
+Currently shipped: attendance, money, branch management, user
+management, customers, gold scheme, trading academy, incentives,
+salaries, transactions. Active areas of work rotate — check
+git log before assuming a module is or isn't being touched.
 
 ---
 
@@ -28,9 +29,9 @@ npm run dev          # Runs API, Worker, and Frontend together
 
 ### Individual workspaces
 ```bash
-npm run dev -w @attendance/api      # API only (port 3000)
+npm run dev -w @attendance/api      # API only (port 3001)
 npm run dev -w @attendance/worker   # Worker only
-npm run dev -w frontend             # Frontend only (port 5173)
+npm run dev -w frontend             # Frontend only (port 5173/5174)
 ```
 
 ### Database migrations
@@ -137,14 +138,18 @@ Plugins (`src/plugins/`):
   error-handler
 
 Modules (`src/modules/`):
-  Each module has *.routes.ts + *.service.ts
-  Modules: auth, attendance, branches, users, transactions
+  Each module has *.routes.ts + *.service.ts (+ *.schema.ts for Zod)
+  Modules: auth, attendance, branches, users, transactions, money,
+           gold, incentives, salaries, trading-academy, customers
 
 Shared (`src/shared/`):
-  permissions.ts     → RBAC helpers
-  errors.ts          → AppError subclasses
-  hierarchy.ts       → recursive CTE + Redis cache
-  attendance-scope.ts → scope-based data access by role
+  permissions.ts        → RBAC helpers
+  errors.ts             → AppError subclasses
+  hierarchy.ts          → recursive CTE + Redis cache (subtree + oversight)
+  attendance-scope.ts   → scope-based data access by role
+  route-error-handler.ts → handleError() + sendForbidden() — every route uses these
+  transaction-helper.ts → runInTransaction() wrapper for BEGIN/COMMIT/ROLLBACK
+  role-constants.ts     → canonical Role enum + role-set constants
 
 ### Async Processing (1,500 user surge)
 Attendance submissions never write directly to DB.
@@ -173,11 +178,16 @@ Worker: 20 concurrent jobs, max 100/sec, 3 retries.
 
 ## DATABASE SCHEMA
 
-Migrations in `apps/api/migrations/`:
-1. 001_init.sql               — users, branches
-2. 002_attendance.sql         — attendance, attendance_audit
-3. 003_transactions_messages.sql — transactions, messages
-4. 004_user_oversight_branches.sql — director/gm multi-branch
+Migrations in `apps/api/migrations/` are numbered SQL files. Run all of them
+with `node run_migrations.js` from the repo root — the runner wraps each file
+in BEGIN/COMMIT and records applied versions in `schema_migrations`, so
+re-running is idempotent.
+
+The migration set currently spans 001 through 022 and covers: core users
++ branches, attendance tables, transactions, money projects + collections,
+user oversight branches, profile assets, employee salaries, incentives,
+commission rules, trading academy, client prefix, customers, customer code
+sequences.
 
 Key constraints:
 - attendance: UNIQUE (user_id, date)
@@ -201,13 +211,18 @@ Confirmation comes via WebSocket: attendance:confirmed
 
 ## REDIS KEY CONVENTIONS
 ```
-sess:{userId}              JWT session cache       TTL: 8h
-user:{userId}              User data cache         TTL: 30min
-hier:subtree:{userId}      Subtree IDs cache       TTL: 1h
-att:{userId}:{date}        Dupe guard              TTL: 24h
-att:summary:{branchId}     Branch summary cache    TTL: 5min
-rl:{userId}                Rate limit counter      TTL: 60s
+sess:{userId}                JWT session cache              TTL: 8h
+user:{userId}                User data cache                TTL: 30min
+hier:subtree:{userId}        Subtree IDs cache              TTL: 1h
+hier:oversight:{userId}      Director/GM oversight scope    TTL: 1h
+att:{userId}:{date}          Self-mark dupe guard           TTL: 24h
+att:absent:{userId}:{date}   Self-absent dupe guard         TTL: 24h
+att:summary:{branchId}       Branch summary cache           TTL: 5min
+rl:{userId}                  Rate limit counter             TTL: 60s
 ```
+Hierarchy caches (`hier:subtree:*` and `hier:oversight:*`) are busted
+together by `bustHierarchyCache(userId)` whenever a subordinate is
+created, deactivated, or moved.
 
 ---
 
@@ -217,15 +232,19 @@ apps/api/.env
 ```
 DATABASE_URL=
 REDIS_URL=
-JWT_SECRET=          (min 32 characters)
+JWT_SECRET=                 (min 32 characters)
 JWT_EXPIRES_IN=8h
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=
 S3_BUCKET_NAME=
 FRONTEND_URL=http://localhost:5173
-PORT=3000
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
+PORT=3001
 ```
+Never commit live secrets. The repo's `.gitignore` already excludes
+`.env`, `.env.*`, and `apps/*/.env`. Keep `.env.example` files in sync
+with any new variable added here.
 
 frontend/.env
 ```
@@ -243,24 +262,28 @@ VITE_API_URL=http://localhost:3001/api
 - Do not change existing styling or CSS classes
 - Work with what exists
 
-### Existing files
+### Shared frontend primitives (import from these, don't re-create)
 ```
 frontend/src/
 ├── components/
-│   ├── Button.jsx
-│   ├── Card.jsx
-│   ├── GlassModal.jsx
-│   ├── StatusChip.jsx
-│   └── HistoryCalendar.jsx
-├── pages/
-│   ├── AttendanceHome.jsx  ← main page for all roles
-│   ├── AdminDashboard.jsx  ← overview for admin roles
-│   ├── UserManagement.jsx  ← staff management
-│   └── Login.jsx
+│   ├── Button.jsx, Card.jsx, GlassModal.jsx, StatusChip.jsx
+│   ├── HistoryCalendar.jsx, SchemeCalendar.jsx
+│   ├── PeriodDateInput.jsx     ← clamped to current 7-to-7 period
+│   ├── LoadingSpinner.jsx      ← all spinners go through this
+│   ├── EmptyState.jsx          ← all "no data" panels go through this
+│   ├── CustomerPicker.jsx
+│   └── layout/                 ← Layout, Sidebar, Navbar, ScrollManager
+├── lib/
+│   ├── formatters.js           ← formatCurrency / formatDate / formatNumber
+│   ├── constants.js            ← ROLES, ROLE_LABELS, PAYMENT_MODES, STATUS_COLORS
+│   ├── tailwindClasses.js      ← INPUT_BASE, INPUT_COMPACT, CARD_BASE
+│   ├── schemePeriod.js         ← 7-to-7 period helpers
+│   └── date.js
+├── pages/                      ← role-aware screens; lazy-loaded from App.jsx
 ├── store/
-│   ├── api/apiSlice.js     ← ALL RTK Query endpoints here
-│   └── slices/authSlice.js ← auth state
-├── App.jsx                 ← routing and layout
+│   ├── api/apiSlice.js         ← ALL RTK Query endpoints here
+│   └── slices/authSlice.js
+├── App.jsx                     ← routing + lazy boundaries
 └── main.jsx
 ```
 
@@ -340,15 +363,14 @@ All roles land here after login.
 
 ── MONEY tab ──────────────────────────────────────────
 
-Not built yet.
-Show a clean "Coming soon" placeholder.
-Do not wire any logic.
+Implemented. Routes the user into the MoneyManagementPage which
+in turn deep-links to collections, history, wallet, rankings,
+schemes (gold + trading academy), incentives, and salaries.
 
 ── ALERTS tab ─────────────────────────────────────────
 
-Not built yet.
-Show empty state placeholder.
-Do not wire any logic.
+Implemented as `AlertsTab`. Shows pending sign-offs, no-smartphone
+employees awaiting action, and operational reminders.
 
 ---
 
@@ -380,35 +402,15 @@ Never call the API directly from a component.
 
 ---
 
-## WHAT IS BUILT
+## BUILD STATE
 
-- ✅ Monorepo + npm workspaces
-- ✅ Shared TypeScript types
-- ✅ Database migrations (all 4 SQL files)
-- ✅ API config (env, db, redis, s3)
-- ✅ Shared utilities (hierarchy, permissions, errors)
-- ✅ Attendance schema, queue, service, routes
-- ✅ Fastify app.ts + index.ts + auth routes
-- ✅ BullMQ worker (separate service)
-- ✅ Login page
-- ✅ AttendanceHome (office + field flows)
-- ✅ AdminDashboard
-- ✅ UserManagement
-- ✅ Redux store + RTK Query
-
-## WHAT STILL NEEDS BUILDING
-
-- ⬜ Fix App.jsx — all roles go to AttendanceHome on login
-- ⬜ Add director to admin roles list in App.jsx
-- ⬜ Remove floating top-right tab bar from App.jsx
-- ⬜ Add profile section top-right (name, role, logout)
-- ⬜ Add bottom nav with 4 tabs (Home, Attendance, Money, Alerts)
-- ⬜ Make Home tab content role-aware
-- ⬜ Make Attendance tab content role-aware
-- ⬜ Money tab placeholder
-- ⬜ Alerts tab placeholder
-- ⬜ WebSocket confirmation (spinner → green checkmark)
-- ⬜ Branch admin attendance panel
+The original "what's built / what's left" list was retired once
+attendance + the money/scheme stack landed. Treat the codebase as
+the source of truth: `apps/api/src/modules/*` lists every shipped
+module, `frontend/src/pages/*` lists every shipped page, and
+`apps/api/migrations/*` lists every applied schema change. Use
+`git log` for recent work and the in-flight task list (if any)
+for current direction.
 
 ---
 

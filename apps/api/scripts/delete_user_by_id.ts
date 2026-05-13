@@ -73,12 +73,6 @@ async function deleteUserById() {
       [userId]
     );
 
-    const gmDirectorLinksResult = await pool.query(
-      `DELETE FROM gm_director_links
-       WHERE gm_id = $1 OR director_id = $1`,
-      [userId]
-    );
-
     const branchUnlinkResult = await pool.query(
       `UPDATE branches
        SET gm_id = NULL, admin_id = NULL
@@ -111,7 +105,6 @@ async function deleteUserById() {
     console.log(`   transactions: ${transactionsResult.rowCount}`);
     console.log(`   messages: ${messagesResult.rowCount}`);
     console.log(`   oversight links: ${oversightResult.rowCount}`);
-    console.log(`   gm-director links: ${gmDirectorLinksResult.rowCount}`);
     console.log(`   branch unlink rows: ${branchUnlinkResult.rowCount}`);
     console.log(`   subordinate manager unlink rows: ${managerUnlinkResult.rowCount}`);
   } catch (error) {

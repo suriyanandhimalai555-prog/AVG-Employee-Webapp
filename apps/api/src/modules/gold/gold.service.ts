@@ -26,6 +26,13 @@ export const GoldService = {
       throw new ConflictError(`Chit number ${payload.chitNumber} already exists in this branch`);
     }
 
+    // Verify the customer exists and belongs to this branch
+    const customerResult = await db.query(
+      `SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2`,
+      [payload.customerId, branchId]
+    );
+    if (customerResult.rows.length === 0) throw new NotFoundError('Customer not found in this branch');
+
     // Resolve referrer name (denormalised) if referrerId is provided
     let referrerName: string | null = null;
     if (payload.referrerId) {
@@ -47,17 +54,15 @@ export const GoldService = {
 
       const memberResult = await client.query(
         `INSERT INTO gold_scheme_members (
-          branch_id, chit_number, member_name, member_phone, member_address,
+          branch_id, chit_number, customer_id,
           referrer_id, referrer_name, monthly_amount, start_date, total_months,
           notes, entered_by
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         RETURNING *`,
         [
           branchId,
           payload.chitNumber,
-          payload.memberName,
-          payload.memberPhone   || null,
-          payload.memberAddress || null,
+          payload.customerId,
           payload.referrerId    || null,
           referrerName,
           payload.monthlyAmount,
@@ -109,13 +114,13 @@ export const GoldService = {
     }
 
     if (query.search) {
-      where += ` AND (g.member_name ILIKE $${idx} OR g.chit_number ILIKE $${idx} OR g.member_phone ILIKE $${idx})`;
+      where += ` AND (c.name ILIKE $${idx} OR g.chit_number ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
       params.push(`%${query.search}%`);
       idx++;
     }
 
     const countResult = await db.query(
-      `SELECT COUNT(*) FROM gold_scheme_members g WHERE ${where}`,
+      `SELECT COUNT(*) FROM gold_scheme_members g JOIN customers c ON g.customer_id = c.id WHERE ${where}`,
       params
     );
     const total = parseInt(countResult.rows[0].count, 10);
@@ -123,17 +128,20 @@ export const GoldService = {
     const dataResult = await db.query(
       `SELECT
          g.*,
-         u.name  AS entered_by_name,
-         r.name  AS referrer_user_name,
-         r.role  AS referrer_role,
-         -- Months elapsed since start_date
+         c.name          AS customer_name,
+         c.phone         AS customer_phone,
+         c.customer_code,
+         u.name          AS entered_by_name,
+         r.name          AS referrer_user_name,
+         r.role          AS referrer_role,
          GREATEST(0,
            EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.start_date)) * 12 +
            EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.start_date))
          )::int AS months_elapsed
        FROM gold_scheme_members g
-       JOIN users u ON g.entered_by = u.id
-       LEFT JOIN users r ON g.referrer_id = r.id
+       JOIN customers c  ON g.customer_id  = c.id
+       JOIN users u      ON g.entered_by   = u.id
+       LEFT JOIN users r ON g.referrer_id  = r.id
        WHERE ${where}
        ORDER BY g.chit_number ASC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -146,10 +154,13 @@ export const GoldService = {
   // ─── GET SINGLE MEMBER ───
   async getMember(db: Pool, id: string, branchId: string): Promise<any> {
     const result = await db.query(
-      `SELECT g.*, u.name AS entered_by_name, r.name AS referrer_user_name, r.role AS referrer_role
+      `SELECT g.*,
+              c.name AS customer_name, c.phone AS customer_phone, c.customer_code,
+              u.name AS entered_by_name, r.name AS referrer_user_name, r.role AS referrer_role
        FROM gold_scheme_members g
-       JOIN users u ON g.entered_by = u.id
-       LEFT JOIN users r ON g.referrer_id = r.id
+       JOIN customers c  ON g.customer_id  = c.id
+       JOIN users u      ON g.entered_by   = u.id
+       LEFT JOIN users r ON g.referrer_id  = r.id
        WHERE g.id = $1 AND g.branch_id = $2`,
       [id, branchId]
     );
@@ -181,7 +192,7 @@ export const GoldService = {
        FROM users
        WHERE branch_id = $1
          AND is_active = true
-         AND role NOT IN ('client', 'md')
+         AND role NOT IN ('md')
        ORDER BY name ASC`,
       [branchId]
     );
@@ -243,7 +254,12 @@ export const GoldService = {
   },
 
   // ─── SUMMARY (total chits, active, amounts) ───
-  async getBranchSummary(db: Pool, branchId: string): Promise<any> {
+  // Pass referrerId to scope to one referrer's stats (for SO/ABM/BM/GM personal view)
+  async getBranchSummary(db: Pool, branchId: string, referrerId?: string): Promise<any> {
+    const params: any[] = [branchId];
+    const extra = referrerId ? ` AND referrer_id = $2` : '';
+    if (referrerId) params.push(referrerId);
+
     const result = await db.query(
       `SELECT
          COUNT(*)                                                       AS total_chits,
@@ -253,8 +269,8 @@ export const GoldService = {
          COALESCE(SUM(monthly_amount) FILTER (WHERE status='active'),0) AS monthly_commitment,
          COALESCE(SUM(monthly_amount * total_months) FILTER (WHERE status='active'),0) AS total_scheme_value
        FROM gold_scheme_members
-       WHERE branch_id = $1`,
-      [branchId]
+       WHERE branch_id = $1${extra}`,
+      params
     );
     const r = result.rows[0];
     return {

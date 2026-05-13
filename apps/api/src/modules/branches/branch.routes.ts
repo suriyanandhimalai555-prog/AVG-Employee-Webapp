@@ -1,41 +1,12 @@
 // apps/api/src/modules/branches/branch.routes.ts
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { z } from 'zod';
-import { ZodError } from 'zod';
 import { BranchService } from './branch.service';
-import { AppError } from '../../shared/errors';
+import { handleError } from '../../shared/route-error-handler';
+import { CreateBranchSchema, UpdateBranchSchema } from './branch.schema';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
 };
-
-const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
-  if (error instanceof ZodError) {
-    return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.issues } });
-  }
-  if (error instanceof AppError) {
-    return reply.code(error.statusCode).send({ success: false, error: { code: error.code, message: error.message } });
-  }
-  console.error('❌ Branch route error:', error);
-  return reply.code(500).send({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Something went wrong' } });
-};
-
-// Zod schemas
-const CreateBranchSchema = z.object({
-  name:       z.string().min(2).max(200),
-  shiftStart: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
-  shiftEnd:   z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
-  timezone:   z.string().max(50).optional(),
-});
-
-const UpdateBranchSchema = z.object({
-  name:       z.string().min(2).max(200).optional(),
-  gmId:       z.string().uuid().optional().nullable(),
-  adminId:    z.string().uuid().optional().nullable(),
-  shiftStart: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
-  shiftEnd:   z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
-  isActive:   z.boolean().optional(),
-});
 
 export default async function branchRoutes(fastify: FastifyInstance) {
 

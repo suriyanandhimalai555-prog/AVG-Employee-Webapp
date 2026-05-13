@@ -1,22 +1,12 @@
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2 } from 'lucide-react';
-import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetMoneyCollectionsQuery } from '../../store/api/apiSlice';
-
-const NAV_TABS = [
-  { key: 'home',       icon: Home,        label: 'Home',       path: '/' },
-  { key: 'attendance', icon: Fingerprint, label: 'Attendance', path: '/attendance' },
-  { key: 'money',      icon: Wallet,      label: 'Money',      path: '/money' },
-  { key: 'alerts',     icon: Bell,        label: 'Alerts',     path: '/alerts' },
-  { key: 'profile',    icon: UserCircle2, label: 'Profile',    path: '/profile' },
-];
-
-const MD_TAB = { key: 'branches', icon: Building2, label: 'Branches', path: '/branches' };
+import { useNavigate } from 'react-router-dom';
+import { useNavTabs } from '../layout/nav-tabs';
 
 const NavItem = ({ icon: Icon, label, active, hasAlert, onClick }) => (
   <button
     onClick={onClick}
+    type="button"
+    aria-label={label}
+    aria-current={active ? 'page' : undefined}
     className={`relative flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-[18px] transition-all duration-300 tactile-press ${
       active
         ? 'bg-indigo text-white shadow-lg shadow-indigo/25'
@@ -24,51 +14,30 @@ const NavItem = ({ icon: Icon, label, active, hasAlert, onClick }) => (
     }`}
   >
     <div className="relative">
-      <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+      <Icon size={20} strokeWidth={active ? 2.5 : 2} aria-hidden="true" />
       {hasAlert && (
-        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 border-2 border-white" />
+        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 border-2 border-white" aria-hidden="true" />
       )}
     </div>
-    <span className={`text-[8px] font-extrabold uppercase tracking-widest transition-all duration-300 ${
-      active ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
-    }`}>
+    <span
+      className={`text-[8px] font-extrabold uppercase tracking-widest transition-all duration-300 ${
+        active ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'
+      }`}
+    >
       {label}
     </span>
   </button>
 );
 
-const getActiveTab = (pathname) => {
-  if (pathname === '/') return 'home';
-  if (pathname.startsWith('/attendance')) return 'attendance';
-  if (pathname.startsWith('/branches')) return 'branches';
-  if (pathname.startsWith('/money')) return 'money';
-  if (pathname === '/alerts') return 'alerts';
-  if (pathname === '/profile') return 'profile';
-  return null;
-};
-
-export const BottomNav = ({ user }) => {
-  const location = useLocation();
+/**
+ * Mobile-only floating bottom navigation. Hidden on md+ where Sidebar takes over.
+ */
+export const BottomNav = () => {
   const navigate = useNavigate();
-  const currentUser = useSelector(selectCurrentUser);
-
-  // Pending alerts count — served from RTK cache (AlertsTab runs the same query)
-  const { data: collectionsResult } = useGetMoneyCollectionsQuery(
-    { status: 'pending' },
-    { skip: !currentUser?.id }
-  );
-  const pendingAlertCount = (collectionsResult?.data || []).filter(
-    c => c.assigned_verifier_id === currentUser?.id
-  ).length;
-
-  const activeTab = getActiveTab(location.pathname);
-  const baseTabs = currentUser?.role === 'oa'
-    ? NAV_TABS.filter((t) => t.key !== 'money')
-    : NAV_TABS;
-  const tabs = user?.role === 'md' ? [...baseTabs, MD_TAB] : baseTabs;
+  const { tabs, activeTab, pendingAlertCount } = useNavTabs();
 
   return (
-    <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] md:max-w-2xl lg:max-w-5xl xl:max-w-[1360px] px-6 pb-6 pt-2 z-50 pointer-events-none transition-all duration-500">
+    <footer className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] px-6 pb-6 pt-2 z-50 pointer-events-none">
       <nav className="p-1.5 flex items-center justify-around glass rounded-[26px] card-shadow pointer-events-auto overflow-x-auto no-scrollbar">
         {tabs.map((tab) => (
           <NavItem

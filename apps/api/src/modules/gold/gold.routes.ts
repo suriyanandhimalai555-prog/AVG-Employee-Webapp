@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { ZodError } from 'zod';
-import { AppError, ForbiddenError } from '../../shared/errors';
+import { ForbiddenError } from '../../shared/errors';
+import { handleError } from '../../shared/route-error-handler';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, hasRole } from '../../shared/role-constants';
 import { GoldService } from './gold.service';
 import {
   AddGoldMemberSchema,
@@ -9,25 +10,13 @@ import {
   AddGoldPaymentSchema,
 } from './gold.schema';
 
-// Reusable error handler
-const handleError = (error: unknown, reply: FastifyReply): FastifyReply => {
-  if (error instanceof ZodError) {
-    return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: error.issues } });
-  }
-  if (error instanceof AppError) {
-    return reply.code(error.statusCode).send({ success: false, error: { code: error.code, message: error.message } });
-  }
-  console.error('❌ Gold module error:', error);
-  return reply.code(500).send({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Something went wrong' } });
-};
-
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
 
-// Roles that can read gold scheme data
-const READER_ROLES = new Set(['branch_admin', 'branch_manager', 'abm', 'gm', 'director', 'md']);
-// Only branch_admin can write
-const WRITER_ROLE = 'branch_admin';
+// Local Set wrappers around shared constants for O(1) membership checks
+const READER_ROLES = new Set<string>(READER_LIST);
+const WRITER_ROLE: string = Role.BRANCH_ADMIN;
+const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 
 export default async function goldRoutes(fastify: FastifyInstance): Promise<void> {
 
@@ -45,7 +34,7 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
     } catch (error) { return handleError(error, reply); }
   });
 
-  // ─── GET /gold/summary — branch stats ───
+  // ─── GET /gold/summary — branch stats (personal stats for referrer roles) ───
   fastify.get('/summary', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -54,12 +43,13 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       if (!READER_ROLES.has(req.user.role)) {
         throw new ForbiddenError('Access denied');
       }
-      const data = await GoldService.getBranchSummary(fastify.db, req.user.branchId);
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data = await GoldService.getBranchSummary(fastify.db, req.user.branchId, referrerId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
 
-  // ─── GET /gold — list members ───
+  // ─── GET /gold — list members (own referrals only for non-admin roles) ───
   fastify.get('/', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -69,6 +59,10 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
         throw new ForbiddenError('Access denied');
       }
       const query = GetGoldMembersQuerySchema.parse(req.query);
+      // Force referrer-only scope for non-admin roles
+      if (REFERRER_ONLY_ROLES.has(req.user.role)) {
+        query.referrerId = req.user.id;
+      }
       const data = await GoldService.getMembers(fastify.db, req.user.branchId, query);
       return reply.send({ success: true, ...data });
     } catch (error) { return handleError(error, reply); }

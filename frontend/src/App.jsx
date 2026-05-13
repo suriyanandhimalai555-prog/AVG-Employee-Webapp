@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
@@ -10,33 +10,52 @@ import { Layout } from './components/layout/Layout';
 import { Login } from './pages/Login';
 import { AttendanceHome } from './pages/AttendanceHome';
 import { ProfilePage } from './pages/ProfilePage';
-import { MoneyManagementPage } from './pages/MoneyManagementPage';
-import { MoneySubmitPage } from './pages/MoneySubmitPage';
-import { MoneyHistoryPage } from './pages/MoneyHistoryPage';
-import { MoneyWalletPage } from './pages/MoneyWalletPage';
-import { BranchRankingsPage } from './pages/BranchRankingsPage';
-import { MdAddEntryPage } from './pages/MdAddEntryPage';
-import { ProjectManagementPage } from './pages/ProjectManagementPage';
-import { CashHolderDetailPage } from './pages/CashHolderDetailPage';
-import { MoneyPendingTransfersPage } from './pages/MoneyPendingTransfersPage';
-import { GoldSchemePage } from './pages/GoldSchemePage';
-import { GoldSchemeAddPage } from './pages/GoldSchemeAddPage';
-import { GoldMemberDetailPage } from './pages/GoldMemberDetailPage';
-import { LeadershipListPage } from './pages/LeadershipListPage';
-import { PersonAttendancePage } from './pages/PersonAttendancePage';
 import { AttendanceTab } from './pages/attendance/AttendanceTab';
 import { OfficeCheckIn } from './pages/attendance/OfficeCheckIn';
 import { FieldCheckIn } from './pages/attendance/FieldCheckIn';
 import { AlertsTab } from './pages/attendance/AlertsTab';
-import { BranchManagement } from './pages/BranchManagement';
-import { UserManagement } from './pages/UserManagement';
-import { BranchDetailPage } from './pages/BranchDetailPage';
-import { EmployeeCalendarPage } from './pages/EmployeeCalendarPage';
+
+// Lazy-load the heavier, less frequently hit subtrees so the initial bundle stays
+// lean. The everyday flow (Attendance landing + Profile + Login) is eager-loaded;
+// money / gold / leadership / people / admin pages download only when first visited.
+const MoneyManagementPage      = lazy(() => import('./pages/MoneyManagementPage').then(m => ({ default: m.MoneyManagementPage })));
+const MoneySubmitPage          = lazy(() => import('./pages/MoneySubmitPage').then(m => ({ default: m.MoneySubmitPage })));
+const MoneyHistoryPage         = lazy(() => import('./pages/MoneyHistoryPage').then(m => ({ default: m.MoneyHistoryPage })));
+const MoneyWalletPage          = lazy(() => import('./pages/MoneyWalletPage').then(m => ({ default: m.MoneyWalletPage })));
+const BranchRankingsPage       = lazy(() => import('./pages/BranchRankingsPage').then(m => ({ default: m.BranchRankingsPage })));
+const MdAddEntryPage           = lazy(() => import('./pages/MdAddEntryPage').then(m => ({ default: m.MdAddEntryPage })));
+const ProjectManagementPage    = lazy(() => import('./pages/ProjectManagementPage').then(m => ({ default: m.ProjectManagementPage })));
+const CashHolderDetailPage     = lazy(() => import('./pages/CashHolderDetailPage').then(m => ({ default: m.CashHolderDetailPage })));
+const MoneyPendingTransfersPage = lazy(() => import('./pages/MoneyPendingTransfersPage').then(m => ({ default: m.MoneyPendingTransfersPage })));
+const GoldSchemePage           = lazy(() => import('./pages/GoldSchemePage').then(m => ({ default: m.GoldSchemePage })));
+const GoldSchemeAddPage        = lazy(() => import('./pages/GoldSchemeAddPage').then(m => ({ default: m.GoldSchemeAddPage })));
+const GoldMemberDetailPage     = lazy(() => import('./pages/GoldMemberDetailPage').then(m => ({ default: m.GoldMemberDetailPage })));
+const SchemesPage              = lazy(() => import('./pages/SchemesPage').then(m => ({ default: m.SchemesPage })));
+const IncentiveWalletPage      = lazy(() => import('./pages/IncentiveWalletPage').then(m => ({ default: m.IncentiveWalletPage })));
+const SalaryManagementPage     = lazy(() => import('./pages/SalaryManagementPage').then(m => ({ default: m.SalaryManagementPage })));
+const TradingAcademyPage       = lazy(() => import('./pages/TradingAcademyPage').then(m => ({ default: m.TradingAcademyPage })));
+const LeadershipListPage       = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
+const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
+const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
+const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
+const BranchDetailPage         = lazy(() => import('./pages/BranchDetailPage').then(m => ({ default: m.BranchDetailPage })));
+const EmployeeCalendarPage     = lazy(() => import('./pages/EmployeeCalendarPage').then(m => ({ default: m.EmployeeCalendarPage })));
+
+const RouteFallback = () => (
+  <div className="w-full flex items-center justify-center py-16" role="status" aria-label="Loading page">
+    <Loader2 className="animate-spin text-indigo" size={32} />
+    <span className="sr-only">Loading</span>
+  </div>
+);
 
 function ProtectedLayout() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <Layout />;
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Layout />
+    </Suspense>
+  );
 }
 
 function App() {
@@ -99,10 +118,25 @@ function App() {
         <Route path="/money/holders/:holderId"   element={<CashHolderDetailPage />} />
         <Route path="/money/pending-transfers"   element={<MoneyPendingTransfersPage />} />
 
-        {/* Gold Savings Scheme */}
-        <Route path="/gold"                      element={<GoldSchemePage />} />
-        <Route path="/gold/add"                  element={<GoldSchemeAddPage />} />
-        <Route path="/gold/:id"                  element={<GoldMemberDetailPage />} />
+        {/* Schemes hub */}
+        <Route path="/money/schemes"             element={<SchemesPage />} />
+        <Route path="/money/schemes/gold"        element={<GoldSchemePage />} />
+        <Route path="/money/schemes/gold/add"    element={<GoldSchemeAddPage />} />
+        <Route path="/money/schemes/gold/:id"    element={<GoldMemberDetailPage />} />
+
+        {/* Incentive Wallet */}
+        <Route path="/money/incentives"          element={<IncentiveWalletPage />} />
+
+        {/* Salary Management */}
+        <Route path="/money/salaries"            element={<SalaryManagementPage />} />
+
+        {/* Trading Academy Scheme */}
+        <Route path="/money/schemes/trading-academy" element={<TradingAcademyPage />} />
+
+        {/* Redirects for old /gold/* URLs */}
+        <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />
+        <Route path="/gold/add"                  element={<Navigate to="/money/schemes/gold/add" replace />} />
+        <Route path="/gold/:id"                  element={<Navigate to="/money/schemes/gold" replace />} />
 
         {/* Leadership */}
         <Route path="/leadership/:kind"          element={<LeadershipListPage />} />

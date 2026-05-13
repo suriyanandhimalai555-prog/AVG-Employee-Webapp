@@ -7,6 +7,7 @@ import {
   useGetBranchesQuery,
   useMdAddCollectionEntryMutation,
 } from '../store/api/apiSlice';
+import { PeriodDateInput } from '../components/PeriodDateInput';
 
 const newUuid = () =>
   crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -141,8 +142,7 @@ export const MdAddEntryPage = () => {
           <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-4">
             <div className="space-y-2">
               <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Date *</p>
-              <input
-                type="date"
+              <PeriodDateInput
                 className="w-full p-3 bg-navy/3 rounded-2xl text-sm font-bold text-navy outline-none border border-transparent focus:border-indigo/20 transition-all"
                 value={mdEntryForm.date}
                 onChange={e => setMdEntryForm(p => ({ ...p, date: e.target.value }))}
