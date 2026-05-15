@@ -3,7 +3,7 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST } from '../../shared/role-constants';
 import { TradingAcademyService } from './trading-academy.service';
-import { AddTradingMemberSchema, GetTradingMembersQuerySchema } from './trading-academy.schema';
+import { AddTradingMemberSchema, GetTradingMembersQuerySchema, GetTradingSummaryQuerySchema } from './trading-academy.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
@@ -35,7 +35,8 @@ export default async function tradingAcademyRoutes(fastify: FastifyInstance): Pr
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       // Referrer roles only see their own stats
       const enrolledBy = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
-      const data = await TradingAcademyService.getSummary(fastify.db, req.user.branchId, enrolledBy);
+      const dateFilter = GetTradingSummaryQuerySchema.parse(req.query);
+      const data = await TradingAcademyService.getSummary(fastify.db, req.user.branchId, enrolledBy, dateFilter);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

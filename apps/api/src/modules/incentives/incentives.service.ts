@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { getSubtreeIds } from '../../shared/hierarchy';
-import type { AddIncentiveInput, GetIncentivesQuery, SetCommissionRuleInput } from './incentives.schema';
+import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissionRuleInput } from './incentives.schema';
 
 // Roles that can earn incentives. MD and Director never earn.
 const EARNER_ROLES = new Set(['sales_officer', 'abm', 'branch_manager', 'gm', 'branch_admin']);
@@ -46,18 +46,39 @@ export const IncentiveService = {
     return result.rows;
   },
 
+  // Load commission rules for a project as a role → rate map.
+  // Used by distributeIncentives (Trading Academy) and GoldService so both schemes
+  // read from the same DB rows — single source of truth for all commission rates.
+  async loadProjectRates(
+    db: Pool | PoolClient,
+    projectId: string
+  ): Promise<Record<string, { amount: number; rateType: 'fixed' | 'percent' }>> {
+    const res = await db.query(
+      `SELECT role, amount, rate_type FROM scheme_commission_rules WHERE project_id = $1`,
+      [projectId]
+    );
+    const map: Record<string, { amount: number; rateType: 'fixed' | 'percent' }> = {};
+    for (const row of res.rows) {
+      map[row.role] = { amount: parseFloat(row.amount), rateType: row.rate_type };
+    }
+    return map;
+  },
+
   // Upsert a commission rule for a project+role
   async setCommissionRule(
     db: Pool,
     payload: SetCommissionRuleInput
   ): Promise<any> {
+    // rate_type defaults to 'fixed' when not supplied (Trading Academy rules).
+    // Gold rules supply 'percent' explicitly and must have it preserved on update.
+    const rateType: string = (payload as any).rateType ?? 'fixed';
     const result = await db.query(
-      `INSERT INTO scheme_commission_rules (project_id, role, amount)
-       VALUES ($1, $2, $3)
+      `INSERT INTO scheme_commission_rules (project_id, role, amount, rate_type)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (project_id, role)
-       DO UPDATE SET amount = EXCLUDED.amount, updated_at = now()
+       DO UPDATE SET amount = EXCLUDED.amount, rate_type = EXCLUDED.rate_type, updated_at = now()
        RETURNING *`,
-      [payload.projectId, payload.role, payload.amount]
+      [payload.projectId, payload.role, payload.amount, rateType]
     );
     return result.rows[0];
   },
@@ -87,17 +108,9 @@ export const IncentiveService = {
     creditedBy: string,      // who triggered the distribution (entered_by / branch_admin)
     sourceId?: string
   ): Promise<any[]> {
-    // Load commission rules for this project
-    const rulesResult = await db.query(
-      `SELECT role, amount FROM scheme_commission_rules WHERE project_id = $1`,
-      [projectId]
-    );
-    const rules: Record<string, number> = {};
-    for (const row of rulesResult.rows) {
-      rules[row.role] = parseFloat(row.amount);
-    }
-
-    if (Object.keys(rules).length === 0) {
+    // Load commission rules via the shared helper (same path gold service uses)
+    const ratesMap = await IncentiveService.loadProjectRates(db, projectId);
+    if (Object.keys(ratesMap).length === 0) {
       // No rates configured — nothing to distribute
       return [];
     }
@@ -150,8 +163,10 @@ export const IncentiveService = {
     const created: any[] = [];
 
     for (const person of allRecipients) {
-      const amount = rules[person.role];
-      if (!amount || amount <= 0) continue;
+      // Trading Academy rules are always 'fixed' (₹ per deal); rateType check future-proofs this
+      const rate = ratesMap[person.role];
+      if (!rate || rate.amount <= 0) continue;
+      const amount = rate.amount;
 
       const insertResult = await db.query(
         `INSERT INTO employee_incentives
@@ -227,6 +242,15 @@ export const IncentiveService = {
       params.push(query.sourceType);
     }
 
+    if (query.startDate) {
+      where += ` AND i.created_at >= $${idx++}::date`;
+      params.push(query.startDate);
+    }
+    if (query.endDate) {
+      where += ` AND i.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(query.endDate);
+    }
+
     const countResult = await db.query(
       `SELECT COUNT(*) FROM employee_incentives i WHERE ${where}`,
       params
@@ -251,7 +275,8 @@ export const IncentiveService = {
     db: Pool,
     requesterId: string,
     requesterRole: string,
-    targetUserId?: string
+    targetUserId?: string,
+    dateFilter?: GetWalletQuery
   ): Promise<any> {
     let userId: string;
 
@@ -268,24 +293,37 @@ export const IncentiveService = {
       userId = requesterId;
     }
 
+    // Build date filter clause
+    const params: any[] = [userId];
+    let dateWhere = '';
+    let idx = 2;
+    if (dateFilter?.startDate) {
+      dateWhere += ` AND created_at >= $${idx++}::date`;
+      params.push(dateFilter.startDate);
+    }
+    if (dateFilter?.endDate) {
+      dateWhere += ` AND created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(dateFilter.endDate);
+    }
+
     const balanceResult = await db.query(
-      `SELECT COALESCE(SUM(amount), 0) AS total_balance FROM employee_incentives WHERE user_id = $1`,
-      [userId]
+      `SELECT COALESCE(SUM(amount), 0) AS total_balance FROM employee_incentives WHERE user_id = $1${dateWhere}`,
+      params
     );
 
     const breakdownResult = await db.query(
       `SELECT source_type, COALESCE(SUM(amount), 0) AS subtotal, COUNT(*) AS count
-       FROM employee_incentives WHERE user_id = $1 GROUP BY source_type`,
-      [userId]
+       FROM employee_incentives WHERE user_id = $1${dateWhere} GROUP BY source_type`,
+      params
     );
 
     const recentResult = await db.query(
       `SELECT i.*, u.name AS credited_by_name
        FROM employee_incentives i
        JOIN users u ON i.credited_by = u.id
-       WHERE i.user_id = $1
+       WHERE i.user_id = $1${dateWhere.replace(/created_at/g, 'i.created_at')}
        ORDER BY i.created_at DESC LIMIT 10`,
-      [userId]
+      params
     );
 
     return {

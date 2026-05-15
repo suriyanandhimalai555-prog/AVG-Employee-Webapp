@@ -38,7 +38,7 @@ export default async function moneyRoutes(fastify: FastifyInstance): Promise<voi
       }
 
       const body = CreateProjectSchema.parse(req.body);
-      const data = await MoneyService.createProject(fastify.db, body.name);
+      const data = await MoneyService.createProject(fastify.db, body.name, body.code);
 
       return reply.code(201).send({ success: true, data });
     } catch (error) {

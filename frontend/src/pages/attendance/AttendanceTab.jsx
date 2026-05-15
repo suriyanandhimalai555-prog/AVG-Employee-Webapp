@@ -180,13 +180,11 @@ export const AttendanceTab = () => {
             My History
           </p>
           <HistoryCalendar
+            month={calMonth}
+            year={calYear}
             historyData={historyData}
             mode="self"
-            onDaySelect={(cell) => {
-              const [yr, mo] = cell.isoStr.split('-');
-              setCalMonth(parseInt(mo));
-              setCalYear(parseInt(yr));
-            }}
+            onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
       )}

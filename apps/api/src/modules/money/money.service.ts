@@ -15,16 +15,16 @@ import type {
 export const MoneyService = {
   // ─── PROJECTS ───
 
-  async createProject(db: Pool, name: string): Promise<any> {
+  async createProject(db: Pool, name: string, code: string): Promise<any> {
     try {
       const result = await db.query(
-        'INSERT INTO projects (name) VALUES ($1) RETURNING *',
-        [name]
+        'INSERT INTO projects (name, code) VALUES ($1, $2) RETURNING *',
+        [name, code]
       );
       return result.rows[0];
     } catch (error: any) {
-      if (error.code === '23505') { // unique violation
-        throw new ConflictError('A project with this name already exists');
+      if (error.code === '23505') { // unique violation on name or code
+        throw new ConflictError('A project with this name or code already exists');
       }
       throw error;
     }

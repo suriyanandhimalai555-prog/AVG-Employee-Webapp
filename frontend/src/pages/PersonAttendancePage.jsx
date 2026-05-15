@@ -35,13 +35,6 @@ export const PersonAttendancePage = () => {
     if (!cell) return;
     setSelectedRecord(cell.record ?? null);
     setPhotoLoadError(false);
-    const [y, m] = cell.isoStr.split('-');
-    const nextYear = parseInt(y, 10);
-    const nextMonth = parseInt(m, 10);
-    if (nextYear !== year || nextMonth !== month) {
-      setYear(nextYear);
-      setMonth(nextMonth);
-    }
   };
 
   return (
@@ -80,24 +73,30 @@ export const PersonAttendancePage = () => {
 
       <div className="max-w-2xl mx-auto px-5 py-6 pb-24">
         <HistoryCalendar
+          month={month}
+          year={year}
           historyData={historyData}
           onDaySelect={handleDaySelect}
-          onMonthChange={({ month, year }) => { setMonth(month); setYear(year); }}
+          onMonthChange={({ month: m, year: y }) => { setMonth(m); setYear(y); }}
         />
 
         {selectedRecord?.photo_key && (
-          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5 relative h-52 flex items-center justify-center">
+          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5">
             {photoLoading ? (
-              <Loader2 className="animate-spin text-navy/30" size={24} />
+              <div className="h-52 flex items-center justify-center">
+                <Loader2 className="animate-spin text-navy/30" size={24} />
+              </div>
             ) : photoData?.downloadUrl && !photoLoadError ? (
               <img
                 src={photoData.downloadUrl}
                 alt="Field capture"
-                className="w-full h-full object-cover"
+                className="w-full h-auto"
                 onError={() => setPhotoLoadError(true)}
               />
             ) : (
-              <p className="text-xs font-bold text-navy/30">Photo unavailable</p>
+              <div className="h-20 flex items-center justify-center">
+                <p className="text-xs font-bold text-navy/30">Photo unavailable</p>
+              </div>
             )}
           </div>
         )}

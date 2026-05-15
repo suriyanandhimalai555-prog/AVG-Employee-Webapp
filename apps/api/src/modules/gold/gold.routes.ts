@@ -6,6 +6,7 @@ import { GoldService } from './gold.service';
 import {
   AddGoldMemberSchema,
   GetGoldMembersQuerySchema,
+  GetGoldSummaryQuerySchema,
   UpdateGoldMemberStatusSchema,
   AddGoldPaymentSchema,
 } from './gold.schema';
@@ -44,7 +45,8 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
         throw new ForbiddenError('Access denied');
       }
       const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
-      const data = await GoldService.getBranchSummary(fastify.db, req.user.branchId, referrerId);
+      const dateFilter = GetGoldSummaryQuerySchema.parse(req.query);
+      const data = await GoldService.getBranchSummary(fastify.db, req.user.branchId, referrerId, dateFilter);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

@@ -5,6 +5,7 @@ import { IncentiveService } from './incentives.service';
 import {
   AddIncentiveSchema,
   GetIncentivesQuerySchema,
+  GetWalletQuerySchema,
   SetCommissionRuleSchema,
   DistributeIncentivesSchema,
 } from './incentives.schema';
@@ -83,7 +84,8 @@ export default async function incentiveRoutes(fastify: FastifyInstance): Promise
     try {
       const req = request as AuthenticatedRequest;
       if (req.user.role === 'client') throw new ForbiddenError('Access denied');
-      const data = await IncentiveService.getWallet(fastify.db, req.user.id, req.user.role);
+      const dateFilter = GetWalletQuerySchema.parse(req.query);
+      const data = await IncentiveService.getWallet(fastify.db, req.user.id, req.user.role, undefined, dateFilter);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -95,7 +97,8 @@ export default async function incentiveRoutes(fastify: FastifyInstance): Promise
     try {
       const req = request as AuthenticatedRequest;
       const { userId } = req.params as { userId: string };
-      const data = await IncentiveService.getWallet(fastify.db, req.user.id, req.user.role, userId);
+      const dateFilter = GetWalletQuerySchema.parse(req.query);
+      const data = await IncentiveService.getWallet(fastify.db, req.user.id, req.user.role, userId, dateFilter);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

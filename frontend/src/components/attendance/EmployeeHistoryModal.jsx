@@ -42,14 +42,6 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
   const handleDaySelect = (cell) => {
     if (!cell) return;
     setSelectedRecord(cell.record ?? null);
-    // Sync the query when the user clicks a day in a different month
-    const [y, m] = cell.isoStr.split('-');
-    const parsedY = parseInt(y);
-    const parsedM = parseInt(m);
-    if (parsedY !== year || parsedM !== month) {
-      setYear(parsedY);
-      setMonth(parsedM);
-    }
   };
 
   return (
@@ -66,24 +58,31 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
         )}
 
         <HistoryCalendar
+          month={month}
+          year={year}
           historyData={historyData}
           onDaySelect={handleDaySelect}
+          onMonthChange={({ month: m, year: y }) => { setMonth(m); setYear(y); }}
         />
 
         {/* Photo — shown below the calendar when a field record with a photo is selected */}
         {selectedRecord?.photo_key && (
-          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5 relative h-48 flex items-center justify-center">
+          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5">
             {photoLoading ? (
-              <Loader2 className="animate-spin text-navy/30" size={24} />
+              <div className="h-48 flex items-center justify-center">
+                <Loader2 className="animate-spin text-navy/30" size={24} />
+              </div>
             ) : photoData?.downloadUrl && !photoLoadError ? (
               <img
                 src={photoData.downloadUrl}
                 alt="Field capture"
-                className="w-full h-full object-cover"
+                className="w-full h-auto"
                 onError={() => setPhotoLoadError(true)}
               />
             ) : (
-              <p className="text-xs font-bold text-navy/30">Photo unavailable</p>
+              <div className="h-20 flex items-center justify-center">
+                <p className="text-xs font-bold text-navy/30">Photo unavailable</p>
+              </div>
             )}
           </div>
         )}

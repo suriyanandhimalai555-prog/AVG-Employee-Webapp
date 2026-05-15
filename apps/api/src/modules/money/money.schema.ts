@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 export const CreateProjectSchema = z.object({
   name: z.string().min(1).max(255),
+  // Stable identifier — set once, never changed. Lowercase letters, digits, underscores only.
+  code: z.string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9_]+$/, 'code must contain only lowercase letters, digits, and underscores'),
 });
 
 export const SubmitCollectionSchema = z.object({
@@ -56,6 +61,7 @@ export const TransferCashSchema = z.object({
 export const UpdateProjectSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   isActive: z.boolean().optional(),
+  // `code` is intentionally excluded — it is immutable after creation.
 });
 
 // MD-only manual collection entry — attributed directly to a branch

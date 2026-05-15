@@ -455,7 +455,7 @@ export const apiSlice = createApi({
     addGoldMember: builder.mutation({
       query: (data) => ({ url: '/gold', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: ['GoldMembers', 'GoldSummary'],
+      invalidatesTags: ['GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet'],
     }),
 
     updateGoldMemberStatus: builder.mutation({
@@ -491,7 +491,7 @@ export const apiSlice = createApi({
     addGoldPayment: builder.mutation({
       query: ({ memberId, ...data }) => ({ url: `/gold/${memberId}/payments`, method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: (result, error, { memberId }) => [{ type: 'GoldPayments', id: memberId }, 'GoldMembers'],
+      invalidatesTags: (result, error, { memberId }) => [{ type: 'GoldPayments', id: memberId }, 'GoldMembers', 'Incentives', 'IncentiveWallet'],
     }),
 
     // ─── Incentive Wallet & Commission Rules ───

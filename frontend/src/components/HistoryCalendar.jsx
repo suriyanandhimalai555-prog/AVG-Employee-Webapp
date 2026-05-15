@@ -10,7 +10,6 @@ const DOT_CONFIG = {
   absent:         { bg: 'bg-red-400',   ring: 'ring-red-400/20',   label: 'Absent',   text: 'text-red-500' },
 };
 
-// Self mode: key derived from a single attendance record's status + mode fields
 const getRecordKey = (record) => {
   if (record.status === 'absent')   return 'absent';
   if (record.status === 'half_day') return 'half_day';
@@ -18,7 +17,6 @@ const getRecordKey = (record) => {
   return 'present_office';
 };
 
-// Team mode: pick the dominant dot colour from aggregated counts (present wins over half_day wins over absent)
 const getTeamRecordKey = (record) => {
   if (record.present > 0) return record.field > 0 ? 'present_field' : 'present_office';
   if (record.halfDay > 0) return 'half_day';
@@ -29,11 +27,27 @@ const getTeamRecordKey = (record) => {
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const pad  = (n) => String(n).padStart(2, '0');
 
-// mode='self'  → single-user records (default, Sales Officer behaviour unchanged)
-// mode='team'  → TeamHistoryDay aggregates; dot and detail panel show counts, not IN/OUT
-export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, mode = 'self' }) => {
-  const today = new Date();
-  const [viewDate, setViewDate]   = useState({ month: today.getMonth(), year: today.getFullYear() });
+/**
+ * Controlled calendar component — the parent owns month/year (1-indexed).
+ *
+ * Props:
+ *   month         — 1-indexed (1 = January). Required.
+ *   year          — full year e.g. 2025. Required.
+ *   historyData   — attendance records for the current month (fetched by parent).
+ *   onMonthChange — ({ month, year }) => void  — called when user clicks the arrows.
+ *   onDaySelect   — (cell) => void             — called when user clicks a day cell.
+ *   mode          — 'self' | 'team'
+ */
+export const HistoryCalendar = ({
+  month,
+  year,
+  historyData = [],
+  onDaySelect,
+  onMonthChange,
+  mode = 'self',
+}) => {
+  // selectedIso is pure local UI state — which cell is highlighted.
+  // It does NOT drive data fetching; the parent's month/year props do that.
   const [selectedIso, setSelectedIso] = useState(getISTToday());
 
   const recordsByDate = useMemo(() => {
@@ -47,41 +61,38 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
     return map;
   }, [historyData]);
 
+  // month prop is 1-indexed; Date constructors want 0-indexed.
   const calendarRows = useMemo(() => {
-    const firstDay   = new Date(viewDate.year, viewDate.month, 1);
-    const lastDay    = new Date(viewDate.year, viewDate.month + 1, 0);
-    const startOffset = (firstDay.getDay() + 6) % 7;
+    const firstDay    = new Date(year, month - 1, 1);
+    const lastDay     = new Date(year, month, 0);       // day 0 of next month = last day of this month
+    const startOffset = (firstDay.getDay() + 6) % 7;   // Mon-first offset
 
     const cells = [];
     for (let i = 0; i < startOffset; i++) cells.push(null);
     for (let d = 1; d <= lastDay.getDate(); d++) {
-      const date   = new Date(viewDate.year, viewDate.month, d);
-      const isoStr = `${viewDate.year}-${pad(viewDate.month + 1)}-${pad(d)}`;
-      cells.push({ day: d, isoStr, record: recordsByDate[isoStr] || null, date });
+      const isoStr = `${year}-${pad(month)}-${pad(d)}`;
+      cells.push({ day: d, isoStr, record: recordsByDate[isoStr] || null, date: new Date(year, month - 1, d) });
     }
 
     const rows = [];
     for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
     return rows;
-  }, [viewDate, recordsByDate]);
+  }, [month, year, recordsByDate]);
 
   const selectedRecord = recordsByDate[selectedIso] || null;
 
-  const monthLabel = new Date(viewDate.year, viewDate.month, 1)
+  const monthLabel = new Date(year, month - 1, 1)
     .toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  const prevMonth = () => setViewDate(v => {
-    const d = new Date(v.year, v.month - 1, 1);
-    const next = { month: d.getMonth(), year: d.getFullYear() };
-    onMonthChange?.({ month: next.month + 1, year: next.year });
-    return next;
-  });
-  const nextMonth = () => setViewDate(v => {
-    const d = new Date(v.year, v.month + 1, 1);
-    const next = { month: d.getMonth(), year: d.getFullYear() };
-    onMonthChange?.({ month: next.month + 1, year: next.year });
-    return next;
-  });
+  const goToPrev = () => {
+    const d = new Date(year, month - 2, 1); // month-1 for 0-index, -1 more to go back
+    onMonthChange?.({ month: d.getMonth() + 1, year: d.getFullYear() });
+  };
+
+  const goToNext = () => {
+    const d = new Date(year, month, 1); // month-1 for 0-index, +1 to go forward = month
+    onMonthChange?.({ month: d.getMonth() + 1, year: d.getFullYear() });
+  };
 
   const handleDayClick = (cell) => {
     if (!cell) return;
@@ -90,6 +101,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
   };
 
   const todayIso = getISTToday();
+  const today    = new Date();
 
   const monthStats = useMemo(() => {
     const records = Object.values(recordsByDate).filter(r => {
@@ -97,10 +109,9 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
         ? r.date.slice(0, 10)
         : new Date(r.date).toISOString().slice(0, 10);
       const [yr, mo] = iso.split('-');
-      return parseInt(yr) === viewDate.year && parseInt(mo) === viewDate.month + 1;
+      return parseInt(yr) === year && parseInt(mo) === month;
     });
     if (mode === 'team') {
-      // Sum the pre-aggregated counts from TeamHistoryDay objects
       return {
         present: records.reduce((s, r) => s + (r.present ?? 0), 0),
         absent:  records.reduce((s, r) => s + (r.absent  ?? 0), 0),
@@ -112,7 +123,7 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
       absent:  records.filter(r => r.status === 'absent').length,
       field:   records.filter(r => r.mode === 'field').length,
     };
-  }, [recordsByDate, viewDate, mode]);
+  }, [recordsByDate, year, month, mode]);
 
   return (
     <div className="space-y-3">
@@ -124,13 +135,13 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
         </div>
         <div className="flex gap-1">
           <button
-            onClick={prevMonth}
+            onClick={goToPrev}
             className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-navy/6 text-navy/35 hover:text-navy/70 transition-all duration-200 tactile-press"
           >
             <ChevronLeft size={16} />
           </button>
           <button
-            onClick={nextMonth}
+            onClick={goToNext}
             className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-navy/6 text-navy/35 hover:text-navy/70 transition-all duration-200 tactile-press"
           >
             <ChevronRight size={16} />
@@ -154,17 +165,16 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
           {calendarRows.map((row, ri) => (
             <div key={ri} className="grid grid-cols-7">
               {Array.from({ length: 7 }).map((_, ci) => {
-                const cell    = row[ci];
+                const cell      = row[ci];
                 if (!cell) return <div key={ci} />;
 
                 const isToday    = cell.isoStr === todayIso;
                 const isSelected = cell.isoStr === selectedIso;
                 const isFuture   = cell.date > today && !isToday;
-                // Team mode uses aggregate-aware key; self mode uses the original per-record key
                 const dotKey     = cell.record
                   ? (mode === 'team' ? getTeamRecordKey(cell.record) : getRecordKey(cell.record))
                   : null;
-                const dot        = dotKey ? DOT_CONFIG[dotKey] : null;
+                const dot = dotKey ? DOT_CONFIG[dotKey] : null;
 
                 return (
                   <button
@@ -176,9 +186,8 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
                       ${isFuture   ? 'opacity-20 cursor-default' : 'tactile-press'}
                     `}
                   >
-                    {/* Date circle */}
                     <span className={`text-[11px] font-bold leading-none w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200
-                      ${isSelected && isToday   ? 'bg-indigo text-white shadow-md shadow-indigo/30'    : ''}
+                      ${isSelected && isToday   ? 'bg-indigo text-white shadow-md shadow-indigo/30'   : ''}
                       ${isSelected && !isToday  ? 'ring-2 ring-indigo/60 text-indigo'                 : ''}
                       ${!isSelected && isToday  ? 'text-indigo font-extrabold ring-1 ring-indigo/30'  : ''}
                       ${!isSelected && !isToday ? 'text-navy/55'                                      : ''}
@@ -186,7 +195,6 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
                       {cell.day}
                     </span>
 
-                    {/* Status dot */}
                     {dot ? (
                       <span className={`w-1.5 h-1.5 rounded-full mt-1 ${dot.bg}`} />
                     ) : !isFuture ? (
@@ -239,7 +247,6 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
             transition={{ duration: 0.18 }}
             className="bg-white rounded-3xl card-shadow overflow-hidden"
           >
-            {/* Colored top strip — use mode-appropriate key */}
             <div className={`h-1 w-full ${DOT_CONFIG[mode === 'team' ? getTeamRecordKey(selectedRecord) : getRecordKey(selectedRecord)]?.bg ?? 'bg-navy/10'}`} />
 
             <div className="p-5 space-y-3">
@@ -250,7 +257,6 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
               </p>
 
               {mode === 'team' ? (
-                /* Team mode: show aggregate counts for the day */
                 <div className="grid grid-cols-3 gap-3 pt-1">
                   <div className="text-center">
                     <p className="text-lg font-bold text-indigo font-mono">{selectedRecord.present ?? 0}</p>
@@ -272,7 +278,6 @@ export const HistoryCalendar = ({ historyData = [], onDaySelect, onMonthChange, 
                   </div>
                 </div>
               ) : (
-                /* Self mode: original IN/OUT/photo/note block */
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <p className={`text-sm font-bold ${DOT_CONFIG[getRecordKey(selectedRecord)]?.text ?? 'text-navy'}`}>

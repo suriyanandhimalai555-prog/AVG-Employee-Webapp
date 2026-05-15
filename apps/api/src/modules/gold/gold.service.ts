@@ -1,11 +1,38 @@
 import { Pool } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
+import { IncentiveService } from '../incentives/incentives.service';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
   UpdateGoldMemberStatus,
   AddGoldPaymentInput,
 } from './gold.schema';
+
+// Stable project code for gold — set once at creation, never changes even if the
+// admin renames the project display name through the UI. See migration 026.
+const GOLD_PROJECT_CODE = 'gold_scheme';
+
+// Resolve the gold project id and load its commission rates in one place.
+// Uses IncentiveService.loadProjectRates so both gold and trading academy read
+// from the same code path — scheme_commission_rules is the single source of truth.
+async function loadGoldRates(db: Pool): Promise<{ referrerNew: number; referrerRenewal: number }> {
+  const res = await db.query(
+    `SELECT id FROM projects WHERE code = $1 LIMIT 1`,
+    [GOLD_PROJECT_CODE]
+  );
+  if (res.rows.length === 0) return { referrerNew: 0, referrerRenewal: 0 };
+
+  const ratesMap = await IncentiveService.loadProjectRates(db, res.rows[0].id);
+  // Gold rates are 'percent' type; amount = percentage value (e.g. 20.00 → 0.20 multiplier)
+  const toMultiplier = (role: string) => {
+    const r = ratesMap[role];
+    return r?.rateType === 'percent' ? r.amount / 100 : 0;
+  };
+  return {
+    referrerNew:     toMultiplier('referrer_new'),
+    referrerRenewal: toMultiplier('referrer_renewal'),
+  };
+}
 
 export const GoldService = {
 
@@ -48,6 +75,9 @@ export const GoldService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
+    // Load commission rates from scheme_commission_rules — single source of truth
+    const rates = await loadGoldRates(db);
+
     const client = await db.connect();
     try {
       await client.query('BEGIN');
@@ -63,12 +93,12 @@ export const GoldService = {
           branchId,
           payload.chitNumber,
           payload.customerId,
-          payload.referrerId    || null,
+          payload.referrerId,
           referrerName,
           payload.monthlyAmount,
           payload.startDate,
           payload.totalMonths ?? 12,
-          payload.notes         || null,
+          payload.notes || null,
           enteredBy,
         ]
       );
@@ -83,8 +113,26 @@ export const GoldService = {
         [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', enteredBy]
       );
 
+      // Credit referrer the configured % of monthly_amount as enrollment incentive (from scheme_commission_rules)
+      const enrollmentIncentive = parseFloat(payload.monthlyAmount.toString()) * rates.referrerNew;
+      const customerName = customerResult.rows[0].name;
+      if (enrollmentIncentive > 0 && payload.referrerId) {
+        await client.query(
+          `INSERT INTO employee_incentives
+             (user_id, amount, source_type, source_id, source_description, credited_by)
+           VALUES ($1, $2, 'gold_scheme', $3, $4, $5)`,
+          [
+            payload.referrerId,
+            enrollmentIncentive,
+            member.id,
+            `Gold enrollment: ${customerName} – Chit ${payload.chitNumber}`,
+            enteredBy,
+          ]
+        );
+      }
+
       await client.query('COMMIT');
-      return member;
+      return { member, commissionAmount: enrollmentIncentive };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -117,6 +165,15 @@ export const GoldService = {
       where += ` AND (c.name ILIKE $${idx} OR g.chit_number ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
       params.push(`%${query.search}%`);
       idx++;
+    }
+
+    if (query.startDate) {
+      where += ` AND g.created_at >= $${idx++}::date`;
+      params.push(query.startDate);
+    }
+    if (query.endDate) {
+      where += ` AND g.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(query.endDate);
     }
 
     const countResult = await db.query(
@@ -207,29 +264,62 @@ export const GoldService = {
     enteredBy: string,
     payload: AddGoldPaymentInput
   ): Promise<any> {
-    // Verify the member belongs to this branch
+    // Verify the member belongs to this branch and fetch referrer info for incentive
     const memberCheck = await db.query(
-      'SELECT id, total_months FROM gold_scheme_members WHERE id = $1 AND branch_id = $2',
+      `SELECT g.id, g.total_months, g.referrer_id, g.chit_number, c.name AS customer_name
+       FROM gold_scheme_members g
+       JOIN customers c ON g.customer_id = c.id
+       WHERE g.id = $1 AND g.branch_id = $2`,
       [memberId, branchId]
     );
     if (memberCheck.rows.length === 0) throw new NotFoundError('Member not found');
 
-    if (payload.monthNumber > memberCheck.rows[0].total_months) {
-      throw new ValidationError(`Month ${payload.monthNumber} exceeds total months (${memberCheck.rows[0].total_months})`);
+    const memberRow = memberCheck.rows[0];
+    if (payload.monthNumber > memberRow.total_months) {
+      throw new ValidationError(`Month ${payload.monthNumber} exceeds total months (${memberRow.total_months})`);
     }
 
+    const client = await db.connect();
     try {
-      const result = await db.query(
+      await client.query('BEGIN');
+
+      const result = await client.query(
         `INSERT INTO gold_scheme_payments
            (member_id, month_number, paid_date, amount, payment_mode, notes, entered_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING *`,
         [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.notes || null, enteredBy]
       );
+
+      // Credit referrer the configured renewal % for month 2 onwards (from scheme_commission_rules).
+      // Month 1 is already covered by the enrollment incentive in addMember.
+      if (payload.monthNumber > 1 && memberRow.referrer_id) {
+        const { referrerRenewal } = await loadGoldRates(db);
+        const paymentIncentive = parseFloat(payload.amount.toString()) * referrerRenewal;
+        if (paymentIncentive > 0) {
+          await client.query(
+            `INSERT INTO employee_incentives
+               (user_id, amount, source_type, source_id, source_description, credited_by)
+             VALUES ($1, $2, 'gold_scheme', $3, $4, $5)`,
+            [
+              memberRow.referrer_id,
+              paymentIncentive,
+              memberId,
+              `Gold M${payload.monthNumber} payment: ${memberRow.customer_name} – Chit ${memberRow.chit_number}`,
+              enteredBy,
+            ]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
       return result.rows[0];
     } catch (err: any) {
+      await client.query('ROLLBACK');
       if (err.code === '23505') throw new ConflictError(`Month ${payload.monthNumber} has already been recorded for this member`);
       throw err;
+    } finally {
+      client.release();
     }
   },
 
@@ -253,12 +343,22 @@ export const GoldService = {
     return result.rows;
   },
 
-  // ─── SUMMARY (total chits, active, amounts) ───
+  // ─── SUMMARY (total chits, active, amounts, commission) ───
   // Pass referrerId to scope to one referrer's stats (for SO/ABM/BM/GM personal view)
-  async getBranchSummary(db: Pool, branchId: string, referrerId?: string): Promise<any> {
+  async getBranchSummary(db: Pool, branchId: string, referrerId?: string, dateFilter?: { startDate?: string; endDate?: string }): Promise<any> {
     const params: any[] = [branchId];
-    const extra = referrerId ? ` AND referrer_id = $2` : '';
+    let extra = referrerId ? ` AND referrer_id = $2` : '';
     if (referrerId) params.push(referrerId);
+    let idx = params.length + 1;
+
+    if (dateFilter?.startDate) {
+      extra += ` AND created_at >= $${idx++}::date`;
+      params.push(dateFilter.startDate);
+    }
+    if (dateFilter?.endDate) {
+      extra += ` AND created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(dateFilter.endDate);
+    }
 
     const result = await db.query(
       `SELECT
@@ -272,14 +372,51 @@ export const GoldService = {
        WHERE branch_id = $1${extra}`,
       params
     );
+
+    // ─── Commission query — sums incentives earned from gold_scheme enrollments and renewals ───
+    // Enrollment incentives: 20% of monthly_amount, description starts with 'Gold enrollment:'
+    // Renewal incentives: 15% per month 2+ payment, description starts with 'Gold M'
+    const commParams: any[] = [branchId];
+    let commWhere = 'g.branch_id = $1';
+    let commIdx = 2;
+
+    if (referrerId) {
+      commWhere += ` AND ei.user_id = $${commIdx++}`;
+      commParams.push(referrerId);
+    }
+    if (dateFilter?.startDate) {
+      commWhere += ` AND ei.created_at >= $${commIdx++}::date`;
+      commParams.push(dateFilter.startDate);
+    }
+    if (dateFilter?.endDate) {
+      commWhere += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`;
+      commParams.push(dateFilter.endDate);
+    }
+
+    const commResult = await db.query(
+      `SELECT
+         COALESCE(SUM(ei.amount) FILTER (WHERE ei.source_description LIKE 'Gold enrollment:%'), 0) AS new_commission,
+         COALESCE(SUM(ei.amount) FILTER (WHERE ei.source_description LIKE 'Gold M%'),           0) AS renewal_commission
+       FROM employee_incentives ei
+       JOIN gold_scheme_members g ON g.id = ei.source_id
+       WHERE ei.source_type = 'gold_scheme' AND ${commWhere}`,
+      commParams
+    );
+
     const r = result.rows[0];
+    const c = commResult.rows[0];
+    const newCommission     = parseFloat(c.new_commission);
+    const renewalCommission = parseFloat(c.renewal_commission);
     return {
-      totalChits:       parseInt(r.total_chits),
-      activeChits:      parseInt(r.active_chits),
-      completedChits:   parseInt(r.completed_chits),
-      withdrawnChits:   parseInt(r.withdrawn_chits),
+      totalChits:        parseInt(r.total_chits),
+      activeChits:       parseInt(r.active_chits),
+      completedChits:    parseInt(r.completed_chits),
+      withdrawnChits:    parseInt(r.withdrawn_chits),
       monthlyCommitment: parseFloat(r.monthly_commitment),
       totalSchemeValue:  parseFloat(r.total_scheme_value),
+      newCommission,
+      renewalCommission,
+      totalCommission:   newCommission + renewalCommission,
     };
   },
 };

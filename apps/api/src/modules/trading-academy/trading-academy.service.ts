@@ -3,16 +3,17 @@ import { NotFoundError } from '../../shared/errors';
 import { IncentiveService } from '../incentives/incentives.service';
 import type { AddTradingMemberInput, GetTradingMembersQuery } from './trading-academy.schema';
 
-// Canonical project name — must match exactly what is stored in the projects table
-const PROJECT_NAME = 'AGILAVETRI TRADING ACADEMY PVT LTD';
+// Stable project code for trading academy — set once at creation, never changes
+// even if the admin renames the project display name. See migration 026.
+const PROJECT_CODE = 'trading_academy';
 
 export const TradingAcademyService = {
 
-  // Resolve the project id once per call (cheap: indexed name lookup)
+  // Resolve the project id once per call (cheap: indexed code lookup)
   async getProjectId(db: Pool): Promise<string> {
     const res = await db.query(
-      `SELECT id FROM projects WHERE name = $1 AND is_active = true LIMIT 1`,
-      [PROJECT_NAME]
+      `SELECT id FROM projects WHERE code = $1 LIMIT 1`,
+      [PROJECT_CODE]
     );
     if (res.rows.length === 0) throw new NotFoundError('Trading Academy project not found');
     return res.rows[0].id;
@@ -112,6 +113,15 @@ export const TradingAcademyService = {
       idx++;
     }
 
+    if (query.startDate) {
+      where += ` AND t.enrollment_date >= $${idx++}::date`;
+      params.push(query.startDate);
+    }
+    if (query.endDate) {
+      where += ` AND t.enrollment_date <= $${idx++}::date`;
+      params.push(query.endDate);
+    }
+
     const countResult = await db.query(
       `SELECT COUNT(*)
        FROM trading_academy_members t
@@ -145,14 +155,22 @@ export const TradingAcademyService = {
 
   // ─── SUMMARY ───
   // Pass enrolledBy to scope to one referrer's stats (for SO/ABM/BM/GM personal view)
-  async getSummary(db: Pool, branchId: string, enrolledBy?: string): Promise<any> {
+  async getSummary(db: Pool, branchId: string, enrolledBy?: string, dateFilter?: { startDate?: string; endDate?: string }): Promise<any> {
     const projectId = await TradingAcademyService.getProjectId(db);
 
     const params: any[] = [branchId, projectId];
     let extra = '';
     if (enrolledBy) {
-      extra = ` AND enrolled_by = $3`;
+      extra += ` AND enrolled_by = $${params.length + 1}`;
       params.push(enrolledBy);
+    }
+    if (dateFilter?.startDate) {
+      extra += ` AND enrollment_date >= $${params.length + 1}::date`;
+      params.push(dateFilter.startDate);
+    }
+    if (dateFilter?.endDate) {
+      extra += ` AND enrollment_date <= $${params.length + 1}::date`;
+      params.push(dateFilter.endDate);
     }
 
     const res = await db.query(

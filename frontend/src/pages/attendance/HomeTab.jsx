@@ -228,12 +228,9 @@ export const HomeTab = () => {
           <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
           <div className="px-6 pb-32">
             <HistoryCalendar
+              month={calMonth}
+              year={calYear}
               historyData={historyData}
-              onDaySelect={(cell) => {
-                const [yr, mo] = cell.isoStr.split('-');
-                setCalMonth(parseInt(mo));
-                setCalYear(parseInt(yr));
-              }}
               onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
@@ -254,13 +251,10 @@ export const HomeTab = () => {
 
           <div className="px-6 pb-32">
             <HistoryCalendar
+              month={calMonth}
+              year={calYear}
               historyData={teamHistoryData}
               mode="team"
-              onDaySelect={(cell) => {
-                const [yr, mo] = cell.isoStr.split('-');
-                setCalMonth(parseInt(mo));
-                setCalYear(parseInt(yr));
-              }}
               onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
@@ -281,13 +275,10 @@ export const HomeTab = () => {
 
           <div className="px-6 pb-32">
             <HistoryCalendar
+              month={calMonth}
+              year={calYear}
               historyData={teamHistoryData}
               mode="team"
-              onDaySelect={(cell) => {
-                const [yr, mo] = cell.isoStr.split('-');
-                setCalMonth(parseInt(mo));
-                setCalYear(parseInt(yr));
-              }}
               onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
             />
           </div>
@@ -325,13 +316,10 @@ export const HomeTab = () => {
 
           <TeamListSection title="Direct Reports" members={teamMembers} onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })} />
           <HistoryCalendar
+            month={calMonth}
+            year={calYear}
             historyData={teamHistoryData}
             mode="team"
-            onDaySelect={(cell) => {
-              const [yr, mo] = cell.isoStr.split('-');
-              setCalMonth(parseInt(mo));
-              setCalYear(parseInt(yr));
-            }}
             onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
@@ -413,13 +401,10 @@ export const HomeTab = () => {
           )}
 
           <HistoryCalendar
+            month={calMonth}
+            year={calYear}
             historyData={teamHistoryData}
             mode="team"
-            onDaySelect={(cell) => {
-              const [yr, mo] = cell.isoStr.split('-');
-              setCalMonth(parseInt(mo));
-              setCalYear(parseInt(yr));
-            }}
             onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
@@ -466,13 +451,10 @@ export const HomeTab = () => {
             onOpenCalendar={(emp) => navigate(`/people/${emp.id}/calendar`, { state: { employee: emp } })}
           />
           <HistoryCalendar
+            month={calMonth}
+            year={calYear}
             historyData={teamHistoryData}
             mode="team"
-            onDaySelect={(cell) => {
-              const [yr, mo] = cell.isoStr.split('-');
-              setCalMonth(parseInt(mo));
-              setCalYear(parseInt(yr));
-            }}
             onMonthChange={({ month, year }) => { setCalMonth(month); setCalYear(year); }}
           />
         </div>
