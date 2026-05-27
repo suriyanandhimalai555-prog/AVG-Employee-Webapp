@@ -1,0 +1,846 @@
+================================================================================
+EMS — EMPLOYEE MANAGEMENT SYSTEM
+Application Guide: roles, visibility, what every screen does, and how the
+backend enforces it
+================================================================================
+
+This document is the single source of truth for non-code questions:
+  * Who is in the system?
+  * Who can see whom?
+  * Who can do what?
+  * What does each module actually do?
+  * Where is each rule enforced?
+
+Everything below was verified against the code (apps/api/src/modules/*,
+apps/worker/src/*, frontend/src/*). Where this doc says "X is allowed", the
+matching server-side check is named so you can grep for it.
+
+
+================================================================================
+1. WHAT THIS APPLICATION IS
+================================================================================
+
+EMS is an internal workforce-management platform built for a company with
+~1,500 employees spread across multiple branches across South India. It is
+NOT a public app — every login belongs to either an employee or a client
+tied to the business.
+
+The system ships:
+  - Attendance tracking (GPS + photo, with field check-in flow)
+  - Branch + user management (org tree, oversight)
+  - Money collections (multi-mode, with verification workflow)
+  - Transactions (subordinate → manager cash handover)
+  - Customer registry (single source of truth for customers)
+  - Gold Savings Scheme (monthly chits)
+  - Trading Academy (one-time enrollment)
+  - Gold Coin Scheme (16-slot rooms, monthly draws, head-branch combine)
+  - Incentives / commission wallet (unified ledger across all schemes)
+  - Salary management
+  - Cross-scheme dashboard for leadership (MD / Director)
+
+
+================================================================================
+2. ARCHITECTURE AT A GLANCE
+================================================================================
+
+  apps/api/        Fastify REST API (TypeScript) — port 3001
+                   Plugins: db, redis, auth (JWT), error-handler, socket.io
+                   Modules under src/modules/*: each has *.routes.ts +
+                   *.service.ts (+ *.schema.ts for Zod input validation).
+  apps/worker/     BullMQ background worker — writes attendance, runs the
+                   23:30 auto-absent job, publishes socket confirmations.
+  frontend/        React SPA (Vite). Redux Toolkit + RTK Query for ALL API
+                   calls. Lazy-loaded route bundles. All files are .jsx.
+  packages/        Shared TS types.
+
+  PostgreSQL       Source of truth. Migrations live in
+                   apps/api/migrations/*.sql, applied via run_migrations.js.
+  Redis            Session cache, attendance dupe-guards, rate limits,
+                   hierarchy cache, pub/sub for socket confirmations,
+                   BullMQ queue backend.
+  S3               Photo and document storage. We store keys, not URLs;
+                   the client fetches presigned URLs on demand.
+
+
+================================================================================
+3. THE COMPANY HIERARCHY
+================================================================================
+
+  MD  (exactly one person — enforced on user creation)
+   └── Director (many; created by MD)
+       └── GM (manages many branches across regions)
+           └── Branch Manager (runs one branch)
+               └── ABM (assistant branch manager)
+                   └── Sales Officer (field staff)
+                       └── Client (login only, no attendance, no money)
+
+  Plus three OFF-HIERARCHY roles:
+     - Branch Admin: 1 per branch. Operates the branch — attendance, scheme
+                     sales, customer onboarding. Not a manager. Cannot see
+                     other branches. Cannot touch money or send messages.
+     - OA          : Office Assistant. Read-only-ish; cannot submit money;
+                     can search customers; no attendance write actions
+                     beyond their own.
+     - Client      : Customer with a login (rare). No attendance. Sees only
+                     their own scheme/payment records.
+
+How the tree is stored:
+  - users.manager_id points at the direct boss. One column builds the tree.
+  - GM / Director are NOT pinned to a branch in users.branch_id (it's null).
+    Their cross-branch scope comes from the user_oversight_branches table
+    (a many-to-many between user_id and branch_id).
+  - Branch Admin's branch is resolved with this precedence:
+      1. JWT branchId (set at login)
+      2. users.branch_id
+      3. branches.admin_id pointing at the admin user
+    See shared/attendance-scope.ts → resolveBranchAdminBranchId.
+
+
+================================================================================
+4. AUTHENTICATION
+================================================================================
+
+  POST /api/auth/login        Public. Returns { token, user }. Sets the
+                              Redis cache user:{id} for 30 minutes.
+  GET  /api/auth/me           Authenticated. Self-profile. Redis-cached.
+  POST /api/auth/logout       Authenticated. Clears the Redis cache.
+  POST /api/auth/change-password
+  GET  /api/auth/profile-upload-url   Presigned S3 URL for the avatar.
+  PATCH /api/auth/profile-assets      Persist the new profile keys.
+
+  JWT payload: { id, role, branchId, name }. TTL controlled by
+  JWT_EXPIRES_IN (default 8h).
+
+The /auth/me response includes:
+    id, name, email, role,
+    branchId, branchName,
+    isHeadBranch    (true when the user's branch is flagged as the head
+                     branch — drives Gold Coin head-branch screens),
+    hasSmartphone, profilePhotoKey/Url, profileProofKey
+
+Anyone whose Redis cache predates the isHeadBranch field self-heals at the
+next /me hit or within the 30-min TTL.
+
+
+================================================================================
+5. VISIBILITY RULE (CANONICAL)
+================================================================================
+
+Everyone sees what is below them. The rule is enforced server-side; the
+frontend just respects what the API returns.
+
+  Role            Sees
+  ──────────────  ────────────────────────────────────────────────────────
+  MD              Entire org. Every branch, every user, every collection.
+  Director        Branches assigned through user_oversight_branches (and
+                  whoever sits below those branches in the tree).
+  GM              Branches assigned through user_oversight_branches +
+                  their reporting subtree.
+  Branch Manager  Their branch only (every user in it).
+  ABM             Their direct team (descendants via manager_id).
+  Sales Officer   Only themselves.
+  Branch Admin    Their branch only.
+  OA              Limited; cannot submit money, can search customers.
+  Client          Only their own data — schemes, payments, profile.
+
+Mechanism:
+  - shared/hierarchy.ts uses a PostgreSQL recursive CTE walking
+    manager_id downward. Result cached in Redis 1 hour
+    (hier:subtree:{userId}, hier:oversight:{userId}).
+  - bustHierarchyCache(userId) is called whenever a subordinate is
+    created, deactivated, reactivated, or moved. So the cache
+    invalidates on org changes.
+  - shared/attendance-scope.ts → resolveEmployeeDashboardScope decides
+    "this requester sees branch B" vs "this requester sees subtree S"
+    based on role.
+
+
+================================================================================
+6. ATTENDANCE
+================================================================================
+
+WHO MARKS:
+  Everyone EXCEPT MD and Client.
+
+  Role            Marks
+  ──────────────  ────────────────────────────────────────────────────────
+  MD              NO
+  Director        YES (own)
+  GM              YES (own)
+  Branch Manager  YES (own)
+  ABM             YES (own)
+  Sales Officer   YES (own)
+  Branch Admin    YES (own) + marks for employees without smartphones
+  OA              NO writes beyond their own self-mark
+  Client          NO
+
+SMARTPHONE RULE:
+  Every user has has_smartphone (true/false).
+    true  → marks own attendance
+    false → branch admin marks for them (admin-mark route)
+  Server REJECTS a self-mark when has_smartphone = false.
+  Only Branch Admin can flip this flag, and only for employees in their
+  own branch.
+
+ASYNC FLOW (designed for the 1,500-user morning surge):
+  1. Employee submits via POST /api/attendance.
+  2. Redis atomic SET NX on att:{userId}:{date}.
+       - key exists → 409, no DB hit.
+       - key set    → continue.
+  3. Push a job to the BullMQ "attendance" queue.
+  4. API returns 202 immediately. The user sees a spinner.
+  5. Worker (apps/worker) consumes the job, up to 100 writes/sec,
+     20 concurrent, 3 retries.
+  6. Worker INSERTs with ON CONFLICT (user_id, date) DO UPDATE
+     only when the existing row is an auto-absent shell.
+  7. Worker writes an attendance_audit row (immutable;
+     UPDATE/DELETE revoked).
+  8. Worker publishes attendance:confirmed via Redis pub/sub.
+  9. Socket.io pushes confirmation to the user's session. They see the
+     green checkmark.
+
+AUTO-ABSENT JOB:
+  Runs at 23:30 IST. For every active non-MD non-client user with no
+  attendance row for today, inserts status='absent'. Skipped if the
+  user has a check-in queued (Redis dupe-guard still present).
+
+CORRECTIONS:
+  PATCH /api/attendance/:id/correct — branch admin / GM / MD only
+  (ADMIN_MARK_ROLES). Always writes an audit row; never overwrites the
+  initial mark in attendance_audit, only in attendance.
+
+ENDPOINTS (and their role gate):
+  POST  /api/attendance/                authenticated, not client
+  POST  /api/attendance/self-absent     authenticated, not client
+  POST  /api/attendance/admin-mark      ADMIN_MARK_ROLES (branch_admin, md, gm)
+  POST  /api/attendance/admin-sign-off  ADMIN_MARK_ROLES
+  POST  /api/attendance/sign-off        authenticated
+  PATCH /api/attendance/:id/correct     ADMIN_MARK_ROLES
+  GET   /api/attendance/                authenticated, not client
+  GET   /api/attendance/employees       md, director, gm, branch_manager,
+                                        abm, branch_admin
+  GET   /api/attendance/summary         not client
+  GET   /api/attendance/team-history    not client
+  GET   /api/attendance/:userId/history not client
+  GET   /api/attendance/upload-url      not client
+  GET   /api/attendance/photo-url       not client
+  PATCH /api/attendance/users/:userId/smartphone   branch_admin (own branch)
+
+
+================================================================================
+7. BRANCHES
+================================================================================
+
+ROUTES (apps/api/src/modules/branches/branch.routes.ts):
+  GET    /api/branches             authenticated; scoped on read
+  GET    /api/branches/:id         authenticated
+  POST   /api/branches             MD only
+  PATCH  /api/branches/:id         MD only
+  DELETE /api/branches/:id         MD only
+
+A branches table row carries:
+  id, name, shift_start, shift_end, timezone,
+  admin_id (branch admin user),
+  is_active, is_head_branch.
+
+  is_head_branch  flips Gold Coin combine/refund/extend powers for that
+                  branch's admin. Currently set on Tiruvannamalai
+                  (migration 035).
+
+
+================================================================================
+8. USERS
+================================================================================
+
+CREATION MATRIX (apps/api/src/modules/users/user.service.ts → createUser):
+  Creator         Can create
+  ──────────────  ────────────────────────────────────────────────────────
+  MD              director, gm, branch_manager, abm, sales_officer,
+                  branch_admin, oa
+  GM              branch_manager, abm, sales_officer, branch_admin, oa
+  Branch Admin    branch_manager, abm, sales_officer, oa (their branch
+                  only — branchId is forced server-side)
+  All others      Cannot create users.
+
+  Only ONE MD is allowed — enforced on every user create.
+  Director / GM never get a branch_id; their scope comes from
+  user_oversight_branches.
+
+OTHER USER ROUTES:
+  GET    /api/users                       md, director, gm, branch_admin
+  GET    /api/users/:id                   authenticated
+  GET    /api/users/:id/documents         md, director, gm, branch_admin
+  GET    /api/users/me/documents         self
+  POST   /api/users/me/documents          self (S3 presigned upload then
+                                          persist key)
+  DELETE /api/users/me/documents/:id      self
+  GET    /api/users/deactivated           MD only
+  POST   /api/users/:id/reactivate        MD only
+  GET    /api/users/manager-options       any authenticated (used in user
+                                          create dropdowns)
+  GET    /api/users/superiors             self (returns the chain above
+                                          you up to MD)
+  POST   /api/users                       see creation matrix above
+  PATCH  /api/users/:id/oversight-branches  MD / GM creator perms
+  GET    /api/users/upload-url            authenticated
+
+DEACTIVATION:
+  Setting users.is_active = false removes the user from login,
+  hierarchy, and dashboard rosters. MD-only.
+
+
+================================================================================
+9. MONEY (COLLECTIONS, WALLETS, TRANSFERS)
+================================================================================
+
+DATA MODEL:
+  money_projects        Active projects/customers money is collected for.
+                        MD creates and toggles active state.
+  money_collections     One row per collection event.
+                        Modes: gpay, bank_receipt, cash, cash_transfer.
+                        Status: pending → approved | rejected.
+                        Cash_transfer mode = wallet → wallet handover.
+
+WHO CAN SUBMIT MONEY:
+  ANYONE except oa and client.
+  - Branch Admin's submissions go through an extra validation path
+    (branch-scoped) but they CAN submit.
+  - Sales officers / managers submit collections like normal.
+
+VERIFICATION ROUTING (computed inside MoneyService.submitCollection):
+  - "self-held cash": no verifier; auto-approved into the user's wallet.
+  - cash_transfer  : routed to a specific receiver (their direct manager
+                     or MD).
+  - everything else: routed to the user's direct manager. Special cases:
+      - md submitter      → self-verify
+      - branch_admin      → BM of their branch becomes the verifier
+                            (or 409 if no BM)
+      - everyone else     → users.manager_id; 409 if missing.
+
+VERIFY:
+  PATCH /api/money/:id/verify    authenticated. Only the assigned
+                                 verifier (or MD) can approve / reject.
+                                 Service-side check:
+                                   if (role !== 'md' &&
+                                       assigned_verifier_id !== userId)
+                                       throw ForbiddenError.
+
+WALLET:
+  GET  /api/money/wallet         self. Returns rows you have collected
+                                 that are approved + still self-held
+                                 (not yet handed off).
+  POST /api/money/transfer       self. Creates a cash_transfer collection
+                                 that locks the chosen wallet items
+                                 against double-spend.
+  GET  /api/money/:id/sources    introspect a cash_transfer's source ids.
+
+ADMIN-ONLY ENDPOINTS:
+  GET  /api/money/admin/overview         md (+ select managers — read it
+                                         per route)
+  GET  /api/money/admin/rankings         MD only
+  POST /api/money/admin/entry            MD only (direct add)
+  GET  /api/money/admin/branch/:branchId md
+  GET  /api/money/admin/holders/:holderId  md
+
+OTHER:
+  POST   /api/money/projects            MD only
+  PATCH  /api/money/projects/:id        MD only
+  GET    /api/money/projects            authenticated
+  GET    /api/money/                    self / verifier scope
+  GET    /api/money/upload-url          authenticated (S3 receipt photo)
+  GET    /api/money/photo-url           authenticated
+
+
+================================================================================
+10. TRANSACTIONS (CASH HANDOVER LEDGER)
+================================================================================
+
+  POST  /api/transactions          create a handover
+  GET   /api/transactions          list (filtered by request.user.id
+                                   scope inside the service)
+  PATCH /api/transactions/:id/status   approve / reject
+
+Constraint enforced by the database / service:
+  receiver_id must be the sender's direct manager_id.
+  (Otherwise the transaction is rejected at insert time.)
+
+
+================================================================================
+11. CUSTOMERS
+================================================================================
+
+Single source of truth for customer rows. Schemes reference customers by
+id; gold/trading/gold-coin all enforce "customer must belong to your
+branch" on writes.
+
+  GET   /api/customers              md, director, gm, branch_manager,
+                                    abm, branch_admin, oa
+                                    (branchId scoping: non-admins are
+                                    locked to their branch when applicable)
+  GET   /api/customers/:id          same role set
+  POST  /api/customers              same role set
+
+
+================================================================================
+12. SCHEMES — SHARED BACKBONE
+================================================================================
+
+Every scheme (gold, trading-academy, gold-coin, future chit/insurance/SIP)
+shares this scaffolding:
+
+  projects                  One row per scheme. `.code` is stable.
+  scheme_commission_rules   Per-scheme per-role rate + rate_type
+                            (fixed | percent).
+  customers                 Shared customer registry.
+  employee_incentives       Unified wallet ledger.
+                            source_type='scheme', scheme_code+payment_event
+                            identify which scheme and event paid the
+                            commission.
+  IncentiveService.distributeIncentives(client, args)
+                            The ONLY function that writes
+                            employee_incentives rows. Modes:
+                              fixed_chain      — walk dealMaker → GM,
+                                                 credit fixed amount per
+                                                 role, plus branch admin.
+                              percent_referrer — credit the referrer only,
+                                                 amount = baseAmount × rate%.
+
+Per-scheme files:
+  <scheme>_members          Scheme's own table (chit_number,
+                            monthly_amount, etc.) — except gold-coin which
+                            uses rooms + slots.
+  <scheme>_payments         Optional, when the scheme has recurring
+                            payments.
+  <scheme>.service.ts       Implements the SchemeService contract.
+  <scheme>.routes.ts        REST surface for that scheme.
+
+REGISTRY:
+  modules/schemes/scheme.registry.ts maps schemeCode → service. Cross-scheme
+  code walks this registry — adding a new scheme means implementing the
+  contract and adding one line to the registry; the cross-scheme dashboard
+  (section 16) picks it up automatically.
+
+DASHBOARD CONTRACT (modules/schemes/scheme.contract.ts):
+  Required:
+    getBranchSummary(db, branchId, scopedToUserId?, dateFilter?)
+  Optional (used by /api/schemes/* admin routes):
+    getOverviewByBranch(db, dateFilter?)
+        → [ { branchId, branchName, count, collected, commission } ]
+    getEntriesByBranch(db, branchId, dateFilter?)
+        → Per-scheme entry list (shape is scheme-specific by design)
+
+
+================================================================================
+13. GOLD SAVINGS SCHEME
+================================================================================
+
+Monthly chits (default 12 months). Member pays monthly_amount each month
+on their start date. Status: active | completed | withdrawn.
+
+ROUTES:
+  GET   /api/gold/employees                READER_ROLES
+  GET   /api/gold/summary                  READER_ROLES (referrer roles
+                                           auto-scoped to their own stats)
+  GET   /api/gold/                         READER_ROLES (referrer roles
+                                           auto-scoped to their referrals)
+  GET   /api/gold/:id                      READER_ROLES
+  GET   /api/gold/:id/payments             READER_ROLES
+  POST  /api/gold/                         BRANCH_ADMIN only
+  POST  /api/gold/:id/payments             BRANCH_ADMIN only
+  PATCH /api/gold/:id/status               BRANCH_ADMIN only
+
+  READER_ROLES   = md, director, gm, branch_manager, abm, sales_officer,
+                   branch_admin
+  WRITER_ROLE    = branch_admin
+  REFERRER_ONLY  = branch_manager, abm, sales_officer (scoped to own
+                   referrals)
+
+INCENTIVE:
+  Enrollment: referrer gets `referrer_new` % of monthly_amount.
+  Renewal (month 2+): referrer gets `referrer_renewal` % of paid amount.
+  Both are credited via IncentiveService.distributeIncentives.
+
+
+================================================================================
+14. TRADING ACADEMY
+================================================================================
+
+One-time enrollment scheme. amount, enrollment_date, enrolled_by.
+
+ROUTES (mirror gold):
+  GET  /api/trading-academy/employees           READER_ROLES
+  GET  /api/trading-academy/summary             READER_ROLES (referrer scope)
+  GET  /api/trading-academy/                    READER_ROLES (referrer scope)
+  POST /api/trading-academy/                    BRANCH_ADMIN only
+
+INCENTIVE:
+  fixed_chain — walks the enrolled_by user up to GM, plus branch admin of
+  the SO's branch. Each level earns a flat rupee amount from
+  scheme_commission_rules.
+
+
+================================================================================
+15. GOLD COIN SCHEME (the biggest one — read carefully)
+================================================================================
+
+Customers buy gold-coin packages. Each room holds exactly 16 slots; one
+slot is eliminated per monthly draw on the 12th. A customer may hold
+multiple slots in a room.
+
+LIFECYCLE (modules/gold-coin/status-machine.ts):
+    filling          → slots being collected, deadline = created_at + 30d
+    pending_combine  → deadline passed without 16 slots; awaits head
+                       branch action
+    combined_into    → absorbed by another room (terminal)
+    expired          → head branch refunded; slots flagged refunded
+    active           → admin activated a 16-slot room; draws begin
+    completed        → all 16 draws done (terminal)
+
+Status transitions are gated by `assertTransition(from, to)`.
+
+PACKAGES (migrations 030, 031, 034):
+  Twenty per-slot SKUs from ₹12k / 1GM up to ₹19.2L / 160GM. A "Full room"
+  sale is just 16 slots of the same package booked in one transaction
+  with quantity=16 (only allowed when the room is empty).
+
+ROOMS:
+  Created lazily by findOrCreateFillingRoom under SELECT FOR UPDATE — two
+  concurrent purchases can't overshoot 16. Stale filling rooms get
+  promoted to pending_combine on read (and bulk-promoted at the top of
+  the rooms list query).
+
+SLOTS:
+  One row per customer purchase. status: held | won | refunded. won_in_draw_id
+  is enforced by a CHECK constraint (won ⇔ pointer set).
+
+DRAWS:
+  One row per monthly draw. winning_slot must be `held` and belong to the
+  room. The room's 16th draw auto-completes the room.
+
+HEAD-BRANCH ACTIONS (branch admin at a branch flagged is_head_branch):
+  combineRooms(sourceRoomIds)  Move the first 16 held slots (paid_at ASC)
+                               of pending_combine rooms into a NEW room
+                               owned by the head branch. Source rooms
+                               with zero remaining slots transition to
+                               combined_into.
+  refundRoom(roomId)           Refund every held slot in one room
+                               (pending_combine → expired).
+  extendRoom(roomId, days)     Push fill_deadline +N days
+                               (pending_combine → filling).
+
+ROUTES:
+  GET   /api/gold-coin/packages              authenticated
+  GET   /api/gold-coin/rooms                 authenticated
+  GET   /api/gold-coin/rooms/:id             authenticated
+  GET   /api/gold-coin/summary               authenticated (own branch)
+  POST  /api/gold-coin/slots                 WRITER_ROLES
+                                             (branch_admin, md, director)
+  POST  /api/gold-coin/slots/:id/refund      WRITER_ROLES
+  POST  /api/gold-coin/rooms/:id/activate    WRITER_ROLES
+  POST  /api/gold-coin/rooms/:id/draws       WRITER_ROLES
+  POST  /api/gold-coin/rooms/combine         HEAD-BRANCH branch_admin only
+  POST  /api/gold-coin/rooms/:id/refund      HEAD-BRANCH branch_admin only
+  POST  /api/gold-coin/rooms/:id/extend      HEAD-BRANCH branch_admin only
+
+  Head-branch check lives in CombineService.assertHeadBranchAdmin and
+  validates u.role='branch_admin' AND branches.is_head_branch=true.
+
+INCENTIVE:
+  20% to the referrer of the slot purchase, computed on
+  quantity × per-slot price. percent_referrer mode,
+  percentRole='referrer_direct'. One ledger row per purchase,
+  not one per slot.
+
+FRONTEND PAGES:
+  GoldCoinSchemePage       (list rooms by status, headline stats)
+  GoldCoinAddSlotPage      (sell 1..16 slots with referral commission preview)
+  GoldCoinRoomDetailPage   (room slots, activate, run draws)
+  GoldCoinHeadBranchPage   (head-branch console: combine/refund/extend)
+
+
+================================================================================
+16. CROSS-SCHEME DASHBOARD (MD / DIRECTOR)
+================================================================================
+
+Backend (modules/schemes/aggregate.routes.ts):
+  GET /api/schemes/overview
+      Walks the registry. For every scheme that implements
+      getOverviewByBranch, returns the per-branch breakdown plus summed
+      totals. One call → whole dashboard.
+  GET /api/schemes/:code/branches
+      Same payload but for one scheme — used to refresh just one card.
+  GET /api/schemes/:code/branches/:branchId/entries
+      Drill-down: that branch's members (gold), enrollments (trading), or
+      rooms (gold-coin).
+  GET /api/schemes/codes
+      Returns registered codes + display names from `projects`.
+
+All four endpoints are gated to MD and Director only.
+
+Frontend (frontend/src/pages/SchemesOverviewPage.jsx):
+  Three zoom levels in one page:
+    1. Scheme cards — totals (count, collected, commission).
+    2. Tap a card → per-branch rows for that scheme.
+    3. Tap a branch row → inline entries list with scheme-aware row
+       templates (gold/trading/gold-coin).
+  Visible via the bottom-bar "Schemes" tab — added to MD and Director
+  in nav-tabs.js. MD additionally keeps the "Branches" tab.
+
+
+================================================================================
+17. INCENTIVES (UNIFIED COMMISSION WALLET)
+================================================================================
+
+Every commission across every scheme is one row in `employee_incentives`.
+The dashboard never has to re-derive — it just queries the ledger,
+optionally filtered by scheme_code or payment_event.
+
+ROUTES:
+  GET  /api/incentives/rules             authenticated
+  GET  /api/incentives/rules/:projectId  authenticated
+  POST /api/incentives/rules             md, director
+  POST /api/incentives/distribute        md, director, gm, branch_manager,
+                                          branch_admin
+  GET  /api/incentives/wallet            authenticated (own wallet)
+  GET  /api/incentives/wallet/:userId    self or anyone in your subtree
+                                          (enforced inside service)
+  GET  /api/incentives/                  authenticated, non-client
+  POST /api/incentives/                  md, director, gm, branch_manager,
+                                          branch_admin (manual credit)
+
+`/incentives/wallet/:userId` enforces:
+  - sales_officer or client can never look at others'.
+  - other roles can only look up users inside their hierarchy subtree.
+
+The wallet response groups rows by source_type AND scheme_code so the UI
+can show "Collections" vs each scheme as separate buckets without
+LIKE-matching descriptions.
+
+
+================================================================================
+18. SALARIES
+================================================================================
+
+ROUTES:
+  GET  /api/salaries/me                  self (any role except client)
+  GET  /api/salaries/:userId             managers can look up subordinates
+                                          (enforced in service)
+  GET  /api/salaries/:userId/history     same
+  POST /api/salaries/                    MD or Director only
+                                          (writes a new effective row;
+                                          history is preserved)
+
+
+================================================================================
+19. FRONTEND LAYOUT AND NAVIGATION
+================================================================================
+
+LAYOUT:
+  Mobile: bottom floating nav (max-width 480px), profile in the top-right.
+  Desktop (md+): persistent left Sidebar. Bottom nav hidden.
+
+CANONICAL TABS (frontend/src/components/layout/nav-tabs.js):
+  Home          /              everyone
+  Attendance    /attendance    everyone except client
+  Money         /money         everyone except oa, client
+  Alerts        /alerts        everyone
+  Profile       /profile       everyone
+
+  + Schemes     /schemes       MD, Director only   (cross-scheme dashboard)
+  + Branches    /branches      MD only
+
+ALERTS TAB:
+  Shows pending sign-offs, no-smartphone employees awaiting action,
+  operational reminders. Badge count is pulled from
+  useGetMoneyCollectionsQuery filtered to assigned_verifier_id = me.
+
+MONEY HUB (/money) per role:
+  MD          KPI strip + branch breakdown + cash holders + project
+              admin + stuck-cash alerts + branch drill-down modal.
+  Managers    Same overview shape, scoped to their oversight.
+  Others      Submit new entry, history, wallet, schemes hub, salary.
+
+SCHEMES HUB (/money/schemes) per role:
+  Anyone with money access sees a card per project. Cards for gold,
+  trading academy and gold-coin navigate into the scheme module.
+  Others expand to show their commission structure.
+
+PROFILE (always top-right): name, role badge, branch name, logout.
+
+
+================================================================================
+20. ROLE QUICK-REFERENCE — WHAT EACH ROLE CAN DO
+================================================================================
+
+MD (Managing Director)
+  - Sees every branch and every user in the org.
+  - Creates any role (one MD only).
+  - Owns money-projects, branch rankings, cash holders dashboard.
+  - Can verify any money collection.
+  - Configures commission rules.
+  - Reactivates deactivated users.
+  - Sees the MD-only Schemes dashboard.
+  - Does NOT mark attendance.
+
+Director
+  - Sees every assigned branch + subtree.
+  - Creates anyone GM-and-below (but the matrix in user.service.ts limits
+    creation to GM↓; today only MD creates Directors).
+  - Configures commission rules.
+  - Sees the cross-scheme dashboard.
+  - Sets salaries.
+  - Marks own attendance.
+
+GM
+  - Sees overseen branches + subtree.
+  - Can create branch_manager / abm / sales_officer / branch_admin / oa.
+  - Edits attendance corrections in the branches under them.
+  - Sees money admin overview (scoped).
+  - Earns from fixed_chain commissions.
+  - Marks own attendance.
+
+Branch Manager
+  - Sees own branch.
+  - Marks own attendance.
+  - Submits / verifies money (their team's submissions route to them).
+  - Can credit incentives manually.
+  - Earns referrer / fixed_chain commissions.
+
+ABM
+  - Sees own team (descendants).
+  - Marks own attendance.
+  - Submits money.
+  - Earns referrer / fixed_chain commissions.
+
+Sales Officer
+  - Sees self only.
+  - Marks own attendance.
+  - Submits money.
+  - Earns referrer commissions.
+
+Branch Admin
+  - Runs one branch (and only that branch).
+  - Marks own attendance + marks for employees with has_smartphone=false.
+  - Creates branch_manager / abm / sales_officer / oa for their branch.
+  - Sells gold members, gold-coin slots, trading academy enrollments.
+  - Records payments (gold), runs gold-coin draws, activates rooms.
+  - If branch is the HEAD BRANCH (Tiruvannamalai today): can combine,
+    refund, and extend gold-coin pending_combine rooms across all
+    branches.
+  - Cannot touch other branches' money or schemes.
+  - Toggles has_smartphone flag for their employees.
+
+OA (Office Assistant)
+  - Read-only in most places.
+  - Can search customers + create customer rows.
+  - Cannot submit or verify money.
+  - Marks own attendance.
+
+Client
+  - Logs in only to see their own information.
+  - No attendance, no money, no scheme writes.
+
+
+================================================================================
+21. REDIS KEYS USED
+================================================================================
+
+  sess:{userId}                 JWT session cache             TTL 8h
+  user:{userId}                 /me cache                     TTL 30min
+  hier:subtree:{userId}         Recursive subtree cache       TTL 1h
+  hier:oversight:{userId}       Director/GM oversight cache   TTL 1h
+  att:{userId}:{date}           Self-mark dupe guard          TTL 24h
+  att:absent:{userId}:{date}    Self-absent dupe guard        TTL 24h
+  att:summary:{branchId}        Branch summary cache          TTL 5min
+  rl:{userId}                   Rate limit counter            TTL 60s
+
+  bustHierarchyCache(userId)  invalidates hier:subtree:* and hier:oversight:*
+                              together — called on any subordinate change.
+
+
+================================================================================
+22. RATE LIMITING + ERRORS
+================================================================================
+
+  Global: 300 req / minute / authenticated user (apps/api/src/app.ts).
+  Dashboard roles (MD, GM) legitimately fire many requests per minute.
+
+  All responses follow:
+    { success: true, data: {...} }
+    { success: false, error: { code, message, details? } }
+
+  202 Accepted means "queued, not yet in DB" — used by attendance writes.
+
+  Error envelope produced by shared/route-error-handler.ts:
+    ZodError                → 400 VALIDATION_ERROR with .details
+    AppError subclass       → its statusCode + code
+    anything else           → 500 INTERNAL_ERROR (logged server-side)
+
+
+================================================================================
+23. MIGRATIONS — WHAT THEY MEAN
+================================================================================
+
+001 — core users + branches + manager_id tree
+002–011 — attendance, transactions, money tables, oversight branches,
+         immutable attendance_audit
+012 — gold_scheme_members
+013 — gold_scheme_payments
+014–016 — incentives + commission rules + role enum widening
+017 — trading_academy_members
+018–021 — profile assets, employee_salaries, money flow hardening
+020 — customers table; gold/trading start referencing customer_id
+024–028 — incentive source_type ENUM, gold commission rules,
+         project_code unification, scheme contract wiring
+029 — drop unused messages table
+030 — gold-coin schema (packages, rooms, slots, draws, won_invariant CHECK)
+031 — gold-coin: project registration + 20% referrer_direct rule + 10
+       starter packages
+032 → 033 — failed "Full-room SKU" experiment, fully reverted
+034 — 10 bigger per-slot gold-coin packages
+035 — set Tiruvannamalai as is_head_branch=true (idempotent)
+
+Migrations are wrapped in BEGIN/COMMIT by run_migrations.js and tracked in
+schema_migrations, so re-running is always safe.
+
+
+================================================================================
+24. COMMANDS YOU'LL ACTUALLY USE
+================================================================================
+
+  # All three services together
+  npm run dev
+
+  # Individual workspaces
+  npm run dev -w @attendance/api
+  npm run dev -w @attendance/worker
+  npm run dev -w frontend
+
+  # Apply pending DB migrations
+  node run_migrations.js
+
+  # Seed branches (idempotent)
+  npm run seed:branches -w @attendance/api
+
+
+================================================================================
+25. WHERE TO LOOK WHEN SOMETHING'S WRONG
+================================================================================
+
+Auth issues          → apps/api/src/modules/auth + plugins/auth.plugin.ts
+Hierarchy bugs       → shared/hierarchy.ts (Redis cache), shared/attendance-scope.ts
+Visibility surprises → resolveEmployeeDashboardScope, resolveBranchAdminBranchId
+Money verification   → modules/money/money.service.ts → submitCollection /
+                       verifyCollection
+Commission wrong     → modules/incentives/incentives.service.ts →
+                       distributeIncentives + scheme_commission_rules
+Stale gold-coin room → status-machine.ts + rooms.service.ts (the bulk
+                       UPDATE inside list() promotes stale filling rooms)
+Permissions denied   → check the route file's role set (WRITER_ROLES,
+                       READER_ROLES, RULE_ADMIN, ADMIN_MARK_ROLES,
+                       ALLOWED_ROLES) and shared/role-constants.ts
+
+
+================================================================================
+END OF GUIDE
+================================================================================

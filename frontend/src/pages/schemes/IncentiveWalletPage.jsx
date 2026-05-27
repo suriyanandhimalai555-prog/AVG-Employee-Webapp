@@ -71,10 +71,13 @@ export const IncentiveWalletPage = () => {
               <p className="text-xs font-semibold text-navy/40 uppercase tracking-widest mb-3">Breakdown</p>
               <div className="grid grid-cols-2 gap-3">
                 {wallet.breakdown.map((b) => {
-                  const meta      = SOURCE_META[b.sourceType] || SOURCE_META.other;
+                  // schemeCode is more specific than sourceType — prefer it so Gold and
+                  // Trading Academy show as their own cards instead of one "Schemes" bucket.
+                  const key       = b.schemeCode || b.sourceType;
+                  const meta      = SOURCE_META[key] || SOURCE_META.other;
                   const { Icon }  = meta;
                   return (
-                    <div key={b.sourceType} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5">
+                    <div key={key} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5">
                       <div className={`w-9 h-9 rounded-xl ${meta.bg} flex items-center justify-center mb-2`}>
                         <Icon size={18} className={meta.color} aria-hidden="true" />
                       </div>
@@ -103,7 +106,7 @@ export const IncentiveWalletPage = () => {
             ) : (
               <div className="space-y-3">
                 {rows.map((item) => {
-                  const meta     = SOURCE_META[item.source_type] || SOURCE_META.other;
+                  const meta     = SOURCE_META[item.scheme_code] || SOURCE_META[item.source_type] || SOURCE_META.other;
                   const { Icon } = meta;
                   return (
                     <div key={item.id} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5 flex items-center gap-3">

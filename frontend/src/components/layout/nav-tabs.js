@@ -1,4 +1,4 @@
-import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2 } from 'lucide-react';
+import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2, Layers } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { selectCurrentUser } from '../../store/slices/authSlice';
@@ -16,10 +16,15 @@ export const NAV_TABS = [
 
 export const MD_TAB = { key: 'branches', icon: Building2, label: 'Branches', path: '/branches' };
 
+// Cross-scheme dashboard. Visible to MD and Director only — the page itself
+// is gated again server-side, so this is purely a discoverability hint.
+export const SCHEMES_TAB = { key: 'schemes', icon: Layers, label: 'Schemes', path: '/schemes' };
+
 export const getActiveTab = (pathname) => {
   if (pathname === '/') return 'home';
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/branches')) return 'branches';
+  if (pathname === '/schemes' || pathname.startsWith('/schemes/')) return 'schemes';
   if (pathname.startsWith('/money')) return 'money';
   if (pathname === '/alerts') return 'alerts';
   if (pathname === '/profile') return 'profile';
@@ -47,7 +52,16 @@ export const useNavTabs = () => {
     ? NAV_TABS.filter((t) => t.key !== 'money')
     : NAV_TABS;
 
-  const tabs = currentUser?.role === 'md' ? [...baseTabs, MD_TAB] : baseTabs;
+  // MD picks up its Branches tab; MD and Director both pick up the cross-scheme
+  // dashboard. Order: ...base, Schemes (md/director), Branches (md only) so the
+  // Schemes tab sits next to Money in the bottom bar's natural reading order.
+  const role = currentUser?.role;
+  const showSchemes = role === 'md' || role === 'director';
+  const tabs = [
+    ...baseTabs,
+    ...(showSchemes ? [SCHEMES_TAB] : []),
+    ...(role === 'md' ? [MD_TAB] : []),
+  ];
   const activeTab = getActiveTab(location.pathname);
 
   return { tabs, activeTab, pendingAlertCount, currentUser };

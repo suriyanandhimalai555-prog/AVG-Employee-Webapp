@@ -62,6 +62,9 @@ export interface AuthUserResponse {
   role: string;
   branchId: string | null;
   branchName: string | null;
+  // Gates head-branch-only UI (e.g. Gold Coin combine / refund / extend).
+  // Mirrors branches.is_head_branch for the user's branch; false for users with no branch.
+  isHeadBranch: boolean;
   hasSmartphone: boolean;
   profilePhotoKey?: string | null;
   profilePhotoUrl?: string | null;

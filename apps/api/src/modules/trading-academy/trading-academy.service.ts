@@ -5,9 +5,11 @@ import type { AddTradingMemberInput, GetTradingMembersQuery } from './trading-ac
 
 // Stable project code for trading academy — set once at creation, never changes
 // even if the admin renames the project display name. See migration 026.
+// Also published as TradingAcademyService.schemeCode for the SchemeService contract.
 const PROJECT_CODE = 'trading_academy';
 
 export const TradingAcademyService = {
+  schemeCode: PROJECT_CODE,
 
   // Resolve the project id once per call (cheap: indexed code lookup)
   async getProjectId(db: Pool): Promise<string> {
@@ -71,14 +73,15 @@ export const TradingAcademyService = {
 
       // Auto-distribute incentives inside the same transaction
       const description = `Trading Academy — ${customer.name} (${customer.customer_code}) ₹${Number(payload.amount).toLocaleString('en-IN')}`;
-      const incentives = await IncentiveService.distributeIncentives(
-        client,
-        payload.enrolledBy,
-        projectId,
-        description,
-        enteredBy,
-        member.id
-      );
+      const incentives = await IncentiveService.distributeIncentives(client, {
+        schemeCode:        PROJECT_CODE,
+        dealMakerUserId:   payload.enrolledBy,
+        mode:              'fixed_chain',
+        paymentEvent:      'enrollment',
+        sourceId:          member.id,
+        sourceDescription: description,
+        creditedBy:        enteredBy,
+      });
 
       await client.query('COMMIT');
       return { member: { ...member, customer }, incentivesCreated: incentives.length };
@@ -154,8 +157,10 @@ export const TradingAcademyService = {
   },
 
   // ─── SUMMARY ───
-  // Pass enrolledBy to scope to one referrer's stats (for SO/ABM/BM/GM personal view)
-  async getSummary(db: Pool, branchId: string, enrolledBy?: string, dateFilter?: { startDate?: string; endDate?: string }): Promise<any> {
+  // Pass scopedToUserId to scope to one referrer's stats (for SO/ABM/BM/GM personal view).
+  // Name matches the SchemeService contract so cross-scheme code can iterate by scheme code.
+  async getBranchSummary(db: Pool, branchId: string, scopedToUserId?: string, dateFilter?: { startDate?: string; endDate?: string }): Promise<any> {
+    const enrolledBy = scopedToUserId;
     const projectId = await TradingAcademyService.getProjectId(db);
 
     const params: any[] = [branchId, projectId];
@@ -198,6 +203,93 @@ export const TradingAcademyService = {
          AND role IN ('sales_officer', 'abm', 'branch_manager')
        ORDER BY name ASC`,
       [branchId]
+    );
+    return res.rows;
+  },
+
+  // ─── ADMIN AGGREGATE: per-branch breakdown for the MD/Director dashboard ───
+  // One pass for member counts + collected (member.amount is the one-time fee),
+  // a second pass for commission via the unified ledger. Merged by branch_id.
+  async getOverviewByBranch(
+    db: Pool,
+    dateFilter?: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; branchName: string; count: number; collected: number; commission: number }>> {
+    const projectId = await TradingAcademyService.getProjectId(db);
+
+    const memParams: any[] = [projectId];
+    let memWhere = 't.project_id = $1';
+    let memIdx = 2;
+    if (dateFilter?.startDate) { memWhere += ` AND t.enrollment_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { memWhere += ` AND t.enrollment_date <= $${memIdx++}::date`; memParams.push(dateFilter.endDate); }
+
+    const memRes = await db.query<{ branch_id: string; branch_name: string; count: string; collected: string }>(
+      `SELECT
+         t.branch_id,
+         b.name AS branch_name,
+         COUNT(t.id)::int                  AS count,
+         COALESCE(SUM(t.amount), 0)        AS collected
+       FROM trading_academy_members t
+       JOIN branches b ON t.branch_id = b.id
+       WHERE ${memWhere}
+       GROUP BY t.branch_id, b.name
+       ORDER BY b.name ASC`,
+      memParams
+    );
+
+    const commParams: any[] = [PROJECT_CODE];
+    let commDate = '';
+    let commIdx = 2;
+    if (dateFilter?.startDate) { commDate += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { commDate += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }
+
+    const commRes = await db.query<{ branch_id: string; commission: string }>(
+      `SELECT t.branch_id, COALESCE(SUM(ei.amount), 0) AS commission
+       FROM employee_incentives ei
+       JOIN trading_academy_members t ON t.id = ei.source_id
+       WHERE ei.source_type = 'scheme' AND ei.scheme_code = $1${commDate}
+       GROUP BY t.branch_id`,
+      commParams
+    );
+
+    const commByBranch = new Map<string, number>();
+    for (const row of commRes.rows) {
+      commByBranch.set(row.branch_id, parseFloat(row.commission));
+    }
+
+    return memRes.rows.map(r => ({
+      branchId:   r.branch_id,
+      branchName: r.branch_name,
+      count:      parseInt(r.count, 10),
+      collected:  parseFloat(r.collected),
+      commission: commByBranch.get(r.branch_id) ?? 0,
+    }));
+  },
+
+  // ─── ADMIN DRILL-DOWN: members in a single branch ────────────────────────
+  async getEntriesByBranch(
+    db: Pool,
+    branchId: string,
+    dateFilter?: { startDate?: string; endDate?: string },
+  ): Promise<any[]> {
+    const projectId = await TradingAcademyService.getProjectId(db);
+    const params: any[] = [branchId, projectId];
+    let where = 't.branch_id = $1 AND t.project_id = $2';
+    let idx = 3;
+    if (dateFilter?.startDate) { where += ` AND t.enrollment_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND t.enrollment_date <= $${idx++}::date`; params.push(dateFilter.endDate); }
+
+    const res = await db.query(
+      `SELECT
+         t.id, t.amount, t.enrollment_date, t.payment_mode, t.notes, t.created_at,
+         c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
+         u.name AS enrolled_by_name, u.role AS enrolled_by_role
+       FROM trading_academy_members t
+       LEFT JOIN customers c ON c.id = t.customer_id
+       LEFT JOIN users u     ON u.id = t.enrolled_by
+       WHERE ${where}
+       ORDER BY t.created_at DESC
+       LIMIT 500`,
+      params
     );
     return res.rows;
   },

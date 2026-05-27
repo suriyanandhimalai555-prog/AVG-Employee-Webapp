@@ -34,7 +34,12 @@ const SchemesPage              = lazy(() => import('./pages/schemes/SchemesPage'
 const IncentiveWalletPage      = lazy(() => import('./pages/schemes/IncentiveWalletPage').then(m => ({ default: m.IncentiveWalletPage })));
 const SalaryManagementPage     = lazy(() => import('./pages/SalaryManagementPage').then(m => ({ default: m.SalaryManagementPage })));
 const TradingAcademyPage       = lazy(() => import('./pages/schemes/TradingAcademyPage').then(m => ({ default: m.TradingAcademyPage })));
+const GoldCoinSchemePage       = lazy(() => import('./pages/schemes/GoldCoinSchemePage').then(m => ({ default: m.GoldCoinSchemePage })));
+const GoldCoinRoomDetailPage   = lazy(() => import('./pages/schemes/GoldCoinRoomDetailPage').then(m => ({ default: m.GoldCoinRoomDetailPage })));
+const GoldCoinAddSlotPage      = lazy(() => import('./pages/schemes/GoldCoinAddSlotPage').then(m => ({ default: m.GoldCoinAddSlotPage })));
+const GoldCoinHeadBranchPage   = lazy(() => import('./pages/schemes/GoldCoinHeadBranchPage').then(m => ({ default: m.GoldCoinHeadBranchPage })));
 const LeadershipListPage       = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
+const SchemesOverviewPage      = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
 const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
 const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
@@ -94,6 +99,7 @@ function App() {
 
         {/* Tabs */}
         <Route path="/alerts"                    element={<AlertsTab />} />
+        <Route path="/schemes"                   element={<SchemesOverviewPage />} />
         <Route path="/branches"                  element={<BranchManagement />} />
         <Route path="/branches/:branchId"        element={<BranchDetailPage />} />
 
@@ -132,6 +138,10 @@ function App() {
 
         {/* Trading Academy Scheme */}
         <Route path="/money/schemes/trading-academy" element={<TradingAcademyPage />} />
+        <Route path="/money/schemes/gold-coin"       element={<GoldCoinSchemePage />} />
+        <Route path="/money/schemes/gold-coin/add"   element={<GoldCoinAddSlotPage />} />
+        <Route path="/money/schemes/gold-coin/head"  element={<GoldCoinHeadBranchPage />} />
+        <Route path="/money/schemes/gold-coin/:id"   element={<GoldCoinRoomDetailPage />} />
 
         {/* Redirects for old /gold/* URLs */}
         <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />

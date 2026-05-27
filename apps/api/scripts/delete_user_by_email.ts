@@ -70,11 +70,11 @@ async function deleteUserByEmail() {
     );
 
     // 5. Delete Messages
-    const messagesResult = await pool.query(
-      `DELETE FROM messages
-       WHERE sender_id = $1 OR recipient_id = $1`,
-      [userId]
-    );
+    // const messagesResult = await pool.query(
+    //   `DELETE FROM messages
+    //    WHERE sender_id = $1 OR recipient_id = $1`,
+    //   [userId]
+    // );
 
     // 6. Delete Money Collections (including both submitter and verifier)
     const collectionsResult = await pool.query(
@@ -123,7 +123,6 @@ async function deleteUserByEmail() {
     console.log(`   attendance: ${attendanceResult.rowCount}`);
     console.log(`   transaction_audit: ${transactionAuditResult.rowCount}`);
     console.log(`   transactions: ${transactionsResult.rowCount}`);
-    console.log(`   messages: ${messagesResult.rowCount}`);
     console.log(`   money_collections: ${collectionsResult.rowCount}`);
     console.log(`   oversight links: ${oversightResult.rowCount}`);
     console.log(`   branch unlink rows: ${branchUnlinkResult.rowCount}`);

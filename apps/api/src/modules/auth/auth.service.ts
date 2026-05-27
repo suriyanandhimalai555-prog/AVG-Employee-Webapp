@@ -31,7 +31,7 @@ export const AuthService = {
     const userResult = await db.query(
       `SELECT u.id, u.name, u.email, u.password_hash, u.role,
               u.branch_id, u.has_smartphone, u.profile_photo_key, u.profile_proof_key, u.is_active,
-              b.name AS branch_name
+              b.name AS branch_name, b.is_head_branch AS is_head_branch
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.email = $1`,
@@ -69,6 +69,7 @@ export const AuthService = {
       role: user.role,
       branchId: user.branch_id,
       branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
+      isHeadBranch: Boolean(user.is_head_branch),
       hasSmartphone: user.has_smartphone,
       profilePhotoKey: user.profile_photo_key ?? null,
       profileProofKey: user.profile_proof_key ?? null,
@@ -100,7 +101,8 @@ export const AuthService = {
     // Step 2: Cache miss — query the database for the full profile
     const result = await db.query(
       `SELECT u.id, u.name, u.email, u.role, u.branch_id,
-              u.has_smartphone, u.profile_photo_key, u.profile_proof_key, u.is_active, b.name AS branch_name
+              u.has_smartphone, u.profile_photo_key, u.profile_proof_key, u.is_active,
+              b.name AS branch_name, b.is_head_branch AS is_head_branch
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.id = $1`,
@@ -123,6 +125,7 @@ export const AuthService = {
       role: user.role,
       branchId: user.branch_id,
       branchName: user.branch_name || (user.role === 'md' ? 'Head Office' : null),
+      isHeadBranch: Boolean(user.is_head_branch),
       hasSmartphone: user.has_smartphone,
       profilePhotoKey: user.profile_photo_key ?? null,
       profileProofKey: user.profile_proof_key ?? null,

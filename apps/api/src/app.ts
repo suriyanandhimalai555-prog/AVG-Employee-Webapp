@@ -27,6 +27,8 @@ import incentiveRoutes from './modules/incentives/incentives.routes';
 import salaryRoutes from './modules/salaries/salaries.routes';
 import tradingAcademyRoutes from './modules/trading-academy/trading-academy.routes';
 import customerRoutes from './modules/customers/customers.routes';
+import goldCoinRoutes from './modules/gold-coin/gold-coin.routes';
+import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -158,6 +160,15 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the Customers module (search, create, view scheme history)
   // Mounts under the '/api/customers' prefix
   await app.register(customerRoutes, { prefix: '/api/customers' });
+
+  // Register the Gold Coin scheme (16-slot rooms, monthly draws, head-branch combine)
+  // Mounts under the '/api/gold-coin' prefix
+  await app.register(goldCoinRoutes, { prefix: '/api/gold-coin' });
+
+  // Register the cross-scheme aggregate dashboard (MD / Director only).
+  // Walks the scheme registry — every scheme that implements getOverviewByBranch
+  // appears here automatically; no per-scheme edits needed in this file.
+  await app.register(schemesAggregateRoutes, { prefix: '/api/schemes' });
 
   return app;
 };

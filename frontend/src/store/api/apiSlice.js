@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -590,6 +590,122 @@ export const apiSlice = createApi({
       invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet'],
     }),
 
+    // ─── Gold Coin Scheme ───
+    getGoldCoinPackages: builder.query({
+      query: () => '/gold-coin/packages',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldCoinPackages'],
+    }),
+
+    getGoldCoinRooms: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status)    qs.set('status', params.status);
+        if (params.packageId) qs.set('packageId', params.packageId);
+        // branchId is intentionally omitted — server derives scope from JWT identity
+        if (params.page)      qs.set('page', String(params.page));
+        if (params.limit)     qs.set('limit', String(params.limit));
+        const q = qs.toString();
+        return `/gold-coin/rooms${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['GoldCoinRooms'],
+    }),
+
+    getGoldCoinAwaitingCombine: builder.query({
+      query: () => '/gold-coin/rooms/awaiting-combine',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldCoinAwaitingCombine'],
+    }),
+
+    getGoldCoinRoom: builder.query({
+      query: (id) => `/gold-coin/rooms/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: (_r, _e, id) => [{ type: 'GoldCoinRoom', id }],
+    }),
+
+    getGoldCoinSummary: builder.query({
+      query: () => '/gold-coin/summary',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldCoinSummary'],
+    }),
+
+    addGoldCoinSlot: builder.mutation({
+      query: (data) => ({ url: '/gold-coin/slots', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet'],
+    }),
+
+    refundGoldCoinSlot: builder.mutation({
+      query: (id) => ({ url: `/gold-coin/slots/${id}/refund`, method: 'POST' }),
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary'],
+    }),
+
+    activateGoldCoinRoom: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/gold-coin/rooms/${id}/activate`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary'],
+    }),
+
+    runGoldCoinDraw: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/gold-coin/rooms/${id}/draws`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary'],
+    }),
+
+    combineGoldCoinRooms: builder.mutation({
+      query: (data) => ({ url: '/gold-coin/rooms/combine', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinSummary', 'GoldCoinAwaitingCombine'],
+    }),
+
+    refundGoldCoinRoom: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/gold-coin/rooms/${id}/refund`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine'],
+    }),
+
+    sendGoldCoinRoomToHeadBranch: builder.mutation({
+      query: (id) => ({ url: `/gold-coin/rooms/${id}/send-to-head`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, id) => [
+        'GoldCoinRooms',
+        { type: 'GoldCoinRoom', id },
+        'GoldCoinAwaitingCombine',
+        'GoldCoinSummary',
+      ],
+    }),
+
+    // ─── Cross-scheme dashboard (MD / Director) ───
+    // Backed by /api/schemes/* which walks the SchemeService registry. Every
+    // scheme that implements getOverviewByBranch shows up here automatically.
+
+    getSchemesOverview: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate',   params.endDate);
+        const q = qs.toString();
+        return `/schemes/overview${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['SchemesOverview'],
+    }),
+
+    getSchemeBranchEntries: builder.query({
+      query: ({ code, branchId, startDate, endDate }) => {
+        const qs = new URLSearchParams();
+        if (startDate) qs.set('startDate', startDate);
+        if (endDate)   qs.set('endDate',   endDate);
+        const q = qs.toString();
+        return `/schemes/${code}/branches/${branchId}/entries${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: (_r, _e, { code, branchId }) => [
+        { type: 'SchemeBranchEntries', id: `${code}:${branchId}` },
+      ],
+    }),
+
     // ─── Customers ───
 
     searchCustomers: builder.query({
@@ -784,6 +900,21 @@ export const {
   useGetTradingSummaryQuery,
   useGetTradingEmployeesQuery,
   useAddTradingMemberMutation,
+  useGetGoldCoinPackagesQuery,
+  useGetGoldCoinRoomsQuery,
+  useGetGoldCoinRoomQuery,
+  useGetGoldCoinSummaryQuery,
+  useGetGoldCoinAwaitingCombineQuery,
+  useAddGoldCoinSlotMutation,
+  useRefundGoldCoinSlotMutation,
+  useActivateGoldCoinRoomMutation,
+  useRunGoldCoinDrawMutation,
+  useCombineGoldCoinRoomsMutation,
+  useRefundGoldCoinRoomMutation,
+  useSendGoldCoinRoomToHeadBranchMutation,
+  useGetSchemesOverviewQuery,
+  useGetSchemeBranchEntriesQuery,
+  useLazyGetSchemeBranchEntriesQuery,
   useGetCommissionRulesQuery,
   useSetCommissionRuleMutation,
   useDistributeIncentivesMutation,

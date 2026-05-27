@@ -65,14 +65,10 @@ export default async function incentiveRoutes(fastify: FastifyInstance): Promise
         throw new ForbiddenError('Access denied');
       }
       const body = DistributeIncentivesSchema.parse(req.body);
-      const data = await IncentiveService.distributeIncentives(
-        fastify.db,
-        body.dealMakerUserId,
-        body.projectId,
-        body.sourceDescription,
-        req.user.id,
-        body.sourceId
-      );
+      const data = await IncentiveService.distributeIncentives(fastify.db, {
+        ...body,
+        creditedBy: req.user.id,
+      });
       return reply.send({ success: true, data, credited: data.length });
     } catch (error) { return handleError(error, reply); }
   });

@@ -5,7 +5,7 @@
 
 import {
   Gem, Building2, Landmark, CircleDollarSign, Layers,
-  Briefcase, Banknote, MoreHorizontal,
+  Briefcase, Banknote, MoreHorizontal, Coins,
 } from 'lucide-react';
 
 // ─── Payment modes ────────────────────────────────────────────────────────────
@@ -74,25 +74,28 @@ export const REFERRER_ROLES = new Set([
 // If a project is in this map its card navigates directly; otherwise it expands inline.
 // Use project.code — never project.name — so admin renames don't break navigation.
 export const NAVIGABLE_SCHEMES = {
-  'gold_scheme':     '/money/schemes/gold',
-  'trading_academy': '/money/schemes/trading-academy',
+  'gold_scheme':      '/money/schemes/gold',
+  'trading_academy':  '/money/schemes/trading-academy',
+  'gold_coin_scheme': '/money/schemes/gold-coin',
 };
 
 export const SCHEME_CARD_STYLES = {
-  gold:     { Icon: Gem,              gradient: 'bg-gradient-to-br from-amber-400 to-amber-500' },
-  land:     { Icon: Landmark,         gradient: 'bg-gradient-to-br from-stone-500 to-stone-600' },
-  builders: { Icon: Building2,        gradient: 'bg-gradient-to-br from-sky-500 to-sky-600' },
-  chit:     { Icon: CircleDollarSign, gradient: 'bg-gradient-to-br from-violet-500 to-violet-600' },
-  jewel:    { Icon: Gem,              gradient: 'bg-gradient-to-br from-rose-400 to-rose-500' },
-  trading:  { Icon: Building2,        gradient: 'bg-gradient-to-br from-indigo to-indigo/80' },
-  default:  { Icon: Layers,           gradient: 'bg-gradient-to-br from-indigo to-indigo/80' },
+  gold:      { Icon: Gem,              gradient: 'bg-gradient-to-br from-amber-400 to-amber-500' },
+  gold_coin: { Icon: Coins,            gradient: 'bg-gradient-to-br from-yellow-500 to-amber-600' },
+  land:      { Icon: Landmark,         gradient: 'bg-gradient-to-br from-stone-500 to-stone-600' },
+  builders:  { Icon: Building2,        gradient: 'bg-gradient-to-br from-sky-500 to-sky-600' },
+  chit:      { Icon: CircleDollarSign, gradient: 'bg-gradient-to-br from-violet-500 to-violet-600' },
+  jewel:     { Icon: Gem,              gradient: 'bg-gradient-to-br from-rose-400 to-rose-500' },
+  trading:   { Icon: Building2,        gradient: 'bg-gradient-to-br from-indigo to-indigo/80' },
+  default:   { Icon: Layers,           gradient: 'bg-gradient-to-br from-indigo to-indigo/80' },
 };
 
 // Resolve card style by stable code first, then fall back to name-keyword matching
 // for projects without a dedicated code style.
 export const getSchemeStyle = (name, code) => {
-  if (code === 'gold_scheme')     return SCHEME_CARD_STYLES.gold;
-  if (code === 'trading_academy') return SCHEME_CARD_STYLES.trading;
+  if (code === 'gold_scheme')      return SCHEME_CARD_STYLES.gold;
+  if (code === 'gold_coin_scheme') return SCHEME_CARD_STYLES.gold_coin;
+  if (code === 'trading_academy')  return SCHEME_CARD_STYLES.trading;
   const lower = (name || '').toLowerCase();
   if (lower.includes('gold'))    return SCHEME_CARD_STYLES.gold;
   if (lower.includes('land'))    return SCHEME_CARD_STYLES.land;
@@ -104,11 +107,17 @@ export const getSchemeStyle = (name, code) => {
 
 // ─── Incentive wallet ─────────────────────────────────────────────────────────
 
+// Keyed by either source_type (collection / direct_cash / other / scheme)
+// or by scheme_code for scheme rows (gold_scheme / trading_academy / future).
+// Lookup precedence in the UI: schemeCode first, then sourceType.
 export const SOURCE_META = {
-  collection:  { label: 'Collections', color: 'text-indigo',       bg: 'bg-indigo/10',   Icon: Briefcase },
-  gold_scheme: { label: 'Gold Scheme', color: 'text-amber-600',    bg: 'bg-amber-100',   Icon: Gem },
-  direct_cash: { label: 'Direct Cash', color: 'text-emerald-600',  bg: 'bg-emerald-100', Icon: Banknote },
-  other:       { label: 'Other',       color: 'text-navy/60',      bg: 'bg-navy/5',      Icon: MoreHorizontal },
+  collection:       { label: 'Collections',      color: 'text-indigo',       bg: 'bg-indigo/10',    Icon: Briefcase },
+  direct_cash:      { label: 'Direct Cash',      color: 'text-emerald-600',  bg: 'bg-emerald-100',  Icon: Banknote },
+  scheme:           { label: 'Schemes',          color: 'text-violet-600',   bg: 'bg-violet-100',   Icon: Layers },
+  gold_scheme:      { label: 'Gold Scheme',      color: 'text-amber-600',    bg: 'bg-amber-100',    Icon: Gem },
+  gold_coin_scheme: { label: 'Gold Coin',        color: 'text-yellow-700',   bg: 'bg-yellow-100',   Icon: Coins },
+  trading_academy:  { label: 'Trading Academy',  color: 'text-indigo',       bg: 'bg-indigo/10',    Icon: Building2 },
+  other:            { label: 'Other',            color: 'text-navy/60',      bg: 'bg-navy/5',       Icon: MoreHorizontal },
 };
 
 // ─── Form helpers ─────────────────────────────────────────────────────────────

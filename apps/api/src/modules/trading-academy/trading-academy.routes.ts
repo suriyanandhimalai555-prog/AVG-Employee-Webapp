@@ -36,7 +36,7 @@ export default async function tradingAcademyRoutes(fastify: FastifyInstance): Pr
       // Referrer roles only see their own stats
       const enrolledBy = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
       const dateFilter = GetTradingSummaryQuerySchema.parse(req.query);
-      const data = await TradingAcademyService.getSummary(fastify.db, req.user.branchId, enrolledBy, dateFilter);
+      const data = await TradingAcademyService.getBranchSummary(fastify.db, req.user.branchId, enrolledBy, dateFilter);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

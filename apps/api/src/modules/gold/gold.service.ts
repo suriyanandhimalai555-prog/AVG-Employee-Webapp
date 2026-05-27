@@ -10,31 +10,11 @@ import type {
 
 // Stable project code for gold — set once at creation, never changes even if the
 // admin renames the project display name through the UI. See migration 026.
+// Also published as GoldService.schemeCode for the SchemeService contract.
 const GOLD_PROJECT_CODE = 'gold_scheme';
 
-// Resolve the gold project id and load its commission rates in one place.
-// Uses IncentiveService.loadProjectRates so both gold and trading academy read
-// from the same code path — scheme_commission_rules is the single source of truth.
-async function loadGoldRates(db: Pool): Promise<{ referrerNew: number; referrerRenewal: number }> {
-  const res = await db.query(
-    `SELECT id FROM projects WHERE code = $1 LIMIT 1`,
-    [GOLD_PROJECT_CODE]
-  );
-  if (res.rows.length === 0) return { referrerNew: 0, referrerRenewal: 0 };
-
-  const ratesMap = await IncentiveService.loadProjectRates(db, res.rows[0].id);
-  // Gold rates are 'percent' type; amount = percentage value (e.g. 20.00 → 0.20 multiplier)
-  const toMultiplier = (role: string) => {
-    const r = ratesMap[role];
-    return r?.rateType === 'percent' ? r.amount / 100 : 0;
-  };
-  return {
-    referrerNew:     toMultiplier('referrer_new'),
-    referrerRenewal: toMultiplier('referrer_renewal'),
-  };
-}
-
 export const GoldService = {
+  schemeCode: GOLD_PROJECT_CODE,
 
   // ─── ADD MEMBER ───
   // Only branch_admin can call this; branchId is derived from their profile.
@@ -75,9 +55,6 @@ export const GoldService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
-    // Load commission rates from scheme_commission_rules — single source of truth
-    const rates = await loadGoldRates(db);
-
     const client = await db.connect();
     try {
       await client.query('BEGIN');
@@ -113,26 +90,28 @@ export const GoldService = {
         [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', enteredBy]
       );
 
-      // Credit referrer the configured % of monthly_amount as enrollment incentive (from scheme_commission_rules)
-      const enrollmentIncentive = parseFloat(payload.monthlyAmount.toString()) * rates.referrerNew;
+      // Credit referrer the configured % of monthly_amount as enrollment incentive.
+      // Reads scheme_commission_rules through the shared distributor.
       const customerName = customerResult.rows[0].name;
-      if (enrollmentIncentive > 0 && payload.referrerId) {
-        await client.query(
-          `INSERT INTO employee_incentives
-             (user_id, amount, source_type, source_id, source_description, credited_by)
-           VALUES ($1, $2, 'gold_scheme', $3, $4, $5)`,
-          [
-            payload.referrerId,
-            enrollmentIncentive,
-            member.id,
-            `Gold enrollment: ${customerName} – Chit ${payload.chitNumber}`,
-            enteredBy,
-          ]
-        );
+      const monthlyAmount = parseFloat(payload.monthlyAmount.toString());
+      let commissionAmount = 0;
+      if (payload.referrerId) {
+        const credited = await IncentiveService.distributeIncentives(client, {
+          schemeCode:        GOLD_PROJECT_CODE,
+          dealMakerUserId:   payload.referrerId,
+          mode:              'percent_referrer',
+          percentRole:       'referrer_new',
+          baseAmount:        monthlyAmount,
+          paymentEvent:      'enrollment',
+          sourceId:          member.id,
+          sourceDescription: `Gold enrollment: ${customerName} – Chit ${payload.chitNumber}`,
+          creditedBy:        enteredBy,
+        });
+        commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
       await client.query('COMMIT');
-      return { member, commissionAmount: enrollmentIncentive };
+      return { member, commissionAmount };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -291,25 +270,20 @@ export const GoldService = {
         [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.notes || null, enteredBy]
       );
 
-      // Credit referrer the configured renewal % for month 2 onwards (from scheme_commission_rules).
+      // Credit referrer the configured renewal % for month 2 onwards.
       // Month 1 is already covered by the enrollment incentive in addMember.
       if (payload.monthNumber > 1 && memberRow.referrer_id) {
-        const { referrerRenewal } = await loadGoldRates(db);
-        const paymentIncentive = parseFloat(payload.amount.toString()) * referrerRenewal;
-        if (paymentIncentive > 0) {
-          await client.query(
-            `INSERT INTO employee_incentives
-               (user_id, amount, source_type, source_id, source_description, credited_by)
-             VALUES ($1, $2, 'gold_scheme', $3, $4, $5)`,
-            [
-              memberRow.referrer_id,
-              paymentIncentive,
-              memberId,
-              `Gold M${payload.monthNumber} payment: ${memberRow.customer_name} – Chit ${memberRow.chit_number}`,
-              enteredBy,
-            ]
-          );
-        }
+        await IncentiveService.distributeIncentives(client, {
+          schemeCode:        GOLD_PROJECT_CODE,
+          dealMakerUserId:   memberRow.referrer_id,
+          mode:              'percent_referrer',
+          percentRole:       'referrer_renewal',
+          baseAmount:        parseFloat(payload.amount.toString()),
+          paymentEvent:      'renewal',
+          sourceId:          memberId,
+          sourceDescription: `Gold M${payload.monthNumber} payment: ${memberRow.customer_name} – Chit ${memberRow.chit_number}`,
+          creditedBy:        enteredBy,
+        });
       }
 
       await client.query('COMMIT');
@@ -373,12 +347,12 @@ export const GoldService = {
       params
     );
 
-    // ─── Commission query — sums incentives earned from gold_scheme enrollments and renewals ───
-    // Enrollment incentives: 20% of monthly_amount, description starts with 'Gold enrollment:'
-    // Renewal incentives: 15% per month 2+ payment, description starts with 'Gold M'
-    const commParams: any[] = [branchId];
-    let commWhere = 'g.branch_id = $1';
-    let commIdx = 2;
+    // ─── Commission query — sums incentives earned from gold_scheme ───
+    // payment_event distinguishes enrollment (month 1) vs renewal (month 2+);
+    // both columns are written by IncentiveService.distributeIncentives.
+    const commParams: any[] = [branchId, GOLD_PROJECT_CODE];
+    let commWhere = 'g.branch_id = $1 AND ei.scheme_code = $2';
+    let commIdx = 3;
 
     if (referrerId) {
       commWhere += ` AND ei.user_id = $${commIdx++}`;
@@ -395,11 +369,11 @@ export const GoldService = {
 
     const commResult = await db.query(
       `SELECT
-         COALESCE(SUM(ei.amount) FILTER (WHERE ei.source_description LIKE 'Gold enrollment:%'), 0) AS new_commission,
-         COALESCE(SUM(ei.amount) FILTER (WHERE ei.source_description LIKE 'Gold M%'),           0) AS renewal_commission
+         COALESCE(SUM(ei.amount) FILTER (WHERE ei.payment_event = 'enrollment'), 0) AS new_commission,
+         COALESCE(SUM(ei.amount) FILTER (WHERE ei.payment_event = 'renewal'),    0) AS renewal_commission
        FROM employee_incentives ei
        JOIN gold_scheme_members g ON g.id = ei.source_id
-       WHERE ei.source_type = 'gold_scheme' AND ${commWhere}`,
+       WHERE ei.source_type = 'scheme' AND ${commWhere}`,
       commParams
     );
 
@@ -418,5 +392,95 @@ export const GoldService = {
       renewalCommission,
       totalCommission:   newCommission + renewalCommission,
     };
+  },
+
+  // ─── ADMIN AGGREGATE: per-branch breakdown for the MD/Director dashboard ───
+  // Two SQL passes (one for member+payment totals, one for incentive totals)
+  // merged in memory by branch_id so we don't pay for a nested aggregate.
+  async getOverviewByBranch(
+    db: Pool,
+    dateFilter?: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; branchName: string; count: number; collected: number; commission: number }>> {
+    const memParams: any[] = [];
+    let memDate = '';
+    let memIdx = 1;
+    if (dateFilter?.startDate) { memDate += ` AND p.paid_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { memDate += ` AND p.paid_date < ($${memIdx++}::date + INTERVAL '1 day')`; memParams.push(dateFilter.endDate); }
+
+    // Member counts come from members table unconditionally (a member exists
+    // even if they haven't paid yet). Payments are LEFT JOINed and date-filtered.
+    const memRes = await db.query<{ branch_id: string; branch_name: string; count: string; collected: string }>(
+      `SELECT
+         m.branch_id  AS branch_id,
+         b.name       AS branch_name,
+         COUNT(DISTINCT m.id)::int                          AS count,
+         COALESCE(SUM(p.amount) FILTER (WHERE p.id IS NOT NULL${memDate}), 0) AS collected
+       FROM gold_scheme_members m
+       JOIN branches b ON m.branch_id = b.id
+       LEFT JOIN gold_scheme_payments p ON p.member_id = m.id
+       GROUP BY m.branch_id, b.name
+       ORDER BY b.name ASC`,
+      memParams
+    );
+
+    const commParams: any[] = [GOLD_PROJECT_CODE];
+    let commDate = '';
+    let commIdx = 2;
+    if (dateFilter?.startDate) { commDate += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { commDate += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }
+
+    const commRes = await db.query<{ branch_id: string; commission: string }>(
+      `SELECT gm.branch_id, COALESCE(SUM(ei.amount), 0) AS commission
+       FROM employee_incentives ei
+       JOIN gold_scheme_members gm ON gm.id = ei.source_id
+       WHERE ei.source_type = 'scheme' AND ei.scheme_code = $1${commDate}
+       GROUP BY gm.branch_id`,
+      commParams
+    );
+
+    const commByBranch = new Map<string, number>();
+    for (const row of commRes.rows) {
+      commByBranch.set(row.branch_id, parseFloat(row.commission));
+    }
+
+    return memRes.rows.map(r => ({
+      branchId:   r.branch_id,
+      branchName: r.branch_name,
+      count:      parseInt(r.count, 10),
+      collected:  parseFloat(r.collected),
+      commission: commByBranch.get(r.branch_id) ?? 0,
+    }));
+  },
+
+  // ─── ADMIN DRILL-DOWN: members in a single branch for the dashboard ──────
+  // Returns lightweight rows the dashboard renders — never used for writes,
+  // so we skip the customer JOIN noise and pull only display fields.
+  async getEntriesByBranch(
+    db: Pool,
+    branchId: string,
+    dateFilter?: { startDate?: string; endDate?: string },
+  ): Promise<any[]> {
+    const params: any[] = [branchId];
+    let where = 'm.branch_id = $1';
+    let idx = 2;
+    if (dateFilter?.startDate) { where += ` AND m.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND m.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query(
+      `SELECT
+         m.id, m.chit_number, m.monthly_amount,
+         m.total_months, m.status, m.start_date, m.created_at,
+         m.referrer_name,
+         c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
+         (SELECT COUNT(*)::int FROM gold_scheme_payments p WHERE p.member_id = m.id) AS months_paid,
+         (SELECT COALESCE(SUM(p.amount),0) FROM gold_scheme_payments p WHERE p.member_id = m.id) AS paid_so_far
+       FROM gold_scheme_members m
+       LEFT JOIN customers c ON c.id = m.customer_id
+       WHERE ${where}
+       ORDER BY m.created_at DESC
+       LIMIT 500`,
+      params
+    );
+    return res.rows;
   },
 };

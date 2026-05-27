@@ -140,7 +140,12 @@ Plugins (`src/plugins/`):
 Modules (`src/modules/`):
   Each module has *.routes.ts + *.service.ts (+ *.schema.ts for Zod)
   Modules: auth, attendance, branches, users, transactions, money,
-           gold, incentives, salaries, trading-academy, customers
+           gold, gold-coin, incentives, salaries, trading-academy, customers, schemes
+
+  The gold-coin module is intentionally decomposed into per-concern services
+  (packages, rooms, slots, draws, combine) plus a status-machine helper —
+  this scheme is more stateful than gold/trading-academy and the split keeps
+  failure points localisable.
 
 Shared (`src/shared/`):
   permissions.ts        → RBAC helpers
@@ -150,6 +155,48 @@ Shared (`src/shared/`):
   route-error-handler.ts → handleError() + sendForbidden() — every route uses these
   transaction-helper.ts → runInTransaction() wrapper for BEGIN/COMMIT/ROLLBACK
   role-constants.ts     → canonical Role enum + role-set constants
+
+### Schemes — one source of truth, one payout path
+
+Every scheme (gold, trading academy, future chit funds / insurance / SIP …)
+shares the same backbone and writes to the same ledger:
+
+  projects                  → scheme registry (one row per scheme; .code is stable)
+  scheme_commission_rules   → per-scheme per-role rates (rate_type='fixed'|'percent')
+  customers                 → sole source of truth for customer data
+  employee_incentives       → unified wallet ledger (source_type='scheme',
+                              scheme_code + payment_event identify the source)
+  IncentiveService.distributeIncentives(client, args)
+                            → the ONLY way to write incentive rows. Modes:
+                                fixed_chain      — walk dealMaker → GM + branch admin
+                                percent_referrer — credit referrer baseAmount × rate%
+
+Each scheme also has:
+  <scheme>_members          → its own table (chit_number, monthly_amount, etc.)
+  <scheme>_payments         → optional, if the scheme is recurring
+  <scheme>.service.ts       → implements SchemeService contract (schemes/scheme.contract.ts)
+  <scheme>.routes.ts        → REST surface (kept per-scheme; no /schemes/:code/* unified routes)
+
+The registry at `modules/schemes/scheme.registry.ts` maps schemeCode → service
+for cross-scheme code (admin dashboards, aggregate reports).
+
+### Adding a new scheme
+
+1. New migration: create <scheme>_members + optional <scheme>_payments tables.
+   Reference customer_id, branch_id, entered_by like the existing schemes do.
+2. Insert one row into `projects` with a stable `code` (e.g. 'chit_fund')
+   and seed `scheme_commission_rules` for that project.
+3. Create modules/<scheme>/ with routes + service + schema (Zod) files,
+   following gold or trading-academy as templates.
+4. The service exports `schemeCode` + `getBranchSummary(...)` to satisfy
+   the SchemeService contract.
+5. Inside addMember (and addPayment if recurring), call
+   `IncentiveService.distributeIncentives(client, { schemeCode, mode, ... })`.
+   Do NOT INSERT INTO employee_incentives directly.
+6. Register the service in modules/schemes/scheme.registry.ts.
+7. Register the routes in src/app.ts.
+8. Frontend: add the route to `NAVIGABLE_SCHEMES` and an icon/colour entry
+   to `SOURCE_META` in frontend/src/lib/schemeConstants.js.
 
 ### Async Processing (1,500 user surge)
 Attendance submissions never write directly to DB.

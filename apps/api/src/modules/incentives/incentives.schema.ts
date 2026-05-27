@@ -1,9 +1,15 @@
 import { z } from 'zod';
 
+// source_type values now match the DB CHECK in migration 028:
+//   'collection', 'scheme', 'direct_cash', 'other'.
+// 'gold_scheme' was folded into 'scheme' by the migration; queries filter
+// gold-specific data with scheme_code='gold_scheme' instead.
+const SOURCE_TYPES = ['collection', 'scheme', 'direct_cash', 'other'] as const;
+
 export const AddIncentiveSchema = z.object({
   userId:            z.string().uuid(),
   amount:            z.number().positive().max(10_000_000),
-  sourceType:        z.enum(['collection', 'gold_scheme', 'direct_cash', 'scheme', 'other']),
+  sourceType:        z.enum(SOURCE_TYPES),
   sourceId:          z.string().uuid().optional(),
   sourceDescription: z.string().max(500).optional(),
   notes:             z.string().max(1000).optional(),
@@ -11,7 +17,7 @@ export const AddIncentiveSchema = z.object({
 
 export const GetIncentivesQuerySchema = z.object({
   userId:     z.string().uuid().optional(),
-  sourceType: z.enum(['collection', 'gold_scheme', 'direct_cash', 'scheme', 'other']).optional(),
+  sourceType: z.enum(SOURCE_TYPES).optional(),
   startDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   page:       z.coerce.number().min(1).default(1),
@@ -34,10 +40,14 @@ export const SetCommissionRuleSchema = z.object({
 });
 
 export const DistributeIncentivesSchema = z.object({
+  schemeCode:        z.string().min(1).max(50),
   dealMakerUserId:   z.string().uuid(),
-  projectId:         z.string().uuid(),
+  mode:              z.enum(['fixed_chain', 'percent_referrer']),
   sourceDescription: z.string().max(500),
   sourceId:          z.string().uuid().optional(),
+  paymentEvent:      z.enum(['enrollment', 'renewal']).optional(),
+  baseAmount:        z.number().positive().max(10_000_000).optional(),
+  percentRole:       z.string().min(1).max(50).optional(),
   // creditedBy is injected from request.user.id in the route, not from the body
 });
 

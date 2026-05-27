@@ -36,6 +36,11 @@ export const REFERRER_ONLY_ROLES: readonly RoleValue[] = [
   Role.BRANCH_MANAGER, Role.ABM, Role.SALES_OFFICER,
 ];
 
+// Roles allowed to view Gold Coin rooms (oversight roles + branch_admin)
+export const GOLD_COIN_VIEWER_ROLES: readonly RoleValue[] = [
+  Role.MD, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN,
+];
+
 // Helper: O(1) membership test against any of the sets above.
 export const hasRole = (
   role: string,

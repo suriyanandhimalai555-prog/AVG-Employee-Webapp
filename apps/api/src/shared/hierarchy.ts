@@ -124,6 +124,45 @@ export const getOversightScopeIds = async (
   return ids;
 };
 
+/**
+ * Returns the set of branch IDs visible to a Director or GM — i.e., every
+ * branch they directly oversee via user_oversight_branches plus every branch
+ * that appears on a user in their manager_id subtree.  Cached for 1 hour at
+ * hier:oversight-branches:{userId}; busted alongside the other hierarchy keys.
+ *
+ * Used by the Gold Coin module to scope room lists by branch_id instead of
+ * user_id (rooms are owned by branches, not by individual users).
+ */
+export const getOversightBranchIds = async (
+  poolDb: Pool,
+  userId: string,
+): Promise<string[]> => {
+  const cacheKey = `hier:oversight-branches:${userId}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) return JSON.parse(cached) as string[];
+
+  // Direct oversight branches (user_oversight_branches rows for this user)
+  // UNION the home branch of every user in the subtree.
+  const subtreeIds = await getSubtreeIds(userId);
+
+  const { rows } = await poolDb.query<{ branch_id: string }>(
+    `SELECT DISTINCT branch_id FROM (
+       SELECT branch_id FROM user_oversight_branches WHERE user_id = $1
+       UNION
+       SELECT DISTINCT u.branch_id
+         FROM users u
+         WHERE u.branch_id IS NOT NULL
+           AND u.id = ANY($2::uuid[])
+     ) AS combined
+     WHERE branch_id IS NOT NULL`,
+    [userId, subtreeIds]
+  );
+
+  const ids = rows.map(r => r.branch_id);
+  await redis.setex(cacheKey, 3600, JSON.stringify(ids));
+  return ids;
+};
+
 // Walks the manager_id chain upward from userId and busts hier:subtree:{id} for every ancestor.
 // This ensures that directors, GMs, and all levels above see the new subordinate without
 // waiting for the 1-hour TTL — a single-arg replacement for the old two-arg version.
@@ -140,13 +179,12 @@ export const bustHierarchyCache = async (userId: string): Promise<void> => {
     [userId]
   );
 
-  // Delete both subtree and oversight cache keys for every ancestor in parallel.
-  // The two caches share invalidation triggers (any subtree change also changes
-  // the oversight union), so they must be busted together.
+  // Delete subtree, oversight, and oversight-branches cache keys for every ancestor.
   await Promise.all(
     result.rows.flatMap((row: { id: string }) => [
       redis.del(`hier:subtree:${row.id}`),
       redis.del(`hier:oversight:${row.id}`),
+      redis.del(`hier:oversight-branches:${row.id}`),
     ])
   );
 };

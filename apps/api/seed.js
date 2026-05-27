@@ -1,9 +1,15 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
 
 async function seed() {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ DATABASE_URL is not set. Populate apps/api/.env before running seed.');
+    process.exit(1);
+  }
   const client = new Client({
-    connectionString: 'postgresql://postgres:TJLNnZxJARQWrnvezxuCJBwVRMNavNRk@autorack.proxy.rlwy.net:16344/railway'
+    connectionString: process.env.DATABASE_URL,
   });
 
   try {

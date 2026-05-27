@@ -97,7 +97,7 @@ export async function resolveEmployeeDashboardScope(
   return { kind: 'subtree', userIds };
 }
 
-/** Fills branchId / branchName on login/me when admin is linked via branches.admin_id but users.branch_id was never set. */
+/** Fills branchId / branchName / isHeadBranch on login/me when admin is linked via branches.admin_id but users.branch_id was never set. */
 export async function hydrateBranchAdminProfile(
   db: Pool,
   profile: {
@@ -105,6 +105,7 @@ export async function hydrateBranchAdminProfile(
     role: string;
     branchId: string | null;
     branchName: string | null;
+    isHeadBranch?: boolean;
   }
 ): Promise<void> {
   if (profile.role !== 'branch_admin') {
@@ -112,11 +113,15 @@ export async function hydrateBranchAdminProfile(
   }
   const branchId = await resolveBranchAdminBranchId(db, profile.id, profile.branchId);
   profile.branchId = branchId;
+  // Re-fetch branch metadata together so isHeadBranch is always in sync with branchId.
+  // Without this, an admin hydrated via branches.admin_id would see isHeadBranch=false
+  // (carried over from the LEFT JOIN miss) even when their branch is the head branch.
+  const r = await db.query<{ name: string; is_head_branch: boolean }>(
+    'SELECT name, is_head_branch FROM branches WHERE id = $1',
+    [branchId]
+  );
   if (!profile.branchName) {
-    const r = await db.query<{ name: string }>(
-      'SELECT name FROM branches WHERE id = $1',
-      [branchId]
-    );
     profile.branchName = r.rows[0]?.name ?? null;
   }
+  profile.isHeadBranch = Boolean(r.rows[0]?.is_head_branch);
 }

@@ -6,6 +6,26 @@ import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissi
 // Roles that can earn incentives. MD and Director never earn.
 const EARNER_ROLES = new Set(['sales_officer', 'abm', 'branch_manager', 'gm', 'branch_admin']);
 
+// One shape for every scheme's payout. Each scheme picks a mode:
+//   fixed_chain      → walk dealMaker → GM, credit each level the role's fixed ₹
+//                      plus branch admin (current Trading Academy behaviour)
+//   percent_referrer → credit dealMaker only, amount = baseAmount * rate%
+//                      (current Gold behaviour; rate row keyed by percentRole)
+export type DistributeMode = 'fixed_chain' | 'percent_referrer';
+
+export interface DistributeArgs {
+  schemeCode:        string;                      // projects.code
+  dealMakerUserId:   string;
+  mode:              DistributeMode;
+  sourceDescription: string;
+  creditedBy:        string;
+  sourceId?:         string;
+  paymentEvent?:     'enrollment' | 'renewal';
+  // percent_referrer only
+  baseAmount?:       number;
+  percentRole?:      string;                      // e.g. 'referrer_new' | 'referrer_renewal'
+}
+
 export const IncentiveService = {
 
   // ─── COMMISSION RULES ───
@@ -83,97 +103,115 @@ export const IncentiveService = {
     return result.rows[0];
   },
 
+  // Resolve a scheme code (e.g. 'gold_scheme') to its projects.id.
+  async resolveProjectIdByCode(
+    db: Pool | PoolClient,
+    schemeCode: string
+  ): Promise<string | null> {
+    const res = await db.query(
+      `SELECT id FROM projects WHERE code = $1 LIMIT 1`,
+      [schemeCode]
+    );
+    return res.rows[0]?.id ?? null;
+  },
+
   // ─── AUTO-DISTRIBUTE INCENTIVES ───
   //
-  // Logic:
-  //   - Start from the referrer (dealMakerUserId) at their role level.
-  //   - Credit them their role's amount (e.g. ABM → Rs.750).
-  //   - Walk UP the manager_id chain, crediting each manager their role's amount.
-  //   - Stop at GM (ceiling). Director and MD never earn.
-  //   - Roles BELOW the referrer in the hierarchy are SKIPPED automatically
-  //     because we only walk upward.
-  //   - Branch Admin of the referrer's branch is ALWAYS credited Rs.250
-  //     regardless of position (separate from the chain).
+  // One entry point for every scheme. The scheme picks a mode:
   //
-  // Example — ABM refers:
-  //   ABM (Rs.750) → BM (Rs.500) → GM (Rs.250) + Branch Admin (Rs.250)
-  //   SO is skipped because they are below ABM.
+  //   mode='fixed_chain'      — walks dealMaker → GM crediting each role's fixed ₹,
+  //                             plus the referrer's branch admin (Trading Academy).
+  //                             Stops at GM; Director and MD never earn.
+  //   mode='percent_referrer' — credits dealMaker only, amount = baseAmount *
+  //                             ratesMap[percentRole].amount / 100  (Gold).
   //
-  // Returns the inserted incentive rows.
+  // Every row written carries scheme_code + payment_event so scheme-scoped
+  // summary queries can filter cleanly instead of LIKE-matching descriptions.
   async distributeIncentives(
     db: Pool | PoolClient,
-    dealMakerUserId: string,
-    projectId: string,
-    sourceDescription: string,
-    creditedBy: string,      // who triggered the distribution (entered_by / branch_admin)
-    sourceId?: string
+    args: DistributeArgs
   ): Promise<any[]> {
-    // Load commission rules via the shared helper (same path gold service uses)
+    const projectId = await IncentiveService.resolveProjectIdByCode(db, args.schemeCode);
+    if (!projectId) return [];
+
     const ratesMap = await IncentiveService.loadProjectRates(db, projectId);
-    if (Object.keys(ratesMap).length === 0) {
-      // No rates configured — nothing to distribute
-      return [];
-    }
+    if (Object.keys(ratesMap).length === 0) return [];
 
-    // Load the referrer's profile
-    const dealMakerResult = await db.query(
-      `SELECT id, role, branch_id, manager_id, name FROM users WHERE id = $1`,
-      [dealMakerUserId]
-    );
-    if (dealMakerResult.rows.length === 0) return [];
+    const recipients: Array<{ userId: string; amount: number }> = [];
 
-    const dealMaker = dealMakerResult.rows[0];
-    const branchId  = dealMaker.branch_id;
-
-    // Walk up the hierarchy from the referrer to GM (inclusive).
-    // Only EARNER_ROLES are credited; Director and MD are skipped and stop the walk.
-    const chain: Array<{ id: string; role: string; name: string }> = [];
-    let current = dealMaker;
-
-    while (current && EARNER_ROLES.has(current.role)) {
-      chain.push({ id: current.id, role: current.role, name: current.name });
-      if (current.role === 'gm') break; // GM is the ceiling — stop here
-
-      if (!current.manager_id) break;
-      const managerResult = await db.query(
-        `SELECT id, role, branch_id, manager_id, name FROM users WHERE id = $1`,
-        [current.manager_id]
+    if (args.mode === 'percent_referrer') {
+      if (!args.percentRole || args.baseAmount == null || args.baseAmount <= 0) {
+        return [];
+      }
+      const rate = ratesMap[args.percentRole];
+      if (!rate || rate.rateType !== 'percent' || rate.amount <= 0) return [];
+      const amount = args.baseAmount * (rate.amount / 100);
+      if (amount > 0) {
+        recipients.push({ userId: args.dealMakerUserId, amount });
+      }
+    } else {
+      // fixed_chain
+      const dealMakerResult = await db.query(
+        `SELECT id, role, branch_id, manager_id FROM users WHERE id = $1`,
+        [args.dealMakerUserId]
       );
-      current = managerResult.rows[0] ?? null;
-    }
+      if (dealMakerResult.rows.length === 0) return [];
 
-    // Branch Admin of the referrer's branch — always credited, separate from the chain
-    let branchAdmin: { id: string; role: string; name: string } | null = null;
-    if (branchId) {
-      const adminResult = await db.query(
-        `SELECT id, role, name FROM users
-         WHERE branch_id = $1 AND role = 'branch_admin' AND is_active = true LIMIT 1`,
-        [branchId]
-      );
-      if (adminResult.rows.length > 0) {
+      const dealMaker = dealMakerResult.rows[0];
+      const branchId  = dealMaker.branch_id;
+
+      const chain: Array<{ id: string; role: string }> = [];
+      let current = dealMaker;
+
+      while (current && EARNER_ROLES.has(current.role)) {
+        chain.push({ id: current.id, role: current.role });
+        if (current.role === 'gm') break;
+        if (!current.manager_id) break;
+        const managerResult = await db.query(
+          `SELECT id, role, branch_id, manager_id FROM users WHERE id = $1`,
+          [current.manager_id]
+        );
+        current = managerResult.rows[0] ?? null;
+      }
+
+      if (branchId) {
+        const adminResult = await db.query(
+          `SELECT id FROM users
+           WHERE branch_id = $1 AND role = 'branch_admin' AND is_active = true LIMIT 1`,
+          [branchId]
+        );
         const admin = adminResult.rows[0];
-        // Avoid double-crediting if branch_admin is already in the chain
-        if (!chain.find(u => u.id === admin.id)) {
-          branchAdmin = admin;
+        if (admin && !chain.find(u => u.id === admin.id)) {
+          chain.push({ id: admin.id, role: 'branch_admin' });
         }
+      }
+
+      for (const person of chain) {
+        const rate = ratesMap[person.role];
+        if (!rate || rate.amount <= 0) continue;
+        // fixed_chain only credits 'fixed' rates; 'percent' rules belong to other modes
+        if (rate.rateType && rate.rateType !== 'fixed') continue;
+        recipients.push({ userId: person.id, amount: rate.amount });
       }
     }
 
-    const allRecipients = branchAdmin ? [...chain, branchAdmin] : chain;
     const created: any[] = [];
-
-    for (const person of allRecipients) {
-      // Trading Academy rules are always 'fixed' (₹ per deal); rateType check future-proofs this
-      const rate = ratesMap[person.role];
-      if (!rate || rate.amount <= 0) continue;
-      const amount = rate.amount;
-
+    for (const r of recipients) {
       const insertResult = await db.query(
         `INSERT INTO employee_incentives
-           (user_id, amount, source_type, source_id, source_description, credited_by)
-         VALUES ($1, $2, 'scheme', $3, $4, $5)
+           (user_id, amount, source_type, scheme_code, payment_event,
+            source_id, source_description, credited_by)
+         VALUES ($1, $2, 'scheme', $3, $4, $5, $6, $7)
          RETURNING *`,
-        [person.id, amount, sourceId ?? null, sourceDescription, creditedBy]
+        [
+          r.userId,
+          r.amount,
+          args.schemeCode,
+          args.paymentEvent ?? null,
+          args.sourceId ?? null,
+          args.sourceDescription,
+          args.creditedBy,
+        ]
       );
       created.push(insertResult.rows[0]);
     }
@@ -311,9 +349,14 @@ export const IncentiveService = {
       params
     );
 
+    // Break down by source_type AND scheme_code so the UI can show each scheme
+    // as its own card (Gold separate from Trading Academy) instead of collapsing
+    // every scheme into one "Schemes" bucket.
     const breakdownResult = await db.query(
-      `SELECT source_type, COALESCE(SUM(amount), 0) AS subtotal, COUNT(*) AS count
-       FROM employee_incentives WHERE user_id = $1${dateWhere} GROUP BY source_type`,
+      `SELECT source_type, scheme_code, COALESCE(SUM(amount), 0) AS subtotal, COUNT(*) AS count
+       FROM employee_incentives
+       WHERE user_id = $1${dateWhere}
+       GROUP BY source_type, scheme_code`,
       params
     );
 
@@ -331,6 +374,7 @@ export const IncentiveService = {
       totalBalance: parseFloat(balanceResult.rows[0].total_balance),
       breakdown: breakdownResult.rows.map(r => ({
         sourceType: r.source_type,
+        schemeCode: r.scheme_code,
         subtotal:   parseFloat(r.subtotal),
         count:      parseInt(r.count, 10),
       })),

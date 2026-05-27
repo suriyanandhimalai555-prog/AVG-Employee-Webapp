@@ -9,7 +9,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config();
 
 const BRANCHES = [
-  'Veppur', 'Kallakurichi', 'Villupuram', 'Ulundurpet', 'Tiruvannamalai',
+  'Veppur', 'Kallakurichi', 'Villupuram', 'Ulundurpet', '
+  ,
   'Anekal', 'Avalurpet', 'Panruti', 'Sankarapuram', 'Perampalur',
   'Villiyanur', 'Thittakudi', 'Thirukkanur', 'Neyveli', 'Thandarampattu',
   'Tindivanam', 'Ariyankuppam', 'Nettapakkam', 'Kandachipuram', 'Polur',
