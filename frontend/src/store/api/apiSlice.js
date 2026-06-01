@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -676,6 +676,92 @@ export const apiSlice = createApi({
       ],
     }),
 
+    // ─── LSS scheme ───────────────────────────────────────────────────────
+
+    getLssPlans: builder.query({
+      query: () => '/lss/plans',
+      transformResponse: (response) => response.data,
+      providesTags: ['LssPlans'],
+    }),
+
+    getLssRooms: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status)  qs.set('status', params.status);
+        if (params.planId)  qs.set('planId', params.planId);
+        if (params.page)    qs.set('page', String(params.page));
+        if (params.limit)   qs.set('limit', String(params.limit));
+        const q = qs.toString();
+        return `/lss/rooms${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['LssRooms'],
+    }),
+
+    getLssAwaitingCombine: builder.query({
+      query: () => '/lss/rooms/awaiting-combine',
+      transformResponse: (response) => response.data,
+      providesTags: ['LssAwaitingCombine'],
+    }),
+
+    getLssRoom: builder.query({
+      query: (id) => `/lss/rooms/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: (_r, _e, id) => [{ type: 'LssRoom', id }],
+    }),
+
+    getLssSummary: builder.query({
+      query: () => '/lss/summary',
+      transformResponse: (response) => response.data,
+      providesTags: ['LssSummary'],
+    }),
+
+    addLssSlot: builder.mutation({
+      query: (data) => ({ url: '/lss/slots', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssSummary', 'Incentives', 'IncentiveWallet'],
+    }),
+
+    refundLssSlot: builder.mutation({
+      query: (id) => ({ url: `/lss/slots/${id}/refund`, method: 'POST' }),
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary'],
+    }),
+
+    activateLssRoom: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/lss/rooms/${id}/activate`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary'],
+    }),
+
+    runLssDraw: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/lss/rooms/${id}/draws`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary'],
+    }),
+
+    combineLssRooms: builder.mutation({
+      query: (data) => ({ url: '/lss/rooms/combine', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssSummary', 'LssAwaitingCombine'],
+    }),
+
+    refundLssRoom: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/lss/rooms/${id}/refund`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine'],
+    }),
+
+    sendLssRoomToHeadBranch: builder.mutation({
+      query: (id) => ({ url: `/lss/rooms/${id}/send-to-head`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, id) => [
+        'LssRooms',
+        { type: 'LssRoom', id },
+        'LssAwaitingCombine',
+        'LssSummary',
+      ],
+    }),
+
     // ─── Cross-scheme dashboard (MD / Director) ───
     // Backed by /api/schemes/* which walks the SchemeService registry. Every
     // scheme that implements getOverviewByBranch shows up here automatically.
@@ -912,6 +998,18 @@ export const {
   useCombineGoldCoinRoomsMutation,
   useRefundGoldCoinRoomMutation,
   useSendGoldCoinRoomToHeadBranchMutation,
+  useGetLssPlansQuery,
+  useGetLssRoomsQuery,
+  useGetLssRoomQuery,
+  useGetLssSummaryQuery,
+  useGetLssAwaitingCombineQuery,
+  useAddLssSlotMutation,
+  useRefundLssSlotMutation,
+  useActivateLssRoomMutation,
+  useRunLssDrawMutation,
+  useCombineLssRoomsMutation,
+  useRefundLssRoomMutation,
+  useSendLssRoomToHeadBranchMutation,
   useGetSchemesOverviewQuery,
   useGetSchemeBranchEntriesQuery,
   useLazyGetSchemeBranchEntriesQuery,

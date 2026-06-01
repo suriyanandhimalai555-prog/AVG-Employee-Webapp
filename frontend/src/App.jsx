@@ -38,6 +38,10 @@ const GoldCoinSchemePage       = lazy(() => import('./pages/schemes/GoldCoinSche
 const GoldCoinRoomDetailPage   = lazy(() => import('./pages/schemes/GoldCoinRoomDetailPage').then(m => ({ default: m.GoldCoinRoomDetailPage })));
 const GoldCoinAddSlotPage      = lazy(() => import('./pages/schemes/GoldCoinAddSlotPage').then(m => ({ default: m.GoldCoinAddSlotPage })));
 const GoldCoinHeadBranchPage   = lazy(() => import('./pages/schemes/GoldCoinHeadBranchPage').then(m => ({ default: m.GoldCoinHeadBranchPage })));
+const LssSchemePage            = lazy(() => import('./pages/schemes/LssSchemePage').then(m => ({ default: m.LssSchemePage })));
+const LssRoomDetailPage        = lazy(() => import('./pages/schemes/LssRoomDetailPage').then(m => ({ default: m.LssRoomDetailPage })));
+const LssAddSlotPage           = lazy(() => import('./pages/schemes/LssAddSlotPage').then(m => ({ default: m.LssAddSlotPage })));
+const LssHeadBranchPage        = lazy(() => import('./pages/schemes/LssHeadBranchPage').then(m => ({ default: m.LssHeadBranchPage })));
 const LeadershipListPage       = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
 const SchemesOverviewPage      = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
@@ -142,6 +146,10 @@ function App() {
         <Route path="/money/schemes/gold-coin/add"   element={<GoldCoinAddSlotPage />} />
         <Route path="/money/schemes/gold-coin/head"  element={<GoldCoinHeadBranchPage />} />
         <Route path="/money/schemes/gold-coin/:id"   element={<GoldCoinRoomDetailPage />} />
+        <Route path="/money/schemes/lss"       element={<LssSchemePage />} />
+        <Route path="/money/schemes/lss/add"   element={<LssAddSlotPage />} />
+        <Route path="/money/schemes/lss/head"  element={<LssHeadBranchPage />} />
+        <Route path="/money/schemes/lss/:id"   element={<LssRoomDetailPage />} />
 
         {/* Redirects for old /gold/* URLs */}
         <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />

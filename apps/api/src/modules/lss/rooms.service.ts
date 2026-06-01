@@ -1,0 +1,321 @@
+// Rooms — lifecycle, status promotion, activation, listing.
+//
+// Slot creation goes through SlotsService, which calls findOrCreateFillingRoom
+// here under a SELECT FOR UPDATE so two concurrent purchases can't overshoot
+// the 20-slot cap.
+
+import { Pool, PoolClient } from 'pg';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
+import { assertTransition, isStaleFilling, nextDrawDate, RoomStatus } from './status-machine';
+
+const FILL_WINDOW_DAYS = 30;
+const SLOTS_PER_ROOM   = 20;
+
+export interface RoomRow {
+  id:                  string;
+  plan_id:             string;
+  branch_id:           string;
+  room_number:         number;
+  is_combined:         boolean;
+  status:              RoomStatus;
+  fill_deadline:       Date;
+  activated_at:        Date | null;
+  activated_by:        string | null;
+  first_draw_date:     string | null;
+  completed_at:        Date | null;
+  combined_into_room_id: string | null;
+  notes:               string | null;
+  created_by:          string;
+  created_at:          Date;
+}
+
+export const RoomsService = {
+
+  async getRoomWithStaleCheck(client: PoolClient, roomId: string): Promise<RoomRow> {
+    const res = await client.query<RoomRow>(
+      `SELECT * FROM lss_rooms WHERE id = $1 FOR UPDATE`,
+      [roomId]
+    );
+    if (res.rows.length === 0) throw new NotFoundError('Room not found', 'LSS_ROOM_NOT_FOUND');
+    const room = res.rows[0];
+
+    if (isStaleFilling(room.status, room.fill_deadline)) {
+      assertTransition(room.status, 'pending_combine');
+      await client.query(
+        `UPDATE lss_rooms SET status = 'pending_combine' WHERE id = $1`,
+        [roomId]
+      );
+      room.status = 'pending_combine';
+    }
+    return room;
+  },
+
+  async findOrCreateFillingRoom(
+    client: PoolClient,
+    planId: string,
+    branchId: string,
+    createdBy: string,
+  ): Promise<RoomRow> {
+    const existing = await client.query<RoomRow>(
+      `SELECT r.*
+       FROM lss_rooms r
+       WHERE r.plan_id = $1
+         AND r.branch_id = $2
+         AND r.status = 'filling'
+         AND (SELECT COUNT(*) FROM lss_slots s WHERE s.room_id = r.id) < ${SLOTS_PER_ROOM}
+       ORDER BY r.created_at ASC
+       LIMIT 1
+       FOR UPDATE`,
+      [planId, branchId]
+    );
+
+    if (existing.rows.length > 0) {
+      const room = existing.rows[0];
+      if (isStaleFilling(room.status, room.fill_deadline)) {
+        await client.query(
+          `UPDATE lss_rooms SET status='pending_combine' WHERE id=$1`,
+          [room.id]
+        );
+      } else {
+        return room;
+      }
+    }
+
+    const seqRes = await client.query<{ next: number }>(
+      `SELECT COALESCE(MAX(room_number), 0) + 1 AS next
+       FROM lss_rooms WHERE plan_id = $1 AND branch_id = $2`,
+      [planId, branchId]
+    );
+    const roomNumber = seqRes.rows[0].next;
+
+    const ins = await client.query<RoomRow>(
+      `INSERT INTO lss_rooms
+         (plan_id, branch_id, room_number, status, fill_deadline, created_by)
+       VALUES ($1, $2, $3, 'filling', now() + INTERVAL '${FILL_WINDOW_DAYS} days', $4)
+       RETURNING *`,
+      [planId, branchId, roomNumber, createdBy]
+    );
+    return ins.rows[0];
+  },
+
+  async activate(db: Pool, roomId: string, activatedBy: string, notes?: string, callerBranchId?: string): Promise<RoomRow> {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const room = await this.getRoomWithStaleCheck(client, roomId);
+      if (callerBranchId && room.branch_id !== callerBranchId) {
+        throw new ForbiddenError('Room belongs to a different branch', 'LSS_ROOM_WRONG_BRANCH');
+      }
+      assertTransition(room.status, 'active');
+
+      const countRes = await client.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM lss_slots WHERE room_id = $1 AND status = 'held'`,
+        [roomId]
+      );
+      if (countRes.rows[0].n !== SLOTS_PER_ROOM) {
+        throw new ValidationError(
+          `Room must have exactly ${SLOTS_PER_ROOM} held slots before activation (currently ${countRes.rows[0].n})`,
+          'LSS_ROOM_NOT_FULL'
+        );
+      }
+
+      const firstDraw = nextDrawDate();
+      const upd = await client.query<RoomRow>(
+        `UPDATE lss_rooms
+         SET status = 'active',
+             activated_at = now(),
+             activated_by = $2,
+             first_draw_date = $3,
+             notes = COALESCE($4, notes)
+         WHERE id = $1
+         RETURNING *`,
+        [roomId, activatedBy, firstDraw.toISOString().slice(0, 10), notes ?? null]
+      );
+
+      await client.query('COMMIT');
+      return upd.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  async list(
+    db: Pool,
+    filters: { status?: RoomStatus; planId?: string; branchIds: string[] | null; page: number; limit: number }
+  ): Promise<{ data: any[]; total: number }> {
+    await db.query(
+      `UPDATE lss_rooms SET status='pending_combine'
+       WHERE status='filling' AND fill_deadline <= now()`
+    );
+
+    const params: any[] = [];
+    let where = '1=1';
+    let idx = 1;
+    if (filters.status)  { where += ` AND r.status = $${idx++}`;         params.push(filters.status); }
+    if (filters.planId)  { where += ` AND r.plan_id = $${idx++}`;        params.push(filters.planId); }
+    if (filters.branchIds !== null) {
+      where += ` AND r.branch_id = ANY($${idx++}::uuid[])`;
+      params.push(filters.branchIds);
+    }
+
+    const countRes = await db.query<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM lss_rooms r WHERE ${where}`,
+      params
+    );
+    const total = parseInt(countRes.rows[0].n, 10);
+
+    const dataRes = await db.query(
+      `SELECT
+         r.*,
+         p.name        AS plan_name,
+         p.price       AS plan_price,
+         b.name        AS branch_name,
+         (SELECT COUNT(*)::int FROM lss_slots s WHERE s.room_id = r.id AND s.status = 'held') AS slots_filled,
+         (SELECT COUNT(*)::int FROM lss_draws d WHERE d.room_id = r.id)                       AS draws_done
+       FROM lss_rooms r
+       JOIN lss_plans p  ON r.plan_id   = p.id
+       JOIN branches b   ON r.branch_id = b.id
+       WHERE ${where}
+       ORDER BY r.created_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, filters.limit, (filters.page - 1) * filters.limit]
+    );
+
+    return { data: dataRes.rows, total };
+  },
+
+  async listAwaitingCombine(db: Pool): Promise<any[]> {
+    await db.query(
+      `UPDATE lss_rooms SET status='pending_combine'
+       WHERE status='filling' AND fill_deadline <= now()`
+    );
+    const { rows } = await db.query(
+      `SELECT
+         r.*,
+         p.name  AS plan_name,
+         p.price AS plan_price,
+         b.name  AS branch_name,
+         COUNT(s.id) FILTER (WHERE s.status = 'held')::int AS slots_filled
+       FROM lss_rooms r
+       JOIN lss_plans p   ON p.id = r.plan_id
+       JOIN branches b    ON b.id = r.branch_id
+       LEFT JOIN lss_slots s ON s.room_id = r.id
+       WHERE r.status = 'pending_combine'
+       GROUP BY r.id, p.id, b.id
+       ORDER BY r.created_at ASC`
+    );
+    return rows;
+  },
+
+  async getById(
+    db: Pool,
+    roomId: string,
+    allowedBranchIds: string[] | null = null,
+    allowPendingCombine = false,
+  ): Promise<any> {
+    const roomRes = await db.query(
+      `SELECT r.*, p.name AS plan_name, p.price AS plan_price,
+              b.name AS branch_name, b.is_head_branch AS room_branch_is_head
+       FROM lss_rooms r
+       JOIN lss_plans p  ON r.plan_id   = p.id
+       JOIN branches b   ON r.branch_id = b.id
+       WHERE r.id = $1`,
+      [roomId]
+    );
+    if (roomRes.rows.length === 0) throw new NotFoundError('Room not found', 'LSS_ROOM_NOT_FOUND');
+
+    if (allowedBranchIds !== null) {
+      const room = roomRes.rows[0];
+      const canView =
+        allowedBranchIds.includes(room.branch_id) ||
+        (allowPendingCombine && room.status === 'pending_combine');
+      if (!canView) throw new ForbiddenError('You do not have access to this room');
+    }
+
+    const slotsRes = await db.query(
+      `SELECT s.*, c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
+              u.name AS referrer_name, u.role AS referrer_role,
+              bs.name AS source_branch_name
+       FROM lss_slots s
+       JOIN customers c ON s.customer_id = c.id
+       LEFT JOIN users u ON s.referrer_id = u.id
+       JOIN branches bs  ON s.branch_id  = bs.id
+       WHERE s.room_id = $1
+       ORDER BY s.slot_number ASC`,
+      [roomId]
+    );
+
+    const drawsRes = await db.query(
+      `SELECT d.*,
+              s.slot_number AS winning_slot_number,
+              c.name        AS winning_customer_name,
+              c.customer_code
+       FROM lss_draws d
+       JOIN lss_slots s ON d.winning_slot_id = s.id
+       JOIN customers c ON s.customer_id    = c.id
+       WHERE d.room_id = $1
+       ORDER BY d.draw_number ASC`,
+      [roomId]
+    );
+
+    return { ...roomRes.rows[0], slots: slotsRes.rows, draws: drawsRes.rows };
+  },
+
+  async countHeldSlots(client: PoolClient, roomId: string): Promise<number> {
+    const r = await client.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM lss_slots WHERE room_id = $1 AND status = 'held'`,
+      [roomId]
+    );
+    return r.rows[0].n;
+  },
+
+  async sendToHeadBranch(db: Pool, roomId: string, callerBranchId: string): Promise<RoomRow> {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const room = await this.getRoomWithStaleCheck(client, roomId);
+      if (room.branch_id !== callerBranchId) {
+        throw new ForbiddenError('Room belongs to a different branch', 'LSS_ROOM_WRONG_BRANCH');
+      }
+
+      assertTransition(room.status, 'pending_combine');
+
+      const upd = await client.query<RoomRow>(
+        `UPDATE lss_rooms SET status = 'pending_combine' WHERE id = $1 RETURNING *`,
+        [roomId]
+      );
+
+      await client.query('COMMIT');
+      return upd.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  async markCompletedIfDone(client: PoolClient, roomId: string): Promise<boolean> {
+    const r = await client.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM lss_draws WHERE room_id = $1`,
+      [roomId]
+    );
+    if (r.rows[0].n >= SLOTS_PER_ROOM) {
+      await client.query(
+        `UPDATE lss_rooms SET status = 'completed', completed_at = now() WHERE id = $1`,
+        [roomId]
+      );
+      return true;
+    }
+    return false;
+  },
+
+};
+
+export const LSS_FILL_WINDOW_DAYS = FILL_WINDOW_DAYS;
+export const LSS_SLOTS_PER_ROOM   = SLOTS_PER_ROOM;

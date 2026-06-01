@@ -61,10 +61,9 @@ export const ProfilePage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 6MB size limit
-    const MAX_SIZE = 6 * 1024 * 1024;
+    const MAX_SIZE = 25 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      setError('File size too large. Maximum allowed is 6MB.');
+      setError('File size too large. Maximum allowed is 25MB.');
       e.target.value = '';
       return;
     }

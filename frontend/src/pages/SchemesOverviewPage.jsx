@@ -155,6 +155,46 @@ const EntryRowGoldCoin = ({ entry }) => {
   );
 };
 
+const LSS_STATUS_STYLES = {
+  filling:         'bg-blue-50 text-blue-600',
+  pending_combine: 'bg-amber-50 text-amber-700',
+  combined_into:   'bg-navy/5 text-navy/60',
+  expired:         'bg-red-50 text-red-600',
+  active:          'bg-emerald-50 text-emerald-700',
+  completed:       'bg-indigo/10 text-indigo',
+};
+
+const EntryRowLss = ({ entry }) => {
+  const filled = entry.slots_held + entry.slots_won;
+  return (
+    <div className="px-4 py-3 flex items-center gap-3">
+      <div className="w-8 h-8 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+        R{entry.room_number}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-navy truncate">
+          {entry.plan_name}
+          {entry.is_combined && (
+            <span className="ml-1.5 text-[9px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-full uppercase">combined</span>
+          )}
+        </p>
+        <p className="text-[11px] text-navy/40 truncate">
+          {filled + entry.slots_refunded}/20 slots
+          {entry.slots_won > 0 ? ` · ${entry.slots_won} won` : ''}
+          {entry.slots_refunded > 0 ? ` · ${entry.slots_refunded} refunded` : ''}
+          {' · '}{entry.draws_done}/20 draws
+        </p>
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <p className="text-sm font-bold text-violet-700">{formatCurrency(parseFloat(entry.collected))}</p>
+        <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${LSS_STATUS_STYLES[entry.status] || 'bg-navy/5 text-navy/40'}`}>
+          {entry.status.replace(/_/g, ' ')}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const EntryRowGeneric = ({ entry }) => (
   <div className="px-4 py-3 flex items-center justify-between">
     <p className="text-xs font-medium text-navy/60 truncate">{entry.id}</p>
@@ -166,6 +206,7 @@ const ENTRY_ROW_BY_CODE = {
   gold_scheme:      EntryRowGold,
   trading_academy:  EntryRowTrading,
   gold_coin_scheme: EntryRowGoldCoin,
+  lss_scheme:       EntryRowLss,
 };
 
 // ─── Inline entries list (drill-down level 3) ───────────────────────────────
@@ -228,7 +269,7 @@ const BranchRow = ({ branch, schemeCode, expanded, onToggle, schemeMeta }) => {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-navy truncate">{branch.branchName}</p>
           <p className="text-[11px] text-navy/40">
-            {formatNumber(branch.count)} {schemeCode === 'gold_coin_scheme' ? 'slots' : schemeCode === 'gold_scheme' ? 'chits' : 'enrollments'}
+            {formatNumber(branch.count)} {schemeCode === 'gold_coin_scheme' || schemeCode === 'lss_scheme' ? 'slots' : schemeCode === 'gold_scheme' ? 'chits' : 'enrollments'}
             {' · '}
             commission {formatCurrency(branch.commission)}
           </p>

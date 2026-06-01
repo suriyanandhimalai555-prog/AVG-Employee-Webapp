@@ -77,11 +77,13 @@ export const NAVIGABLE_SCHEMES = {
   'gold_scheme':      '/money/schemes/gold',
   'trading_academy':  '/money/schemes/trading-academy',
   'gold_coin_scheme': '/money/schemes/gold-coin',
+  'lss_scheme':       '/money/schemes/lss',
 };
 
 export const SCHEME_CARD_STYLES = {
   gold:      { Icon: Gem,              gradient: 'bg-gradient-to-br from-amber-400 to-amber-500' },
   gold_coin: { Icon: Coins,            gradient: 'bg-gradient-to-br from-yellow-500 to-amber-600' },
+  lss:       { Icon: Layers,           gradient: 'bg-gradient-to-br from-violet-500 to-fuchsia-600' },
   land:      { Icon: Landmark,         gradient: 'bg-gradient-to-br from-stone-500 to-stone-600' },
   builders:  { Icon: Building2,        gradient: 'bg-gradient-to-br from-sky-500 to-sky-600' },
   chit:      { Icon: CircleDollarSign, gradient: 'bg-gradient-to-br from-violet-500 to-violet-600' },
@@ -95,6 +97,7 @@ export const SCHEME_CARD_STYLES = {
 export const getSchemeStyle = (name, code) => {
   if (code === 'gold_scheme')      return SCHEME_CARD_STYLES.gold;
   if (code === 'gold_coin_scheme') return SCHEME_CARD_STYLES.gold_coin;
+  if (code === 'lss_scheme')       return SCHEME_CARD_STYLES.lss;
   if (code === 'trading_academy')  return SCHEME_CARD_STYLES.trading;
   const lower = (name || '').toLowerCase();
   if (lower.includes('gold'))    return SCHEME_CARD_STYLES.gold;
@@ -116,6 +119,7 @@ export const SOURCE_META = {
   scheme:           { label: 'Schemes',          color: 'text-violet-600',   bg: 'bg-violet-100',   Icon: Layers },
   gold_scheme:      { label: 'Gold Scheme',      color: 'text-amber-600',    bg: 'bg-amber-100',    Icon: Gem },
   gold_coin_scheme: { label: 'Gold Coin',        color: 'text-yellow-700',   bg: 'bg-yellow-100',   Icon: Coins },
+  lss_scheme:       { label: 'LSS',             color: 'text-violet-600',   bg: 'bg-violet-100',   Icon: Layers },
   trading_academy:  { label: 'Trading Academy',  color: 'text-indigo',       bg: 'bg-indigo/10',    Icon: Building2 },
   other:            { label: 'Other',            color: 'text-navy/60',      bg: 'bg-navy/5',       Icon: MoreHorizontal },
 };

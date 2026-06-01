@@ -72,9 +72,32 @@ export const BranchService = {
       throw new ForbiddenError('Only the MD can create new branches');
     }
 
+    // Derive a unique client_prefix from the branch name using the same DB function
+    // that migration 019 used to populate existing branches. The CTE tries the base
+    // 3-letter code first, then appends 2, 3 … 50 if that prefix is already taken,
+    // mirroring the disambiguation step in 019_client_prefix.sql.
     const result = await db.query(
-      `INSERT INTO branches (name, shift_start, shift_end, timezone)
-       VALUES ($1, $2, $3, $4)
+      `WITH base AS (
+         SELECT derive_branch_prefix($1) AS p
+       ),
+       candidate AS (
+         SELECT COALESCE(
+           (SELECT opts.c
+            FROM (
+              SELECT CASE WHEN n = 1 THEN base.p ELSE base.p || n::text END AS c
+              FROM base, generate_series(1, 50) AS n
+            ) opts
+            WHERE NOT EXISTS (
+              SELECT 1 FROM branches b WHERE b.client_prefix = opts.c
+            )
+            ORDER BY length(opts.c), opts.c
+            LIMIT 1),
+           base.p
+         ) AS prefix
+         FROM base
+       )
+       INSERT INTO branches (name, client_prefix, shift_start, shift_end, timezone)
+       SELECT $1, candidate.prefix, $2, $3, $4 FROM candidate
        RETURNING *`,
       [
         payload.name,

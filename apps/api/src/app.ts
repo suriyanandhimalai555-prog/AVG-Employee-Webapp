@@ -28,6 +28,7 @@ import salaryRoutes from './modules/salaries/salaries.routes';
 import tradingAcademyRoutes from './modules/trading-academy/trading-academy.routes';
 import customerRoutes from './modules/customers/customers.routes';
 import goldCoinRoutes from './modules/gold-coin/gold-coin.routes';
+import lssRoutes from './modules/lss/lss.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -164,6 +165,10 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the Gold Coin scheme (16-slot rooms, monthly draws, head-branch combine)
   // Mounts under the '/api/gold-coin' prefix
   await app.register(goldCoinRoutes, { prefix: '/api/gold-coin' });
+
+  // Register the LSS scheme (20-slot rooms, monthly draws, level-based payout)
+  // Mounts under the '/api/lss' prefix
+  await app.register(lssRoutes, { prefix: '/api/lss' });
 
   // Register the cross-scheme aggregate dashboard (MD / Director only).
   // Walks the scheme registry — every scheme that implements getOverviewByBranch
