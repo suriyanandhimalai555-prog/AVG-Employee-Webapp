@@ -6,6 +6,12 @@ import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissi
 // Roles that can earn incentives. MD and Director never earn.
 const EARNER_ROLES = new Set(['sales_officer', 'abm', 'branch_manager', 'gm', 'branch_admin']);
 
+// Selling chain in order from lowest to highest role (branch_admin is lateral — excluded).
+// Used by fixed_chain to accumulate incentives when a higher role directly enrolls:
+// if a BM enrolls, they absorb SO + ABM + BM amounts (₹1,500 + ₹750 + ₹500 = ₹2,750).
+const CHAIN_ORDER = ['sales_officer', 'abm', 'branch_manager', 'gm'] as const;
+type ChainRole = typeof CHAIN_ORDER[number];
+
 // One shape for every scheme's payout. Each scheme picks a mode:
 //   fixed_chain      → walk dealMaker → GM, credit each level the role's fixed ₹
 //                      plus branch admin (current Trading Academy behaviour)
@@ -186,12 +192,43 @@ export const IncentiveService = {
         }
       }
 
+      // Accumulation: if the dealMaker is a higher-level role (ABM, BM, GM), they absorb
+      // the incentives of all roles below them in the selling chain that nobody else filled.
+      // e.g. BM enrolling directly → BM earns ₹1,500 (SO) + ₹750 (ABM) + ₹500 (BM) = ₹2,750.
+      // Managers above the dealMaker and branch_admin still earn their normal fixed amounts.
+      const dealMakerChainPos = (CHAIN_ORDER as readonly string[]).indexOf(dealMaker.role);
+      let dealMakerAccumulated = 0;
+      if (dealMakerChainPos >= 0) {
+        for (let i = 0; i <= dealMakerChainPos; i++) {
+          const r = ratesMap[CHAIN_ORDER[i] as ChainRole];
+          if (r && r.rateType === 'fixed' && r.amount > 0) {
+            dealMakerAccumulated += r.amount;
+          }
+        }
+      }
+
       for (const person of chain) {
-        const rate = ratesMap[person.role];
-        if (!rate || rate.amount <= 0) continue;
-        // fixed_chain only credits 'fixed' rates; 'percent' rules belong to other modes
-        if (rate.rateType && rate.rateType !== 'fixed') continue;
-        recipients.push({ userId: person.id, amount: rate.amount });
+        // Branch admin is lateral — always gets their own fixed rate
+        if (person.role === 'branch_admin') {
+          const rate = ratesMap['branch_admin'];
+          if (rate && rate.amount > 0 && (!rate.rateType || rate.rateType === 'fixed')) {
+            recipients.push({ userId: person.id, amount: rate.amount });
+          }
+          continue;
+        }
+
+        if (person.id === dealMaker.id) {
+          // dealMaker absorbs all incentives from the bottom of the chain up to their role
+          if (dealMakerAccumulated > 0) {
+            recipients.push({ userId: person.id, amount: dealMakerAccumulated });
+          }
+        } else {
+          // Managers above the dealMaker keep their individual fixed rate unchanged
+          const rate = ratesMap[person.role];
+          if (!rate || rate.amount <= 0) continue;
+          if (rate.rateType && rate.rateType !== 'fixed') continue;
+          recipients.push({ userId: person.id, amount: rate.amount });
+        }
       }
     }
 

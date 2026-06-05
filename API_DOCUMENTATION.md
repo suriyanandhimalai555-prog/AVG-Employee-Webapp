@@ -2575,113 +2575,187 @@ All endpoints restricted to `md` and `director` roles only.
 
 ---
 
-# WebSocket (Socket.io)
+# WebSocket (Socket.io) — Developer Reference
 
-**Connection URL:** `wss://<your-api-host>/socket.io`  
-**Transport:** Polling first (auto-upgrades to WebSocket)
+The server uses Socket.io to push real-time confirmation events to connected clients after background jobs finish processing attendance and sign-off records. Because check-in and sign-off are queued asynchronously, the REST API responds immediately with `{ queued: true }` — the socket event is the actual confirmation that the record has been saved to the database.
 
-## Authentication
-Pass the JWT in the Socket.io handshake `auth` object:
-```javascript
-const socket = io('https://api.yourdomain.com', {
-  path: '/socket.io',
-  auth: { token: 'your_jwt_token' },
-  transports: ['polling', 'websocket']
-});
-```
-Connection is rejected immediately if the token is missing or expired.
+---
 
-## Events
+## Connection
+
+**URL:** `wss://<your-api-host>/socket.io`  
+**Path:** `/socket.io`  
+**Transport:** The server is configured with `polling` first, which then automatically upgrades to a WebSocket connection after the handshake. This is required because the backend runs behind Railway's reverse proxy.
+
+### Authentication
+
+The JWT must be passed inside the Socket.io **`auth` handshake object** as the field `token`. Do not put the token in URL query parameters or HTTP headers — the server reads it specifically from `socket.handshake.auth.token`.
+
+If the token is missing or expired, the server rejects the connection immediately before it is established. The client will receive a `connect_error` event with the message `"Authentication required"` or `"Invalid or expired token"`. On token expiry, the app should refresh the JWT and reconnect.
+
+Always call `socket.disconnect()` when the user logs out to release the server-side room.
+
+---
+
+## How the Server Targets Users
+
+When a socket connects, the server automatically places it into a **private room** named after the authenticated user's UUID. All events are then emitted to that specific room rather than broadcast globally — meaning a client only receives events that belong to its own user.
+
+When an **admin marks attendance on behalf of an employee**, the server emits the confirmation event to **both rooms** — the employee's room and the admin's room — so that both UIs refresh without any extra polling.
+
+The same dual-delivery behaviour applies to `signoff:confirmed`.
+
+---
+
+## Server → Client Events
 
 ### `attendance:confirmed`
-Emitted to the **employee** and **admin** (if different) after an attendance job processes successfully.
 
-**Payload:**
-```json
-{
-  "userId": "uuid",
-  "date": "2026-05-30",
-  "status": "present",
-  "jobId": "uuid",
-  "markedBy": "uuid-or-null"
-}
-```
+**Who receives it:**
+- The employee whose attendance was recorded.
+- The admin who triggered the action (if different from the employee).
+
+**When it fires:** After the BullMQ worker successfully writes the attendance record to the database.
+
+**Payload fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `userId` | UUID | The employee whose attendance was recorded |
+| `date` | YYYY-MM-DD | The attendance date |
+| `status` | string | `present`, `absent`, or `half_day` |
+| `jobId` | string or null | Internal BullMQ job key, useful for debugging |
+| `markedBy` | UUID or null | The admin who triggered the action; `null` for self check-in |
+
+**What to do on receipt:** Refresh the attendance state for the matching `userId`. If your app is an admin panel, re-fetch the branch employee list to update the status row. If it's the employee's own screen, update the today status display.
 
 ---
 
 ### `signoff:confirmed`
-Emitted to the **employee** and **admin** (if different) after a sign-off job processes successfully.
 
-**Payload:**
-```json
-{
-  "userId": "uuid",
-  "date": "2026-05-30",
-  "jobId": "uuid",
-  "signedOffBy": "uuid-or-null"
-}
-```
+**Who receives it:**
+- The employee who signed off.
+- The admin who triggered the sign-off on their behalf (if different).
 
----
+**When it fires:** After the BullMQ worker writes the `check_out_time` to the attendance record.
 
-## Socket.io Client Example (JavaScript)
+**Payload fields:**
 
-```javascript
-import { io } from 'socket.io-client';
+| Field | Type | Description |
+|-------|------|-------------|
+| `userId` | UUID | The employee who signed off |
+| `date` | YYYY-MM-DD | The attendance date |
+| `jobId` | string or null | Internal BullMQ job key |
+| `signedOffBy` | UUID or null | Admin who triggered it; `null` for self sign-off |
 
-const socket = io('https://api.yourdomain.com', {
-  path: '/socket.io',
-  auth: { token: localStorage.getItem('authToken') },
-  transports: ['polling', 'websocket'],
-});
-
-socket.on('connect', () => {
-  console.log('Connected to real-time server');
-});
-
-socket.on('attendance:confirmed', (data) => {
-  console.log('Attendance confirmed:', data);
-  // Refresh UI
-});
-
-socket.on('signoff:confirmed', (data) => {
-  console.log('Sign-off confirmed:', data);
-});
-
-socket.on('connect_error', (err) => {
-  console.error('Socket connection error:', err.message);
-});
-```
+**What to do on receipt:** Update the employee's today record to reflect the sign-off. Show a confirmation to the user. Admin views should refresh the employee row to display the check-out time.
 
 ---
 
-# AWS S3 File Upload Pattern
+## Connection Lifecycle Summary
 
-Used for attendance photos, money collection receipts, and profile assets.
+| Phase | What Happens |
+|-------|-------------|
+| Connect | Client sends JWT in the `auth` object during handshake |
+| Auth check | Server verifies the JWT synchronously before accepting the connection |
+| Room join | Server places the socket into a private room named after the user's UUID |
+| Event delivery | Server emits events to the user's room only |
+| Disconnect | Server logs the disconnection; the room is vacated |
+| Logout | App must explicitly call `socket.disconnect()` |
 
-## Step-by-Step
-1. **Get presigned URL** from the relevant endpoint:
-   - Attendance photo: `GET /api/attendance/upload-url?contentType=image/jpeg`
-   - Money receipt: `GET /api/money/upload-url?contentType=image/jpeg&mode=gpay`
-   - Profile photo: `GET /api/auth/profile-upload-url?kind=photo&contentType=image/jpeg`
+---
 
-2. **Upload file** via HTTP PUT directly to `uploadUrl` with matching `Content-Type`:
-   ```
-   PUT <uploadUrl>
-   Content-Type: image/jpeg
-   Body: <raw file bytes>
-   ```
+# AWS S3 File Upload — Developer Guide
 
-3. **Submit the key** in the relevant API call body:
-   - `POST /api/attendance` → `photoKey`
-   - `POST /api/money` → `photoKey`
-   - `PATCH /api/auth/profile-assets` → `profilePhotoKey`
+The backend never accepts raw file bytes through the REST API. Instead it uses **AWS S3 Presigned URLs** — a pattern where the server generates a short-lived, pre-authorized URL and the client uploads the file **directly to S3**, bypassing the API server entirely. This avoids multipart form data and keeps the API fast.
 
-4. **View a photo** via the download URL endpoints:
-   - `GET /api/attendance/photo-url?key=<key>`
-   - `GET /api/money/photo-url?key=<key>`
+---
 
-**Note:** Presigned URLs expire after **3600 seconds** (1 hour). Regenerate if expired.
+## The Upload Flow (3 Steps)
+
+### Step 1 — Request a presigned upload URL from the API
+
+Call the appropriate upload-URL endpoint with the file's MIME type as a query parameter. The server generates a unique S3 key for the file, signs it with AWS credentials, and returns both the upload URL and the key.
+
+| What you're uploading | Endpoint to call |
+|----------------------|-----------------|
+| Attendance check-in photo | `GET /api/attendance/upload-url?contentType=image/jpeg` |
+| Money collection receipt (GPay) | `GET /api/money/upload-url?contentType=image/jpeg&mode=gpay` |
+| Money collection receipt (Bank) | `GET /api/money/upload-url?contentType=image/jpeg&mode=bank_receipt` |
+| Profile photo | `GET /api/auth/profile-upload-url?kind=photo&contentType=image/jpeg` |
+| Profile document / proof | `GET /api/auth/profile-upload-url?kind=proof&contentType=application/pdf` |
+
+The response contains:
+- **`uploadUrl`** — the presigned S3 PUT URL (time-limited, used in Step 2)
+- **`photoKey`** or **`fileKey`** — the S3 object key (permanent identifier, used in Step 3)
+
+> **Attendance upload URLs expire in 300 seconds (5 minutes).** All other URLs use the default TTL configured in `S3_PRESIGN_EXPIRES` (default 3600 seconds). Always request the URL immediately before uploading.
+
+---
+
+### Step 2 — PUT the file directly to S3
+
+Send an HTTP `PUT` request to the `uploadUrl` received in Step 1. The file bytes go in the request body.
+
+**Rules that must be followed:**
+- Use `PUT`, not `POST`.
+- The `Content-Type` header must be **exactly the same MIME type** that was passed as `contentType` in Step 1. If they differ, S3 rejects the upload with a `403 SignatureDoesNotMatch` error.
+- The body must be the **raw file bytes** — not base64-encoded, not wrapped in multipart/form-data, not JSON.
+- Do **not** add an `Authorization` header. The presigned URL already embeds AWS credentials as query parameters. Adding your own auth header will cause the request to fail.
+
+S3 returns HTTP `200` with an empty body on success.
+
+---
+
+### Step 3 — Submit the key to the API
+
+Once S3 confirms the upload, call the relevant API endpoint and include the **key** (from Step 1) in the request body. The server saves the key to the database — it never stores the presigned URL itself.
+
+| Action | API endpoint | Field name to send |
+|--------|-------------|-------------------|
+| Check in to attendance | `POST /api/attendance` | `photoKey` |
+| Submit money collection | `POST /api/money` | `photoKey` |
+| Update profile photo | `PATCH /api/auth/profile-assets` | `profilePhotoKey` |
+| Add a profile document | `POST /api/users/me/documents` | `s3Key` |
+
+---
+
+## Displaying a Photo (Download Flow)
+
+The presigned upload URL cannot be used to display images — it only authorises `PUT`. To display a stored photo, call the download URL endpoint. The server generates a new presigned `GET` URL for the given key and returns it.
+
+| Photo type | Download URL endpoint |
+|------------|----------------------|
+| Attendance photo | `GET /api/attendance/photo-url?key=<key>` |
+| Money receipt | `GET /api/money/photo-url?key=<key>` |
+
+Use the returned URL directly as the image source. Do not cache it indefinitely — download URLs also expire (default 3600 seconds) and must be re-fetched when displayed.
+
+---
+
+## S3 Key Structure
+
+The server generates the key automatically. Understanding the naming pattern helps with debugging:
+
+| Context | Key Pattern |
+|---------|-------------|
+| Attendance photo | `attendance/{userId}-{timestamp}-{randomHex}.jpg` |
+| Money receipt (GPay) | `money/gpay/{userId}/{timestamp}.jpg` |
+| Money receipt (Bank transfer) | `money/bank_receipt/{userId}/{timestamp}.jpg` |
+| Profile photo | `profile/photos/{userId}-{timestamp}.{ext}` |
+| Profile document | `profile/proofs/{userId}-{timestamp}.{ext}` |
+
+---
+
+## Common Upload Errors
+
+| Error | Cause | How to fix |
+|-------|-------|------------|
+| `403 SignatureDoesNotMatch` | The `Content-Type` header in the PUT does not match the `contentType` used when requesting the URL | Ensure both values are identical (e.g. both `image/jpeg`) |
+| `403 AccessDenied` or `RequestExpired` | The presigned URL has expired | Request a new presigned URL and retry the upload |
+| `400 EntityTooLarge` | The file exceeds the S3 bucket's maximum object size | Compress or resize the file before uploading; enforce a max of 25 MB on the client side |
+| Upload succeeds but image does not display | The `uploadUrl` was saved instead of the `photoKey`/`fileKey` | Always save the key field from the Step 1 response, never the URL |
+| API returns an error about a missing key | The `contentType` query parameter was omitted from the Step 1 request | Always include `?contentType=image/jpeg` (or the correct MIME type) when calling the upload URL endpoint |
 
 ---
 

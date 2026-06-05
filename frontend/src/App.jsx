@@ -42,8 +42,24 @@ const LssSchemePage            = lazy(() => import('./pages/schemes/LssSchemePag
 const LssRoomDetailPage        = lazy(() => import('./pages/schemes/LssRoomDetailPage').then(m => ({ default: m.LssRoomDetailPage })));
 const LssAddSlotPage           = lazy(() => import('./pages/schemes/LssAddSlotPage').then(m => ({ default: m.LssAddSlotPage })));
 const LssHeadBranchPage        = lazy(() => import('./pages/schemes/LssHeadBranchPage').then(m => ({ default: m.LssHeadBranchPage })));
+const ChitSchemePage           = lazy(() => import('./pages/schemes/ChitSchemePage').then(m => ({ default: m.ChitSchemePage })));
+const ChitAddGroupPage         = lazy(() => import('./pages/schemes/ChitAddGroupPage').then(m => ({ default: m.ChitAddGroupPage })));
+const ChitGroupDetailPage      = lazy(() => import('./pages/schemes/ChitGroupDetailPage').then(m => ({ default: m.ChitGroupDetailPage })));
+const ChitAddMemberPage        = lazy(() => import('./pages/schemes/ChitAddMemberPage').then(m => ({ default: m.ChitAddMemberPage })));
+const ChitHeadBranchPage       = lazy(() => import('./pages/schemes/ChitHeadBranchPage').then(m => ({ default: m.ChitHeadBranchPage })));
+const BuildersSchemePage       = lazy(() => import('./pages/schemes/BuildersSchemePage').then(m => ({ default: m.BuildersSchemePage })));
+const BuildersAddPlanPage      = lazy(() => import('./pages/schemes/BuildersAddPlanPage').then(m => ({ default: m.BuildersAddPlanPage })));
+const BuildersPlanDetailPage   = lazy(() => import('./pages/schemes/BuildersPlanDetailPage').then(m => ({ default: m.BuildersPlanDetailPage })));
+const LandSchemePage           = lazy(() => import('./pages/schemes/LandSchemePage').then(m => ({ default: m.LandSchemePage })));
+const LandSitesPage            = lazy(() => import('./pages/schemes/LandSitesPage').then(m => ({ default: m.LandSitesPage })));
+const LandAddSitePage          = lazy(() => import('./pages/schemes/LandAddSitePage').then(m => ({ default: m.LandAddSitePage })));
+const LandSiteDetailPage       = lazy(() => import('./pages/schemes/LandSiteDetailPage').then(m => ({ default: m.LandSiteDetailPage })));
+const LandBookingsPage         = lazy(() => import('./pages/schemes/LandBookingsPage').then(m => ({ default: m.LandBookingsPage })));
+const LandAddBookingPage       = lazy(() => import('./pages/schemes/LandAddBookingPage').then(m => ({ default: m.LandAddBookingPage })));
+const LandBookingDetailPage    = lazy(() => import('./pages/schemes/LandBookingDetailPage').then(m => ({ default: m.LandBookingDetailPage })));
 const LeadershipListPage       = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
 const SchemesOverviewPage      = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
+const SchemeBranchListPage     = lazy(() => import('./pages/SchemeBranchListPage').then(m => ({ default: m.SchemeBranchListPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
 const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
 const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
@@ -104,6 +120,7 @@ function App() {
         {/* Tabs */}
         <Route path="/alerts"                    element={<AlertsTab />} />
         <Route path="/schemes"                   element={<SchemesOverviewPage />} />
+        <Route path="/schemes/:code"             element={<SchemeBranchListPage />} />
         <Route path="/branches"                  element={<BranchManagement />} />
         <Route path="/branches/:branchId"        element={<BranchDetailPage />} />
 
@@ -150,6 +167,21 @@ function App() {
         <Route path="/money/schemes/lss/add"   element={<LssAddSlotPage />} />
         <Route path="/money/schemes/lss/head"  element={<LssHeadBranchPage />} />
         <Route path="/money/schemes/lss/:id"   element={<LssRoomDetailPage />} />
+        <Route path="/money/schemes/agila-chit"            element={<ChitSchemePage />} />
+        <Route path="/money/schemes/agila-chit/create"   element={<ChitAddGroupPage />} />
+        <Route path="/money/schemes/agila-chit/head"     element={<ChitHeadBranchPage />} />
+        <Route path="/money/schemes/agila-chit/:id"      element={<ChitGroupDetailPage />} />
+        <Route path="/money/schemes/agila-chit/:id/add"  element={<ChitAddMemberPage />} />
+        <Route path="/money/schemes/builders"             element={<BuildersSchemePage />} />
+        <Route path="/money/schemes/builders/create"     element={<BuildersAddPlanPage />} />
+        <Route path="/money/schemes/builders/:id"        element={<BuildersPlanDetailPage />} />
+        <Route path="/money/schemes/land"                element={<LandSchemePage />} />
+        <Route path="/money/schemes/land/sites"          element={<LandSitesPage />} />
+        <Route path="/money/schemes/land/sites/new"      element={<LandAddSitePage />} />
+        <Route path="/money/schemes/land/sites/:siteId"  element={<LandSiteDetailPage />} />
+        <Route path="/money/schemes/land/bookings"       element={<LandBookingsPage />} />
+        <Route path="/money/schemes/land/bookings/new"   element={<LandAddBookingPage />} />
+        <Route path="/money/schemes/land/bookings/:id"   element={<LandBookingDetailPage />} />
 
         {/* Redirects for old /gold/* URLs */}
         <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />

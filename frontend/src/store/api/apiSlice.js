@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -914,6 +914,400 @@ export const apiSlice = createApi({
       }),
       transformResponse: (response) => response.data,
     }),
+
+    // ─── Agila Chit Fund Scheme ───
+
+    getChitSummary: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate',   params.endDate);
+        const q = qs.toString();
+        return `/chit/summary${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['ChitSummary'],
+    }),
+
+    getChitGroups: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status) qs.set('status', params.status);
+        if (params.search) qs.set('search', params.search);
+        if (params.page)   qs.set('page',   String(params.page));
+        if (params.limit)  qs.set('limit',  String(params.limit));
+        const q = qs.toString();
+        return `/chit/groups${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['ChitGroups'],
+    }),
+
+    createChitGroup: builder.mutation({
+      query: (data) => ({ url: '/chit/groups', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['ChitGroups', 'ChitSummary'],
+    }),
+
+    getChitGroup: builder.query({
+      query: (groupId) => `/chit/groups/${groupId}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, groupId) => [{ type: 'ChitGroup', id: groupId }],
+    }),
+
+    getChitEligibleMembers: builder.query({
+      query: (groupId) => `/chit/groups/${groupId}/eligible-members`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, groupId) => [{ type: 'ChitEligible', id: groupId }],
+    }),
+
+    addChitMember: builder.mutation({
+      query: ({ groupId, ...data }) => ({ url: `/chit/groups/${groupId}/members`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      // Referrer commission is credited on enroll — bust Incentives/IncentiveWallet too
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'ChitSummary',
+        'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    recordChitPayment: builder.mutation({
+      query: ({ groupId, memberId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/payments`,
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId, memberId }) => [
+        { type: 'ChitGroup', id: groupId },
+        { type: 'ChitPayments', id: memberId },
+        'ChitSummary', 'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    getChitMemberPayments: builder.query({
+      query: ({ groupId, memberId }) => `/chit/groups/${groupId}/members/${memberId}/payments`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, { memberId }) => [{ type: 'ChitPayments', id: memberId }],
+    }),
+
+    selectChitWinner: builder.mutation({
+      query: ({ groupId, ...data }) => ({ url: `/chit/groups/${groupId}/winners`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId },
+        { type: 'ChitEligible', id: groupId },
+        'ChitGroups', 'ChitSummary',
+      ],
+    }),
+
+    cancelChitMember: builder.mutation({
+      query: ({ groupId, memberId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/cancel`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId },
+        { type: 'ChitEligible', id: groupId },
+        'ChitGroups',
+      ],
+    }),
+
+    reinstateChitMember: builder.mutation({
+      query: ({ groupId, memberId }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/reinstate`,
+        method: 'PATCH',
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId },
+        { type: 'ChitEligible', id: groupId },
+        'ChitGroups',
+      ],
+    }),
+
+    markChitRefund: builder.mutation({
+      query: ({ groupId, memberId }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/refund`,
+        method: 'PATCH',
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [{ type: 'ChitGroup', id: groupId }],
+    }),
+
+    // ─── Head-branch chit operations ───
+    getChitAwaitingCombine: builder.query({
+      query: () => '/chit/groups/awaiting-combine',
+      transformResponse: (response) => response.data,
+      providesTags: ['ChitAwaitingCombine'],
+    }),
+
+    sendChitGroupToHeadBranch: builder.mutation({
+      query: (groupId) => ({ url: `/chit/groups/${groupId}/send-to-head`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, groupId) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'ChitAwaitingCombine', 'ChitSummary',
+      ],
+    }),
+
+    combineChitGroups: builder.mutation({
+      query: (data) => ({ url: '/chit/groups/combine', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['ChitGroups', 'ChitAwaitingCombine', 'ChitSummary'],
+    }),
+
+    expireChitGroup: builder.mutation({
+      query: (groupId) => ({ url: `/chit/groups/${groupId}/expire`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['ChitGroups', 'ChitAwaitingCombine', 'ChitSummary'],
+    }),
+
+    // ─── Builders Scheme ───
+
+    getBuildersPackages: builder.query({
+      query: () => '/builders/packages',
+      transformResponse: (response) => response.data,
+      providesTags: ['BuildersPackages'],
+    }),
+
+    getBuildersSummary: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate',   params.endDate);
+        const q = qs.toString();
+        return `/builders/summary${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['BuildersSummary'],
+    }),
+
+    getBuildersPlans: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status)     qs.set('status',     params.status);
+        if (params.referrerId) qs.set('referrerId', params.referrerId);
+        if (params.page)       qs.set('page',       String(params.page));
+        if (params.limit)      qs.set('limit',      String(params.limit));
+        const q = qs.toString();
+        return `/builders/plans${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['BuildersPlans'],
+    }),
+
+    createBuildersPlan: builder.mutation({
+      query: (data) => ({ url: '/builders/plans', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['BuildersPlans', 'BuildersSummary'],
+    }),
+
+    getBuildersPlan: builder.query({
+      query: (planId) => `/builders/plans/${planId}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, planId) => [{ type: 'BuildersPlan', id: planId }],
+    }),
+
+    getBuildersPayouts: builder.query({
+      query: (planId) => `/builders/plans/${planId}/payouts`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, planId) => [{ type: 'BuildersPayouts', id: planId }],
+    }),
+
+    recordBuildersPayout: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/payouts`,
+        method: 'POST',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      // Bust plan detail + list + summary; also bust Incentives/IncentiveWallet for when
+      // commission wiring is added later (harmless now since rate = 0).
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        { type: 'BuildersPayouts', id: planId },
+        'BuildersPlans', 'BuildersSummary',
+        'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    chooseBuildersReward: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/choice`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary',
+      ],
+    }),
+
+    completeBuildersPlan: builder.mutation({
+      query: (planId) => ({
+        url: `/builders/plans/${planId}/complete`,
+        method: 'PATCH',
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, planId) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary',
+      ],
+    }),
+
+    // ─── Land Sales Management ───
+
+    getLandDashboard: builder.query({
+      query: () => '/land/dashboard',
+      transformResponse: (response) => response.data,
+      providesTags: ['LandDashboard'],
+    }),
+
+    getLandSites: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status) qs.set('status', params.status);
+        if (params.page)   qs.set('page',   String(params.page));
+        if (params.limit)  qs.set('limit',  String(params.limit));
+        const q = qs.toString();
+        return `/land/sites${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['LandSites'],
+    }),
+
+    createLandSite: builder.mutation({
+      query: (data) => ({ url: '/land/sites', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LandSites', 'LandDashboard'],
+    }),
+
+    getLandSite: builder.query({
+      query: (siteId) => `/land/sites/${siteId}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, siteId) => [{ type: 'LandSite', id: siteId }],
+    }),
+
+    updateLandSite: builder.mutation({
+      query: ({ siteId, ...data }) => ({ url: `/land/sites/${siteId}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId }) => [
+        { type: 'LandSite', id: siteId }, 'LandSites',
+      ],
+    }),
+
+    createLandPlot: builder.mutation({
+      query: ({ siteId, ...data }) => ({ url: `/land/sites/${siteId}/plots`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId }) => [
+        { type: 'LandSite', id: siteId }, 'LandSites', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    getLandPlots: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status) qs.set('status', params.status);
+        if (params.siteId) qs.set('siteId', params.siteId);
+        if (params.page)   qs.set('page',   String(params.page));
+        if (params.limit)  qs.set('limit',  String(params.limit));
+        const q = qs.toString();
+        return `/land/plots${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['LandPlots'],
+    }),
+
+    updateLandPlot: builder.mutation({
+      query: ({ plotId, ...data }) => ({ url: `/land/plots/${plotId}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId }) => [
+        'LandPlots', 'LandSites', siteId ? { type: 'LandSite', id: siteId } : 'LandSite', 'LandDashboard',
+      ],
+    }),
+
+    getLandBookings: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.status)    qs.set('status',    params.status);
+        if (params.siteId)    qs.set('siteId',    params.siteId);
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate',   params.endDate);
+        if (params.page)      qs.set('page',      String(params.page));
+        if (params.limit)     qs.set('limit',     String(params.limit));
+        const q = qs.toString();
+        return `/land/bookings${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['LandBookings'],
+    }),
+
+    createLandBooking: builder.mutation({
+      query: (data) => ({ url: '/land/bookings', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LandBookings', 'LandPlots', 'LandDashboard'],
+    }),
+
+    getLandBooking: builder.query({
+      query: (id) => `/land/bookings/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, id) => [{ type: 'LandBooking', id }],
+    }),
+
+    recordLandAdvance: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/advance`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard',
+      ],
+    }),
+
+    recordLandFullPayment: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/full-payment`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, { type: 'LandBuyback', id },
+        'LandBookings', 'LandDashboard',
+      ],
+    }),
+
+    extendLandDeadline: builder.mutation({
+      query: (id) => ({ url: `/land/bookings/${id}/extend-deadline`, method: 'POST' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, id) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard',
+      ],
+    }),
+
+    cancelLandBooking: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/cancel`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    getLandBuyback: builder.query({
+      query: (id) => `/land/bookings/${id}/buyback`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, id) => [{ type: 'LandBuyback', id }],
+    }),
+
+    markLandPayoutPaid: builder.mutation({
+      query: ({ id, month, ...data }) => ({
+        url: `/land/bookings/${id}/buyback/${month}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBuyback', id }, { type: 'LandBooking', id },
+        'LandBookings', 'LandDashboard',
+      ],
+    }),
   }),
 });
 
@@ -1026,4 +1420,47 @@ export const {
   useLazySearchCustomersQuery,
   useCreateCustomerMutation,
   useGetCustomerQuery,
+  useGetChitSummaryQuery,
+  useGetChitGroupsQuery,
+  useCreateChitGroupMutation,
+  useGetChitGroupQuery,
+  useLazyGetChitGroupQuery,
+  useGetChitEligibleMembersQuery,
+  useAddChitMemberMutation,
+  useRecordChitPaymentMutation,
+  useGetChitMemberPaymentsQuery,
+  useSelectChitWinnerMutation,
+  useCancelChitMemberMutation,
+  useReinstateChitMemberMutation,
+  useMarkChitRefundMutation,
+  useGetChitAwaitingCombineQuery,
+  useSendChitGroupToHeadBranchMutation,
+  useCombineChitGroupsMutation,
+  useExpireChitGroupMutation,
+  useGetBuildersPackagesQuery,
+  useGetLandDashboardQuery,
+  useGetLandSitesQuery,
+  useCreateLandSiteMutation,
+  useGetLandSiteQuery,
+  useUpdateLandSiteMutation,
+  useCreateLandPlotMutation,
+  useGetLandPlotsQuery,
+  useUpdateLandPlotMutation,
+  useGetLandBookingsQuery,
+  useCreateLandBookingMutation,
+  useGetLandBookingQuery,
+  useRecordLandAdvanceMutation,
+  useRecordLandFullPaymentMutation,
+  useExtendLandDeadlineMutation,
+  useCancelLandBookingMutation,
+  useGetLandBuybackQuery,
+  useMarkLandPayoutPaidMutation,
+  useGetBuildersSummaryQuery,
+  useGetBuildersPlansQuery,
+  useCreateBuildersPlanMutation,
+  useGetBuildersPlanQuery,
+  useGetBuildersPayoutsQuery,
+  useRecordBuildersPayoutMutation,
+  useChooseBuildersRewardMutation,
+  useCompleteBuildersPlanMutation,
 } = apiSlice;

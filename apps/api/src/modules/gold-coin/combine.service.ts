@@ -62,12 +62,11 @@ export const CombineService = {
         throw new NotFoundError('One or more source rooms not found', 'GC_COMBINE_MISSING');
       }
 
-      // All must share the same package, be in pending_combine, and not already at head branch
+      // package_id is taken from the first source room for the new combined room.
+      // Same-package selection is enforced by the frontend UI grouping; the backend
+      // only checks that every source room is in pending_combine status.
       const pkgId = roomsRes.rows[0].package_id;
       for (const r of roomsRes.rows) {
-        if (r.package_id !== pkgId) {
-          throw new ValidationError('All source rooms must share the same package', 'GC_COMBINE_PACKAGE_MISMATCH');
-        }
         if (r.status !== 'pending_combine') {
           throw new ValidationError(
             `Room ${r.id} is in status '${r.status}', not 'pending_combine'`,

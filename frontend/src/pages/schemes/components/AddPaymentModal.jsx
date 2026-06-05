@@ -60,7 +60,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-navy/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-navy/40 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <motion.div
@@ -68,7 +68,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 60, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white w-full max-w-md rounded-[28px] p-6 space-y-4"
+        className="bg-white w-full max-w-md rounded-[28px] p-6 pb-10 space-y-4"
       >
         {/* Header */}
         <div className="flex items-center justify-between">

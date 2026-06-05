@@ -29,6 +29,9 @@ import tradingAcademyRoutes from './modules/trading-academy/trading-academy.rout
 import customerRoutes from './modules/customers/customers.routes';
 import goldCoinRoutes from './modules/gold-coin/gold-coin.routes';
 import lssRoutes from './modules/lss/lss.routes';
+import chitRoutes from './modules/chit/chit.routes';
+import buildersRoutes from './modules/builders/builders.routes';
+import landRoutes from './modules/land/land.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -169,6 +172,18 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the LSS scheme (20-slot rooms, monthly draws, level-based payout)
   // Mounts under the '/api/lss' prefix
   await app.register(lssRoutes, { prefix: '/api/lss' });
+
+  // Register the Agila Chit Fund scheme (20-member groups, 20 months, manual winner selection)
+  // Mounts under the '/api/chit' prefix
+  await app.register(chitRoutes, { prefix: '/api/chit' });
+
+  // Register the Builders Scheme (individual lump-sum plans, 60-month payouts, house or cash)
+  // Mounts under the '/api/builders' prefix
+  await app.register(buildersRoutes, { prefix: '/api/builders' });
+
+  // Register the Land Sales Management System (sites, plots, bookings, 60-month buyback)
+  // Mounts under the '/api/land' prefix
+  await app.register(landRoutes, { prefix: '/api/land' });
 
   // Register the cross-scheme aggregate dashboard (MD / Director only).
   // Walks the scheme registry — every scheme that implements getOverviewByBranch

@@ -53,7 +53,7 @@ export const GoldCoinSchemePage = () => {
   const canSeeHeadBranch =
     (user?.role === 'branch_admin' && user?.isHeadBranch === true)
     || HEAD_BRANCH_VIEW_ROLES.has(user?.role);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
 
   const { data: summary } = useGetGoldCoinSummaryQuery();
   const { data: packages = [], isLoading: pkgLoading } = useGetGoldCoinPackagesQuery();

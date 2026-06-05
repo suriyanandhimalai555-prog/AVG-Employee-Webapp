@@ -15,12 +15,18 @@ import { GoldService }            from '../gold/gold.service';
 import { TradingAcademyService }  from '../trading-academy/trading-academy.service';
 import { GoldCoinService }        from '../gold-coin/gold-coin.service';
 import { LSSService }             from '../lss/lss.service';
+import { ChitService }            from '../chit/chit.service';
+import { BuildersService }        from '../builders/builders.service';
+import { LandService }            from '../land/land.service';
 
 export const SCHEME_REGISTRY: Record<string, SchemeService> = {
-  gold_scheme:      GoldService,
-  trading_academy:  TradingAcademyService,
-  gold_coin_scheme: GoldCoinService,
-  lss_scheme:       LSSService,
+  gold_scheme:       GoldService,
+  trading_academy:   TradingAcademyService,
+  gold_coin_scheme:  GoldCoinService,
+  lss_scheme:        LSSService,
+  agila_chit_scheme: ChitService,
+  builders_scheme:   BuildersService,
+  land_scheme:       LandService,
 };
 
 export function getScheme(code: string): SchemeService | undefined {

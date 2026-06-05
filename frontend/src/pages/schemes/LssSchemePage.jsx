@@ -50,7 +50,7 @@ export const LssSchemePage = () => {
   const canSeeHeadBranch =
     (user?.role === 'branch_admin' && user?.isHeadBranch === true)
     || HEAD_BRANCH_VIEW_ROLES.has(user?.role);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
 
   const { data: summary } = useGetLssSummaryQuery();
   const { data: plans = [], isLoading: plansLoading } = useGetLssPlansQuery();

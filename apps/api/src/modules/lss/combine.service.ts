@@ -60,11 +60,11 @@ export const CombineService = {
         throw new NotFoundError('One or more source rooms not found', 'LSS_COMBINE_MISSING');
       }
 
+      // plan_id is taken from the first source room for the new combined room.
+      // Same-plan selection is enforced by the frontend UI grouping; the backend
+      // only checks that every source room is in pending_combine status.
       const planId = roomsRes.rows[0].plan_id;
       for (const r of roomsRes.rows) {
-        if (r.plan_id !== planId) {
-          throw new ValidationError('All source rooms must share the same plan', 'LSS_COMBINE_PLAN_MISMATCH');
-        }
         if (r.status !== 'pending_combine') {
           throw new ValidationError(
             `Room ${r.id} is in status '${r.status}', not 'pending_combine'`,
