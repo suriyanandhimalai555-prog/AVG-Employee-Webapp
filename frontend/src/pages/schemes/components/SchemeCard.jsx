@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { ArrowRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { CommissionPanel } from './CommissionPanel';
+import { BuildersCommissionSummary } from './BuildersCommissionSummary';
 import { NAVIGABLE_SCHEMES, getSchemeStyle } from '../../../lib/schemeConstants';
 
 export const SchemeCard = ({ project, onNavigate }) => {
@@ -52,7 +53,10 @@ export const SchemeCard = ({ project, onNavigate }) => {
           <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest mb-3">
             Commission per deal
           </p>
-          <CommissionPanel projectId={project.id} />
+          {project.code === 'builders_scheme'
+            ? <BuildersCommissionSummary />
+            : <CommissionPanel projectId={project.id} />
+          }
         </div>
       )}
     </div>

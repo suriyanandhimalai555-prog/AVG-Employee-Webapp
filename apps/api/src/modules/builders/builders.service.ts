@@ -8,6 +8,7 @@ import type {
   GetBuildersPlansQuery,
 } from './builders.schema';
 import { BUILDERS_PACKAGES } from './builders.schema';
+import { BuildersIncentivesService } from './builders-incentives.service';
 
 const SCHEME_CODE    = 'builders_scheme';
 const COOLING_DAYS   = 60;
@@ -56,50 +57,48 @@ export const BuildersService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
-    const result = await db.query(
-      `INSERT INTO builders_plans
-         (branch_id, customer_id, package_number,
-          investment_amount, monthly_payout, cash_final_monthly, house_worth,
-          lump_sum_date, lump_sum_mode,
-          cooling_end_date, payout_start_date,
-          referrer_id, referrer_name, notes, entered_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-               ($8::date + $10 * INTERVAL '1 day'),
-               ($8::date + $10 * INTERVAL '1 day'),
-               $11, $12, $13, $14)
-       RETURNING *`,
-      [
-        branchId,
-        payload.customerId,
-        payload.packageNumber,
-        pkg.investmentAmount,
-        pkg.monthlyPayout,
-        pkg.cashFinalMonthly,  // cash_final_monthly = ADDITIONAL bonus for M51-60 on top of monthly_payout
-        pkg.houseWorth,
-        payload.lumpSumDate,
-        payload.lumpSumMode,
-        COOLING_DAYS,
-        payload.referrerId || null,
-        referrerName,
-        payload.notes || null,
-        enteredBy,
-      ]
-    );
+    return runInTransaction(db, async (client: PoolClient) => {
+      const insertResult = await client.query(
+        `INSERT INTO builders_plans
+           (branch_id, customer_id, package_number,
+            investment_amount, monthly_payout, cash_final_monthly, house_worth,
+            lump_sum_date, lump_sum_mode,
+            cooling_end_date, payout_start_date,
+            referrer_id, referrer_name, notes, entered_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                 ($8::date + $10 * INTERVAL '1 day'),
+                 ($8::date + $10 * INTERVAL '1 day'),
+                 $11, $12, $13, $14)
+         RETURNING *`,
+        [
+          branchId,
+          payload.customerId,
+          payload.packageNumber,
+          pkg.investmentAmount,
+          pkg.monthlyPayout,
+          pkg.cashFinalMonthly,  // cash_final_monthly = ADDITIONAL bonus for M51-60 on top of monthly_payout
+          pkg.houseWorth,
+          payload.lumpSumDate,
+          payload.lumpSumMode,
+          COOLING_DAYS,
+          payload.referrerId || null,
+          referrerName,
+          payload.notes || null,
+          enteredBy,
+        ]
+      );
+      const plan = insertResult.rows[0];
 
-    // TODO: IncentiveService.distributeIncentives(client, {
-    //   schemeCode:        SCHEME_CODE,
-    //   dealMakerUserId:   payload.referrerId,
-    //   mode:              'percent_referrer',
-    //   percentRole:       'referrer_direct',
-    //   baseAmount:        pkg.investmentAmount,
-    //   paymentEvent:      'enrollment',
-    //   sourceId:          plan.id,
-    //   sourceDescription: `Builders enrollment: ${customerName}`,
-    //   creditedBy:        enteredBy,
-    // });
-    // Wire this when incentive percentages are finalised — migration 047 seeds a 0% placeholder.
+      // Credit the one-time enrollment incentive to the selling chain (SO → GM).
+      // No-op when referrerId is absent — idempotent, never throws.
+      await BuildersIncentivesService.distributeOneTime(client, {
+        plan:         { id: plan.id, referrer_id: plan.referrer_id, package_number: plan.package_number },
+        creditedBy:   enteredBy,
+        customerName: custResult.rows[0].name,
+      });
 
-    return { plan: result.rows[0], customer: custResult.rows[0] };
+      return { plan, customer: custResult.rows[0] };
+    });
   },
 
   // ─── LIST PLANS ──────────────────────────────────────────────────────────────
@@ -305,6 +304,14 @@ export const BuildersService = {
         `UPDATE builders_plans SET current_month = $1, status = $2 WHERE id = $3`,
         [payload.monthNumber, newStatus, planId]
       );
+
+      // Credit the SO's monthly incentive for this payout month.
+      // No-op when the plan has no referrer or the referrer is not a sales_officer.
+      await BuildersIncentivesService.creditMonthly(client, {
+        plan:        { id: plan.id, referrer_id: plan.referrer_id, package_number: plan.package_number },
+        monthNumber: payload.monthNumber,
+        creditedBy:  enteredBy,
+      });
 
       return {
         payout:       payoutRow,

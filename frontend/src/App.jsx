@@ -47,9 +47,10 @@ const ChitAddGroupPage         = lazy(() => import('./pages/schemes/ChitAddGroup
 const ChitGroupDetailPage      = lazy(() => import('./pages/schemes/ChitGroupDetailPage').then(m => ({ default: m.ChitGroupDetailPage })));
 const ChitAddMemberPage        = lazy(() => import('./pages/schemes/ChitAddMemberPage').then(m => ({ default: m.ChitAddMemberPage })));
 const ChitHeadBranchPage       = lazy(() => import('./pages/schemes/ChitHeadBranchPage').then(m => ({ default: m.ChitHeadBranchPage })));
-const BuildersSchemePage       = lazy(() => import('./pages/schemes/BuildersSchemePage').then(m => ({ default: m.BuildersSchemePage })));
-const BuildersAddPlanPage      = lazy(() => import('./pages/schemes/BuildersAddPlanPage').then(m => ({ default: m.BuildersAddPlanPage })));
-const BuildersPlanDetailPage   = lazy(() => import('./pages/schemes/BuildersPlanDetailPage').then(m => ({ default: m.BuildersPlanDetailPage })));
+const BuildersSchemePage           = lazy(() => import('./pages/schemes/BuildersSchemePage').then(m => ({ default: m.BuildersSchemePage })));
+const BuildersAddPlanPage          = lazy(() => import('./pages/schemes/BuildersAddPlanPage').then(m => ({ default: m.BuildersAddPlanPage })));
+const BuildersPlanDetailPage       = lazy(() => import('./pages/schemes/BuildersPlanDetailPage').then(m => ({ default: m.BuildersPlanDetailPage })));
+const BuildersIncentiveRulesPage   = lazy(() => import('./pages/schemes/BuildersIncentiveRulesPage').then(m => ({ default: m.BuildersIncentiveRulesPage })));
 const LandSchemePage           = lazy(() => import('./pages/schemes/LandSchemePage').then(m => ({ default: m.LandSchemePage })));
 const LandSitesPage            = lazy(() => import('./pages/schemes/LandSitesPage').then(m => ({ default: m.LandSitesPage })));
 const LandAddSitePage          = lazy(() => import('./pages/schemes/LandAddSitePage').then(m => ({ default: m.LandAddSitePage })));
@@ -172,9 +173,10 @@ function App() {
         <Route path="/money/schemes/agila-chit/head"     element={<ChitHeadBranchPage />} />
         <Route path="/money/schemes/agila-chit/:id"      element={<ChitGroupDetailPage />} />
         <Route path="/money/schemes/agila-chit/:id/add"  element={<ChitAddMemberPage />} />
-        <Route path="/money/schemes/builders"             element={<BuildersSchemePage />} />
-        <Route path="/money/schemes/builders/create"     element={<BuildersAddPlanPage />} />
-        <Route path="/money/schemes/builders/:id"        element={<BuildersPlanDetailPage />} />
+        <Route path="/money/schemes/builders"                    element={<BuildersSchemePage />} />
+        <Route path="/money/schemes/builders/create"           element={<BuildersAddPlanPage />} />
+        <Route path="/money/schemes/builders/incentives"       element={<BuildersIncentiveRulesPage />} />
+        <Route path="/money/schemes/builders/:id"              element={<BuildersPlanDetailPage />} />
         <Route path="/money/schemes/land"                element={<LandSchemePage />} />
         <Route path="/money/schemes/land/sites"          element={<LandSitesPage />} />
         <Route path="/money/schemes/land/sites/new"      element={<LandAddSitePage />} />

@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -1072,6 +1072,18 @@ export const apiSlice = createApi({
       providesTags: ['BuildersPackages'],
     }),
 
+    getBuildersIncentiveRules: builder.query({
+      query: () => '/builders/incentive-rules',
+      transformResponse: (response) => response.data,
+      providesTags: ['BuildersIncentiveRules'],
+    }),
+
+    updateBuildersIncentiveRule: builder.mutation({
+      query: (data) => ({ url: '/builders/incentive-rules', method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['BuildersIncentiveRules'],
+    }),
+
     getBuildersSummary: builder.query({
       query: (params = {}) => {
         const qs = new URLSearchParams();
@@ -1101,7 +1113,8 @@ export const apiSlice = createApi({
     createBuildersPlan: builder.mutation({
       query: (data) => ({ url: '/builders/plans', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: ['BuildersPlans', 'BuildersSummary'],
+      // Bust IncentiveWallet / Incentives so the SO's wallet reflects the one-time credit
+      invalidatesTags: ['BuildersPlans', 'BuildersSummary', 'IncentiveWallet', 'Incentives'],
     }),
 
     getBuildersPlan: builder.query({
@@ -1438,6 +1451,8 @@ export const {
   useCombineChitGroupsMutation,
   useExpireChitGroupMutation,
   useGetBuildersPackagesQuery,
+  useGetBuildersIncentiveRulesQuery,
+  useUpdateBuildersIncentiveRuleMutation,
   useGetLandDashboardQuery,
   useGetLandSitesQuery,
   useCreateLandSiteMutation,

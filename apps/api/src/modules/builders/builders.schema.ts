@@ -66,9 +66,19 @@ export const GetBuildersSummaryQuerySchema = z.object({
   endDate:   z.string().regex(DATE_RE).optional(),
 });
 
+// ─── Incentive rule edit (MD only) ───────────────────────────────────────────
+// Upserts one cell in the builders_incentive_rules tier×role×type matrix.
+export const UpdateBuildersIncentiveRuleSchema = z.object({
+  packageNumber:  z.number().int().min(1).max(6),
+  role:           z.enum(['sales_officer', 'abm', 'branch_manager', 'gm']),
+  incentiveType:  z.enum(['one_time', 'monthly']),
+  amount:         z.number().min(0),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
-export type CreateBuildersPlanInput   = z.infer<typeof CreateBuildersPlanSchema>;
-export type RecordBuildersPayoutInput = z.infer<typeof RecordBuildersPayoutSchema>;
-export type ChooseRewardInput         = z.infer<typeof ChooseRewardSchema>;
-export type GetBuildersPlansQuery     = z.infer<typeof GetBuildersPlansQuerySchema>;
-export type GetBuildersSummaryQuery   = z.infer<typeof GetBuildersSummaryQuerySchema>;
+export type CreateBuildersPlanInput            = z.infer<typeof CreateBuildersPlanSchema>;
+export type RecordBuildersPayoutInput          = z.infer<typeof RecordBuildersPayoutSchema>;
+export type ChooseRewardInput                  = z.infer<typeof ChooseRewardSchema>;
+export type GetBuildersPlansQuery              = z.infer<typeof GetBuildersPlansQuerySchema>;
+export type GetBuildersSummaryQuery            = z.infer<typeof GetBuildersSummaryQuerySchema>;
+export type UpdateBuildersIncentiveRuleInput   = z.infer<typeof UpdateBuildersIncentiveRuleSchema>;

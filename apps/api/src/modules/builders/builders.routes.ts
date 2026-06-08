@@ -3,12 +3,14 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST } from '../../shared/role-constants';
 import { BuildersService } from './builders.service';
+import { BuildersIncentivesService } from './builders-incentives.service';
 import {
   CreateBuildersPlanSchema,
   RecordBuildersPayoutSchema,
   ChooseRewardSchema,
   GetBuildersPlansQuerySchema,
   GetBuildersSummaryQuerySchema,
+  UpdateBuildersIncentiveRuleSchema,
 } from './builders.schema';
 
 interface AuthUser { id: string; role: string; branchId: string; }
@@ -135,6 +137,34 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
+
+  // ─── GET /builders/incentive-rules ───
+  // Returns the full tier×role×type matrix. Readable by all authenticated roles
+  // (the amounts are not secret; branch staff need them for transparency).
+  fastify.get('/incentive-rules', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const data = await BuildersIncentivesService.getRules(fastify.db);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/incentive-rules ───
+  // Updates a single cell in the matrix. MD only.
+  fastify.patch('/incentive-rules', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req  = request as AuthRequest;
+        if (req.user.role !== Role.MD) throw new ForbiddenError('Only MD can update incentive rules');
+        const body = UpdateBuildersIncentiveRuleSchema.parse(req.body);
+        const data = await BuildersIncentivesService.updateRule(fastify.db, req.user.id, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 
   // ─── PATCH /builders/plans/:id/complete ───
   // Marks a house-path plan as completed after the house is delivered.

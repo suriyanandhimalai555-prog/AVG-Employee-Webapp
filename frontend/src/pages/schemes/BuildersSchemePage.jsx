@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Loader2, Building2, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, Building2, ChevronRight, IndianRupee } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetBuildersPlansQuery,
@@ -75,6 +75,8 @@ export const BuildersSchemePage = () => {
     return `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(1)} L`;
   };
 
+  const isMD = user?.role === 'md';
+
   const rightAction = user?.role === 'branch_admin' ? (
     <button
       onClick={() => navigate('/money/schemes/builders/create')}
@@ -83,6 +85,15 @@ export const BuildersSchemePage = () => {
       className="w-10 h-10 rounded-2xl bg-sky-600 flex items-center justify-center text-white shadow-md tactile-press"
     >
       <Plus size={20} aria-hidden="true" />
+    </button>
+  ) : isMD ? (
+    <button
+      onClick={() => navigate('/money/schemes/builders/incentives')}
+      type="button"
+      aria-label="Edit incentive rules"
+      className="w-10 h-10 rounded-2xl bg-stone-700 flex items-center justify-center text-white shadow-md tactile-press"
+    >
+      <IndianRupee size={18} aria-hidden="true" />
     </button>
   ) : null;
 
