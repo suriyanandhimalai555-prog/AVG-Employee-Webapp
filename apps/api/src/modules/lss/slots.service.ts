@@ -3,12 +3,13 @@
 // quantity=20 with an empty room == FULL room (one owner).
 // Referral commission is ONE row, 20% of quantity × plan.price.
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { IncentiveService } from '../incentives/incentives.service';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import { RoomsService, LSS_SLOTS_PER_ROOM } from './rooms.service';
-import type { CreateSlotInput } from './lss.schema';
+import type { CreateSlotInput, CorrectLssSlotInput } from './lss.schema';
 
 const SCHEME_CODE = 'lss_scheme';
 
@@ -158,6 +159,170 @@ export const SlotsService = {
         `UPDATE lss_slots SET status = 'refunded' WHERE id = $1`,
         [slotId]
       );
+      // Claw back the enrollment incentive for this batch
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+    });
+  },
+
+  // ─── CORRECT SLOT (admin: MD / Management) ───────────────────────────────────
+  async correctSlot(
+    db: Pool,
+    correctedBy: string,
+    slotId: string,
+    branchId: string,
+    payload: CorrectLssSlotInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const beforeRes = await client.query(
+        `SELECT s.*, c.name AS customer_name, c.customer_code, p.name AS plan_name,
+                s.amount_paid * (SELECT COUNT(*) FROM lss_slots WHERE room_id = s.room_id AND customer_id = s.customer_id) AS total_amount
+         FROM lss_slots s
+         JOIN customers c ON c.id = s.customer_id
+         JOIN lss_plans p ON p.id = s.plan_id
+         WHERE s.id = $1 AND s.branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (beforeRes.rows.length === 0) throw new NotFoundError('LSS slot not found');
+      const old = beforeRes.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.notes      !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
+      if (payload.paymentMode != null)      { fields.push(`payment_mode = $${idx++}`); vals.push(payload.paymentMode); }
+      if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
+      // TS: customerId allows admin to re-assign slot to correct customer
+      if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`);  vals.push(payload.customerId); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(slotId);
+      const updated = await client.query(
+        `UPDATE lss_slots SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+
+      const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+
+      if (referrerChanged) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     slotId,
+          paymentEvent: 'enrollment',
+        });
+        if (effectiveReferrer) {
+          const totalAmount = parseFloat(old.total_amount ?? old.amount_paid);
+          await IncentiveService.distributeIncentives(client, {
+            schemeCode:        SCHEME_CODE,
+            dealMakerUserId:   effectiveReferrer,
+            mode:              'percent_referrer',
+            percentRole:       'referrer_direct',
+            baseAmount:        totalAmount,
+            paymentEvent:      'enrollment',
+            sourceId:          slotId,
+            sourceDescription: `LSS (corrected) — ${old.customer_name} (${old.customer_code})`,
+            creditedBy:        correctedBy,
+          });
+        }
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID SLOT (admin: MD / Management) ─────────────────────────────────────
+  async voidSlot(
+    db: Pool,
+    actorId: string,
+    slotId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM lss_slots WHERE id = $1 AND branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('LSS slot not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Slot is already voided');
+
+      await client.query(
+        `UPDATE lss_slots SET status = 'voided' WHERE id = $1`,
+        [slotId]
+      );
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── REMOVE SLOT (admin: MD / Management) ───────────────────────────────────
+  async removeSlot(
+    db: Pool,
+    actorId: string,
+    slotId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT s.*, r.status AS room_status
+         FROM lss_slots s
+         JOIN lss_rooms r ON r.id = s.room_id
+         WHERE s.id = $1 AND s.branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Slot not found');
+      const old = before.rows[0];
+      if (old.status === 'refunded' || old.status === 'voided') {
+        throw new ValidationError('Slot is already removed or voided');
+      }
+
+      await client.query(`UPDATE lss_slots SET status = 'refunded' WHERE id = $1`, [slotId]);
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId,
+        action:     'remove',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'refunded' };
     });
   },
 

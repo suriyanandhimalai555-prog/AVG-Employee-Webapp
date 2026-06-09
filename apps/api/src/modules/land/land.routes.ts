@@ -1,19 +1,24 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { assertCanManageSchemeData } from '../../shared/permissions';
 import {
   LandSitesService,
   LandBookingsService,
   LandAuditService,
   LandService,
 } from './land.service';
+import { LandIncentivesService } from './land-incentives.service';
 import {
   CreateLandSiteSchema, UpdateLandSiteSchema, ListSitesQuerySchema,
+  CreateLandLayoutSchema, UpdateLandLayoutSchema,
   CreateLandPlotSchema, UpdateLandPlotSchema, ListPlotsQuerySchema,
   CreateLandBookingSchema, RecordAdvanceSchema, RecordFullPaymentSchema,
   CancelBookingSchema, ListBookingsQuerySchema,
   MarkPayoutPaidSchema, ListAuditQuerySchema,
+  CorrectLandBookingSchema,
+  UpdateLandCommissionRuleSchema,
 } from './land.schema';
 
 interface AuthUser { id: string; role: string; branchId: string; }
@@ -26,23 +31,26 @@ const BRANCH_ADMIN_ROLE: string = Role.BRANCH_ADMIN;
 
 // ─── Role helpers ──────────────────────────────────────────────────────────────
 
-function assertMD(req: AuthRequest): void {
-  if (req.user.role !== MD_ROLE) {
-    throw new ForbiddenError('Only MD can perform this action');
+// Land scheme configuration (sites, layouts, plots, commission rules) is
+// Management-ONLY. MD is the business head and should not do data entry.
+// assertCanManageSchemeData covers MD+Management — we narrow it here to
+// Management only for land.
+function assertConfigRole(req: AuthRequest): void {
+  if (req.user.role !== Role.MANAGEMENT) {
+    throw new ForbiddenError('Only Management can configure land scheme data (sites, layouts, plots, commissions)');
   }
 }
 
-function assertBranchAdmin(req: AuthRequest): string {
-  // TS: returns the branchId of the authenticated branch admin
-  if (req.user.role !== BRANCH_ADMIN_ROLE) {
-    throw new ForbiddenError('Only Branch Admin can perform this action');
-  }
-  return req.user.branchId;
+function assertSchemeWriter(req: AuthRequest, bodyBranchId?: string): string {
+  // TS: returns the effective branchId for branch_admin or management callers
+  return resolveWriterBranch(req.user.role, req.user.branchId, bodyBranchId);
 }
 
-// MD sees all (null branchId), branch_admin sees own branch
+// MD and Management see all branches (null branchId = no filter).
+// Management has no branchId on their JWT so they must supply one in the query
+// when they need scoped data — but for dashboard/list reads we give them all.
 function resolveBranchScope(req: AuthRequest): string | null {
-  if (req.user.role === MD_ROLE) return null;
+  if (req.user.role === MD_ROLE || req.user.role === 'management') return null;
   if (!READER_ROLES.has(req.user.role)) {
     throw new ForbiddenError('Access denied');
   }
@@ -84,7 +92,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertMD(req);
+        assertConfigRole(req);
         const query = ListAuditQuerySchema.parse(req.query);
         const data  = await LandAuditService.getLog(fastify.db, query);
         return reply.send({ success: true, ...data });
@@ -114,7 +122,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertMD(req);
+        assertConfigRole(req);
         const body = CreateLandSiteSchema.parse(req.body);
         const data = await LandSitesService.createSite(fastify.db, req.user.id, body);
         return reply.code(201).send({ success: true, data });
@@ -140,7 +148,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertMD(req);
+        assertConfigRole(req);
         const { siteId } = req.params as { siteId: string };
         const body = UpdateLandSiteSchema.parse(req.body);
         const data = await LandSitesService.updateSite(fastify.db, req.user.id, siteId, body);
@@ -149,43 +157,174 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
-  // POST /land/sites/:siteId/plots (MD only)
+  // POST /land/sites/:siteId/plots — deprecated in favour of /layouts/:layoutId/plots.
+  // Kept for backward compat; requires a layoutId in the body to route correctly.
   fastify.post('/sites/:siteId/plots', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertMD(req);
-        const { siteId } = req.params as { siteId: string };
+        assertConfigRole(req);
         const body = CreateLandPlotSchema.parse(req.body);
-        const data = await LandSitesService.createPlot(fastify.db, req.user.id, siteId, body);
+        const layoutId = (req.body as any)?.layoutId;
+        if (!layoutId) throw new Error('layoutId is required — use POST /land/layouts/:layoutId/plots instead');
+        const data = await LandSitesService.createPlot(fastify.db, req.user.id, layoutId, body);
         return reply.code(201).send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }
   );
 
   // ════════════════════════════════════════════════════
-  // PLOTS
+  // LAYOUTS  (inside a site)
   // ════════════════════════════════════════════════════
 
-  // GET /land/plots — list available plots (for booking dropdown + admin listing)
+  // GET /land/sites/:siteId/layouts — list layouts for a site
+  fastify.get('/sites/:siteId/layouts', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const { siteId } = req.params as { siteId: string };
+        const site = await LandSitesService.getSite(fastify.db, siteId);
+        return reply.send({ success: true, data: site.layouts });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // POST /land/sites/:siteId/layouts (MD / Management)
+  fastify.post('/sites/:siteId/layouts', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { siteId } = req.params as { siteId: string };
+        const body = CreateLandLayoutSchema.parse(req.body);
+        const data = await LandSitesService.createLayout(fastify.db, req.user.id, siteId, body);
+        return reply.code(201).send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // GET /land/layouts/:layoutId
+  fastify.get('/layouts/:layoutId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const { layoutId } = req.params as { layoutId: string };
+        const data = await LandSitesService.getLayout(fastify.db, layoutId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/layouts/:layoutId (MD / Management)
+  fastify.patch('/layouts/:layoutId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { layoutId } = req.params as { layoutId: string };
+        const body = UpdateLandLayoutSchema.parse(req.body);
+        const data = await LandSitesService.updateLayout(fastify.db, req.user.id, layoutId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // POST /land/layouts/:layoutId/plots (MD / Management — add individual plots to a layout)
+  fastify.post('/layouts/:layoutId/plots', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { layoutId } = req.params as { layoutId: string };
+        const body = CreateLandPlotSchema.parse(req.body);
+        const data = await LandSitesService.createPlot(fastify.db, req.user.id, layoutId, body);
+        return reply.code(201).send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── GET /land/layouts/:layoutId/commission-rules ───
+  fastify.get('/layouts/:layoutId/commission-rules', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const { layoutId } = req.params as { layoutId: string };
+        const data = await LandIncentivesService.getRules(fastify.db, layoutId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /land/layouts/:layoutId/commission-rules ───
+  fastify.patch('/layouts/:layoutId/commission-rules', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { layoutId } = req.params as { layoutId: string };
+        const body = UpdateLandCommissionRuleSchema.parse(req.body);
+        const data = await LandIncentivesService.updateRule(fastify.db, req.user.id, {
+          layoutId,
+          role:          body.role,
+          spotAmount:    body.spotAmount,
+          monthlyAmount: body.monthlyAmount,
+          monthlyMonths: body.monthlyMonths ?? null,
+        });
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── GET /land/employees — branch employees for referrer picker ───
+  fastify.get('/employees', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        // TS: resolveReadBranch handles null branchId for md/management via query param
+        const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+        const result = await fastify.db.query(
+          `SELECT id, name, role FROM users
+           WHERE branch_id = $1 AND is_active = true AND role NOT IN ('md','client')
+           ORDER BY name ASC`,
+          [branchId]
+        );
+        return reply.send({ success: true, data: result.rows });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ════════════════════════════════════════════════════
+  // PLOTS (direct access — used by booking form)
+  // ════════════════════════════════════════════════════
+
+  // GET /land/plots — used by PlotSelect on the booking form.
+  // Returns all plots (or filters to one layout via ?layoutId=).
+  // Uses ?status=available to show only bookable plots.
+  // Readable by all authenticated roles — booking form needs this.
   fastify.get('/plots', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
         if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        // layoutId is extracted before Zod parsing (Zod schema only knows status/page/limit)
+        const layoutId = (req.query as any)?.layoutId ?? null;
         const query = ListPlotsQuerySchema.parse(req.query);
-        const data  = await LandSitesService.listPlots(fastify.db, null, query);
+        const data  = await LandSitesService.listPlots(fastify.db, layoutId, query);
         return reply.send({ success: true, ...data });
       } catch (error) { return handleError(error, reply); }
     }
   );
 
-  // PATCH /land/plots/:plotId (MD only)
+  // PATCH /land/plots/:plotId — Management only (same assertConfigRole used throughout)
   fastify.patch('/plots/:plotId', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertMD(req);
+        assertConfigRole(req);
         const { plotId } = req.params as { plotId: string };
         const body = UpdateLandPlotSchema.parse(req.body);
         const data = await LandSitesService.updatePlot(fastify.db, req.user.id, plotId, body);
@@ -211,12 +350,16 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
-  // POST /land/bookings (branch_admin)
+  // POST /land/bookings — Branch Admin records a new booking.
+  // Management can also create bookings (they must supply branchId in the body
+  // via assertSchemeWriter / resolveWriterBranch since their JWT has null branchId).
+  // Body includes optional referrerId — when set, spot commission is distributed.
   fastify.post('/bookings', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        // resolveWriterBranch: branch_admin uses own JWT branch; management passes branchId in body
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const body     = CreateLandBookingSchema.parse(req.body);
         const data     = await LandBookingsService.createBooking(fastify.db, req.user.id, branchId, body);
         return reply.code(201).send({ success: true, data });
@@ -242,7 +385,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const body     = RecordAdvanceSchema.parse(req.body);
         const data     = await LandBookingsService.recordAdvance(fastify.db, req.user.id, id, branchId, body);
@@ -256,7 +399,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const body     = RecordFullPaymentSchema.parse(req.body);
         const data     = await LandBookingsService.recordFullPayment(fastify.db, req.user.id, id, branchId, body);
@@ -270,7 +413,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const data     = await LandBookingsService.extendDeadline(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
@@ -283,7 +426,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const body     = CancelBookingSchema.parse(req.body);
         const data     = await LandBookingsService.cancelBooking(fastify.db, req.user.id, id, branchId, body);
@@ -310,7 +453,7 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req      = request as AuthRequest;
-        const branchId = assertBranchAdmin(req);
+        const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id, month } = req.params as { id: string; month: string };
         const monthNum = parseInt(month, 10);
         if (isNaN(monthNum) || monthNum < 1 || monthNum > 60) {
@@ -318,6 +461,44 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         }
         const body = MarkPayoutPaidSchema.parse(req.body);
         const data = await LandBookingsService.markPayoutPaid(fastify.db, req.user.id, id, monthNum, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/bookings/:id/correct — MD / Management
+  fastify.patch('/bookings/:id/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id } = req.params as { id: string };
+        const body = CorrectLandBookingSchema.parse(req.body);
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        const data = await LandBookingsService.correctBooking(fastify.db, req.user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/bookings/:id/void — MD / Management
+  fastify.patch('/bookings/:id/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await LandBookingsService.voidBooking(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

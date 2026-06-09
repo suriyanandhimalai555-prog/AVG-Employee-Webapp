@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Save, Loader2, AlertCircle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useCreateChitGroupMutation } from '../../store/api/apiSlice';
+import { BranchPicker } from '../../components/BranchPicker';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -23,6 +24,9 @@ export const ChitAddGroupPage = () => {
   const navigate = useNavigate();
   const [createGroup, { isLoading }] = useCreateChitGroupMutation();
 
+  const isManagement = user?.role === 'management';
+  const [branchId, setBranchId] = useState('');
+
   const [form, setForm] = useState({
     groupName:     '',
     packageNumber: 1,
@@ -37,12 +41,14 @@ export const ChitAddGroupPage = () => {
     e.preventDefault();
     setError(null);
     if (!form.groupName.trim()) { setError('Group name is required.'); return; }
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
     try {
       const res = await createGroup({
         groupName:     form.groupName.trim(),
         packageNumber: parseInt(form.packageNumber, 10),
         startDate:     form.startDate,
         notes:         form.notes.trim() || undefined,
+        branchId:      isManagement ? branchId : undefined,
       }).unwrap();
       navigate(`/money/schemes/agila-chit/${res.id}`);
     } catch (err) {
@@ -50,7 +56,7 @@ export const ChitAddGroupPage = () => {
     }
   };
 
-  if (user?.role !== 'branch_admin') {
+  if (user?.role !== 'branch_admin' && !isManagement) {
     return (
       <div className="flex flex-col items-center justify-center p-12 pt-24">
         <AlertCircle size={32} className="text-red-400 mb-3" aria-hidden="true" />
@@ -71,6 +77,12 @@ export const ChitAddGroupPage = () => {
       />
 
       <form onSubmit={handleSubmit} className="px-4 space-y-5">
+
+        {isManagement && (
+          <FormField label="Branch" required>
+            <BranchPicker value={branchId} onChange={setBranchId} />
+          </FormField>
+        )}
 
         <FormField label="Group Name" required>
           <input

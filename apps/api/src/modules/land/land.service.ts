@@ -46,14 +46,29 @@ export const LandService: SchemeService = {
       params
     );
 
+    // Sum all employee_incentives earned from this branch's land bookings
+    const commParams: any[] = [branchId, SCHEME_CODE];
+    let commWhere = 'bk.branch_id = $1 AND ei.scheme_code = $2';
+    let commIdx = 3;
+    if (dateFilter?.startDate) { commWhere += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { commWhere += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }
+
+    const commResult = await db.query(
+      `SELECT COALESCE(SUM(ei.amount), 0) AS total_commission
+       FROM employee_incentives ei
+       JOIN land_bookings bk ON bk.id = ei.source_id
+       WHERE ei.source_type = 'scheme' AND ${commWhere}`,
+      commParams
+    );
+
     const r = result.rows[0];
     return {
-      totalBookings:  r.total_bookings,
-      fullPaid:       r.full_paid,
-      completed:      r.completed,
-      cancelled:      r.cancelled,
-      totalCollected: parseFloat(r.total_collected),
-      totalCommission: 0,  // land sales have no employee incentives
+      totalBookings:   r.total_bookings,
+      fullPaid:        r.full_paid,
+      completed:       r.completed,
+      cancelled:       r.cancelled,
+      totalCollected:  parseFloat(r.total_collected),
+      totalCommission: parseFloat(commResult.rows[0].total_commission),
     };
   },
 
@@ -82,12 +97,23 @@ export const LandService: SchemeService = {
       params
     );
 
+    const commRes = await db.query<{ branch_id: string; commission: string }>(
+      `SELECT bk.branch_id, COALESCE(SUM(ei.amount), 0) AS commission
+       FROM employee_incentives ei
+       JOIN land_bookings bk ON bk.id = ei.source_id
+       WHERE ei.source_type = 'scheme' AND ei.scheme_code = $1
+       GROUP BY bk.branch_id`,
+      [SCHEME_CODE]
+    );
+    const commByBranch = new Map<string, number>();
+    for (const r of commRes.rows) commByBranch.set(r.branch_id, parseFloat(r.commission));
+
     return result.rows.map(r => ({
       branchId:   r.branch_id,
       branchName: r.branch_name,
       count:      parseInt(r.count, 10),
       collected:  parseFloat(r.collected),
-      commission: 0,
+      commission: commByBranch.get(r.branch_id) ?? 0,
     }));
   },
 
@@ -106,14 +132,14 @@ export const LandService: SchemeService = {
     const res = await db.query(
       `SELECT
          bk.id, bk.booking_ref, bk.booking_date, bk.payment_mode,
-         bk.full_amount, bk.status, bk.created_at,
-         c.name AS customer_name, c.customer_ref,
+         bk.full_amount, bk.status, bk.created_at, bk.notes,
+         c.name AS customer_name, c.customer_code,
          p.site_number,
          s.name AS site_name
        FROM land_bookings bk
-       JOIN land_customers c ON c.id = bk.customer_id
-       JOIN land_plots p     ON p.id = bk.plot_id
-       JOIN land_sites s     ON s.id = p.site_id
+       JOIN customers c   ON c.id = bk.customer_id
+       JOIN land_plots p  ON p.id = bk.plot_id
+       JOIN land_sites s  ON s.id = p.site_id
        WHERE ${where}
        ORDER BY bk.created_at DESC
        LIMIT 500`,

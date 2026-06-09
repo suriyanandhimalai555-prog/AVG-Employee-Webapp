@@ -18,6 +18,7 @@ import {
   useGetGoldEmployeesQuery,
 } from '../../store/api/apiSlice';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BranchPicker } from '../../components/BranchPicker';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -28,18 +29,20 @@ import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 const SLOTS_PER_ROOM  = 20;
-const WRITER_ROLES    = new Set(['branch_admin', 'md', 'director']);
+const WRITER_ROLES    = new Set(['branch_admin', 'management', 'md', 'director']);
 const QUANTITY_CHIPS  = [1, 2, 4, 8];
 
 export const LssAddSlotPage = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const canWrite = WRITER_ROLES.has(user?.role);
+  const canWrite     = WRITER_ROLES.has(user?.role);
+  const isManagement = user?.role === 'management';
 
   const { data: plans = [], isLoading: plansLoading } = useGetLssPlansQuery();
   const { data: employees = [] }                      = useGetGoldEmployeesQuery();
   const [addSlot, { isLoading }] = useAddLssSlotMutation();
 
+  const [branchId,  setBranchId]  = useState('');
   const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     planId:      '',
@@ -79,6 +82,7 @@ export const LssAddSlotPage = () => {
     if (effectiveQuantity < 1 || effectiveQuantity > SLOTS_PER_ROOM) {
       setError(`Quantity must be between 1 and ${SLOTS_PER_ROOM}.`); return;
     }
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
     try {
       const res = await addSlot({
         planId:      form.planId,
@@ -88,6 +92,7 @@ export const LssAddSlotPage = () => {
         paymentMode: form.paymentMode,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
+        branchId:    isManagement ? branchId : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -155,7 +160,9 @@ export const LssAddSlotPage = () => {
       <form onSubmit={handleSubmit} className="px-4 space-y-5">
 
         <FormField label="Customer" required>
-          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)} />
+          {isManagement && <BranchPicker value={branchId} onChange={setBranchId} />}
+          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)}
+            branchId={isManagement ? branchId : undefined} />
         </FormField>
 
         <FormField label="Plan" required>

@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
 export const AddTradingMemberSchema = z.object({
-  customerId:     z.string().uuid(),   // customer must already exist in customers table
+  customerId:     z.string().uuid(),
   amount:         z.number().positive().max(100_000_000),
-  enrolledBy:     z.string().uuid(),   // the SO/ABM/BM who brought the deal
+  enrolledBy:     z.string().uuid(),
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:          z.string().max(1000).optional(),
+  branchId:       z.string().uuid().optional(),
 });
 
 export const GetTradingMembersQuerySchema = z.object({
@@ -23,6 +24,18 @@ export const GetTradingSummaryQuerySchema = z.object({
   endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
-export type AddTradingMemberInput     = z.infer<typeof AddTradingMemberSchema>;
-export type GetTradingMembersQuery    = z.infer<typeof GetTradingMembersQuerySchema>;
-export type GetTradingSummaryQuery    = z.infer<typeof GetTradingSummaryQuerySchema>;
+// Correction schema — only scheme-admin roles call PATCH /trading-academy/:id/correct
+export const CorrectTradingMemberSchema = z.object({
+  customerId:     z.string().uuid().optional(),
+  enrolledBy:     z.string().uuid().optional(),   // the selling-chain dealMaker
+  amount:         z.number().positive().max(100_000_000).optional(),
+  enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  notes:          z.string().max(1000).optional().nullable(),
+  branchId:       z.string().uuid().optional(),  // management must supply; MD optional
+});
+
+export type AddTradingMemberInput        = z.infer<typeof AddTradingMemberSchema>;
+export type GetTradingMembersQuery       = z.infer<typeof GetTradingMembersQuerySchema>;
+export type GetTradingSummaryQuery       = z.infer<typeof GetTradingSummaryQuerySchema>;
+export type CorrectTradingMemberInput    = z.infer<typeof CorrectTradingMemberSchema>;

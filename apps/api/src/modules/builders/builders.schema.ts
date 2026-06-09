@@ -32,9 +32,9 @@ export const CreateBuildersPlanSchema = z.object({
   packageNumber: z.number().int().min(1).max(6),
   lumpSumDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   lumpSumMode:   z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  // Referrer is optional — commission wiring is added later (migration 047 scaffolds the rule)
   referrerId:    z.string().uuid().optional(),
   notes:         z.string().max(1000).optional(),
+  branchId:      z.string().uuid().optional(),
 });
 
 export const RecordBuildersPayoutSchema = z.object({
@@ -43,12 +43,13 @@ export const RecordBuildersPayoutSchema = z.object({
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:        z.string().max(500).optional(),
+  branchId:     z.string().uuid().optional(),
 });
 
 export const ChooseRewardSchema = z.object({
-  // 'house' requires the customer to have provided land; 'cash' takes the higher payout path
   choice:       z.enum(['house', 'cash']),
   landProvided: z.boolean().optional(),
+  branchId:     z.string().uuid().optional(),
 });
 
 export const GetBuildersPlansQuerySchema = z.object({
@@ -66,6 +67,15 @@ export const GetBuildersSummaryQuerySchema = z.object({
   endDate:   z.string().regex(DATE_RE).optional(),
 });
 
+// ─── Package edit (config roles: MD / Director / Management) ─────────────────
+export const UpdateBuildersPackageSchema = z.object({
+  investmentAmount:  z.number().positive().optional(),
+  monthlyPayout:     z.number().positive().optional(),
+  cashFinalMonthly:  z.number().positive().optional(),
+  houseWorth:        z.number().positive().optional(),
+});
+export type UpdateBuildersPackageInput = z.infer<typeof UpdateBuildersPackageSchema>;
+
 // ─── Incentive rule edit (MD only) ───────────────────────────────────────────
 // Upserts one cell in the builders_incentive_rules tier×role×type matrix.
 export const UpdateBuildersIncentiveRuleSchema = z.object({
@@ -75,6 +85,28 @@ export const UpdateBuildersIncentiveRuleSchema = z.object({
   amount:         z.number().min(0),
 });
 
+// ─── Correction schemas (MD / Management only) ───────────────────────────────
+
+// Correct an existing builders plan — editable fields only; packageNumber and
+// amounts are derived from the package and cannot be patched directly here.
+export const CorrectBuildersPlanSchema = z.object({
+  customerId:   z.string().uuid().optional(),
+  referrerId:   z.string().uuid().optional().nullable(),
+  lumpSumDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  lumpSumMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  notes:        z.string().max(1000).optional().nullable(),
+  branchId:     z.string().uuid().optional(),  // management must supply; MD optional
+});
+
+// Correct an existing payout row.
+export const CorrectBuildersPayoutSchema = z.object({
+  amount:       z.number().positive().optional(),
+  payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  notes:        z.string().max(500).optional().nullable(),
+  branchId:     z.string().uuid().optional(),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
 export type CreateBuildersPlanInput            = z.infer<typeof CreateBuildersPlanSchema>;
 export type RecordBuildersPayoutInput          = z.infer<typeof RecordBuildersPayoutSchema>;
@@ -82,3 +114,5 @@ export type ChooseRewardInput                  = z.infer<typeof ChooseRewardSche
 export type GetBuildersPlansQuery              = z.infer<typeof GetBuildersPlansQuerySchema>;
 export type GetBuildersSummaryQuery            = z.infer<typeof GetBuildersSummaryQuerySchema>;
 export type UpdateBuildersIncentiveRuleInput   = z.infer<typeof UpdateBuildersIncentiveRuleSchema>;
+export type CorrectBuildersPlanInput           = z.infer<typeof CorrectBuildersPlanSchema>;
+export type CorrectBuildersPayoutInput         = z.infer<typeof CorrectBuildersPayoutSchema>;

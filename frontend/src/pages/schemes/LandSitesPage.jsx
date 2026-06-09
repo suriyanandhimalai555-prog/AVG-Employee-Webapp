@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, Landmark, ChevronRight, ToggleLeft, ToggleRight } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetLandSitesQuery } from '../../store/api/apiSlice';
+import { isSchemeAdmin } from '../../lib/schemeAuth';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 
@@ -12,14 +13,14 @@ const STATUS_STYLES = {
 };
 
 export const LandSitesPage = () => {
-  const user     = useSelector(selectCurrentUser);
-  const navigate = useNavigate();
-  const isMD     = user?.role === 'md';
+  const user          = useSelector(selectCurrentUser);
+  const navigate      = useNavigate();
+  const isSiteAdmin   = isSchemeAdmin(user?.role);
 
   const { data: result, isLoading } = useGetLandSitesQuery({ limit: 200 });
   const sites = result?.data || [];
 
-  const rightAction = isMD ? (
+  const rightAction = isSiteAdmin ? (
     <button
       type="button"
       onClick={() => navigate('/money/schemes/land/sites/new')}
@@ -35,7 +36,7 @@ export const LandSitesPage = () => {
       <SchemePageHeader
         backTo="/money/schemes/land"
         title="Sites"
-        subtitle="MD-managed project locations"
+        subtitle="Managed by MD & Management"
         action={rightAction}
       />
 
@@ -48,7 +49,7 @@ export const LandSitesPage = () => {
           <div className="bg-white rounded-2xl p-10 border border-navy/5 card-shadow text-center">
             <Landmark size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No Sites Yet</p>
-            {isMD && (
+            {isSiteAdmin && (
               <p className="text-xs text-navy/40 mt-1">Tap + to create the first site.</p>
             )}
           </div>

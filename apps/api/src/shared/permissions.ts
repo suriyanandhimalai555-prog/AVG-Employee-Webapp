@@ -2,11 +2,13 @@
 import { Role } from '@attendance/shared-types';
 // Import the custom ForbiddenError from our shared errors utility
 import { ForbiddenError } from './errors';
+// Import the canonical scheme-admin role set so this file is the single assertion point
+import { SCHEME_ADMIN_ROLES } from './role-constants';
 
 // Return true if the user's role is permitted to mark their own attendance
 export const canMarkAttendance = (role: Role): boolean => {
-  // Allow all roles except for the 'client' role to mark attendance
-  return role !== 'client';
+  // management is a data-entry-only account — it never marks attendance
+  return role !== 'client' && role !== 'management';
 };
 
 // Return true if the user's role is permitted to correct/admin-mark attendance records for others
@@ -63,5 +65,17 @@ export const assertCanManageSmartphone = (role: Role): void => {
   if (!canManageSmartphone(role)) {
     // Prevent the action by throwing a 403 error and informing the user
     throw new ForbiddenError('Only branch admins can manage smartphone status');
+  }
+};
+
+// Return true if the role may CREATE, EDIT, or CORRECT scheme and site data.
+// Management has full authority (≥ MD) over all scheme records.
+export const canManageSchemeData = (role: Role): boolean =>
+  (SCHEME_ADMIN_ROLES as readonly string[]).includes(role);
+
+// Throw ForbiddenError when the caller lacks scheme-data management rights.
+export const assertCanManageSchemeData = (role: Role): void => {
+  if (!canManageSchemeData(role)) {
+    throw new ForbiddenError('Only MD or Management can create, edit, or correct scheme data');
   }
 };

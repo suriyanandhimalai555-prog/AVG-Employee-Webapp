@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { assertCanManageSchemeData } from '../../shared/permissions';
 import { ChitService } from './chit.service';
 import {
   CreateChitGroupSchema,
@@ -12,18 +13,48 @@ import {
   GetChitGroupsQuerySchema,
   GetChitSummaryQuerySchema,
   CombineChitGroupsSchema,
+  UpdateChitPackageSchema,
+  CorrectChitMemberSchema,
+  CorrectChitPaymentSchema,
 } from './chit.schema';
 
 interface AuthUser { id: string; role: string; branchId: string; isHeadBranch?: boolean; }
 interface AuthRequest extends FastifyRequest { user: AuthUser; }
 
-const READER_ROLES = new Set<string>(READER_LIST);
-const WRITER_ROLE: string = Role.BRANCH_ADMIN;
+const READER_ROLES      = new Set<string>(READER_LIST);
+const WRITER_ROLES      = new Set<string>(SCHEME_WRITER_ROLES);
+const CONFIG_ROLES_SET  = new Set<string>([Role.MD, Role.DIRECTOR, 'management']);
 
 // Roles that can view the head-branch console (read-only for MD/Director)
 const HEAD_VIEW_ROLES = new Set<string>(['md', 'director', 'branch_admin']);
 
 export default async function chitRoutes(fastify: FastifyInstance): Promise<void> {
+
+  // ─── GET /chit/packages — package reference (any reader) ───
+  fastify.get('/packages', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const data = await ChitService.getPackages(fastify.db);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /chit/packages/:number — config roles ───
+  fastify.patch('/packages/:number', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!CONFIG_ROLES_SET.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const num  = parseInt((req.params as any).number, 10);
+        const body = UpdateChitPackageSchema.parse(req.body);
+        const data = await ChitService.updatePackage(fastify.db, num, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 
   // ─── GET /chit/summary ───
   fastify.get('/summary', {
@@ -57,9 +88,10 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can create groups');
-      const body = CreateChitGroupSchema.parse(req.body);
-      const data = await ChitService.createGroup(fastify.db, req.user.id, req.user.branchId, body);
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can create groups');
+      const body     = CreateChitGroupSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await ChitService.createGroup(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -88,7 +120,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can combine groups');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can combine groups');
       const body = CombineChitGroupsSchema.parse(req.body);
       // assertHeadBranchAdmin is called inside ChitService.combineGroups
       const data = await ChitService.combineGroups(fastify.db, body, req.user.id);
@@ -97,6 +129,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   });
 
   // ─── GET /chit/groups/:groupId ───
+  // Management has no branchId on their JWT; they pass it as ?branchId= query param.
   fastify.get('/groups/:groupId', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -104,7 +137,9 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const { groupId } = req.params as { groupId: string };
-      const data = await ChitService.getGroup(fastify.db, groupId, req.user.branchId);
+      // TS: resolveReadBranch handles null branchId for md/management via query param
+      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      const data = await ChitService.getGroup(fastify.db, groupId, branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -128,10 +163,11 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can add members');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can add members');
       const { groupId } = req.params as { groupId: string };
-      const body = AddChitMemberSchema.parse(req.body);
-      const data = await ChitService.addMember(fastify.db, req.user.id, groupId, req.user.branchId, body);
+      const body     = AddChitMemberSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await ChitService.addMember(fastify.db, req.user.id, groupId, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -142,15 +178,17 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can record payments');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payments');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
-      const body = RecordChitPaymentSchema.parse(req.body);
-      const data = await ChitService.recordPayment(fastify.db, req.user.id, groupId, memberId, req.user.branchId, body);
+      const body     = RecordChitPaymentSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await ChitService.recordPayment(fastify.db, req.user.id, groupId, memberId, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
 
   // ─── GET /chit/groups/:groupId/members/:memberId/payments ───
+  // Management has no branchId on their JWT; they pass it as ?branchId= query param.
   fastify.get('/groups/:groupId/members/:memberId/payments', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -158,7 +196,9 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
-      const data = await ChitService.getMemberPayments(fastify.db, groupId, memberId, req.user.branchId);
+      // TS: resolveReadBranch handles null branchId for md/management via query param
+      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      const data = await ChitService.getMemberPayments(fastify.db, groupId, memberId, branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -169,7 +209,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can select winners');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can select winners');
       const { groupId } = req.params as { groupId: string };
       const body = SelectWinnerSchema.parse(req.body);
       const data = await ChitService.selectWinner(fastify.db, req.user.id, groupId, req.user.branchId, body);
@@ -183,7 +223,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can send groups to head branch');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can send groups to head branch');
       const { groupId } = req.params as { groupId: string };
       const data = await ChitService.sendToHeadBranch(fastify.db, groupId, req.user.branchId);
       return reply.send({ success: true, data });
@@ -196,7 +236,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can expire groups');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can expire groups');
       const { groupId } = req.params as { groupId: string };
       // assertHeadBranchAdmin is called inside ChitService.expireGroup
       const data = await ChitService.expireGroup(fastify.db, groupId, req.user.id);
@@ -210,7 +250,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can cancel cards');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can cancel cards');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
       const body = CancelMemberSchema.parse(req.body);
       const data = await ChitService.cancelMember(fastify.db, groupId, memberId, req.user.branchId, body);
@@ -224,7 +264,7 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can reinstate cards');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can reinstate cards');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
       const data = await ChitService.reinstateMember(fastify.db, groupId, memberId, req.user.branchId);
       return reply.send({ success: true, data });
@@ -237,10 +277,92 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can mark refunds');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin can mark refunds');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
       const data = await ChitService.markRefundPaid(fastify.db, groupId, memberId, req.user.branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
+
+  // ─── PATCH /chit/groups/:groupId/members/:memberId/correct ───
+  fastify.patch('/groups/:groupId/members/:memberId/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { groupId, memberId } = req.params as { groupId: string; memberId: string };
+        const body = CorrectChitMemberSchema.parse(req.body);
+        const rows = await fastify.db.query(
+          `SELECT g.branch_id FROM agila_chit_groups g
+           JOIN agila_chit_members m ON m.group_id = g.id
+           WHERE m.id = $1`,
+          [memberId]
+        );
+        if (rows.rows.length === 0) throw new Error('Not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        const data = await ChitService.correctMember(fastify.db, req.user.id, groupId, memberId, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /chit/groups/:groupId/members/:memberId/payments/:paymentId/correct ───
+  fastify.patch('/groups/:groupId/members/:memberId/payments/:paymentId/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { groupId, memberId, paymentId } = req.params as { groupId: string; memberId: string; paymentId: string };
+        const body = CorrectChitPaymentSchema.parse(req.body);
+        const rows = await fastify.db.query(
+          `SELECT g.branch_id FROM agila_chit_groups g WHERE g.id = $1`, [groupId]
+        );
+        if (rows.rows.length === 0) throw new Error('Group not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        const data = await ChitService.correctPayment(fastify.db, req.user.id, groupId, memberId, paymentId, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /chit/groups/:groupId/members/:memberId/payments/:paymentId/unpay ───
+  fastify.patch('/groups/:groupId/members/:memberId/payments/:paymentId/unpay', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { groupId, memberId, paymentId } = req.params as { groupId: string; memberId: string; paymentId: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          `SELECT g.branch_id FROM agila_chit_groups g WHERE g.id = $1`, [groupId]
+        );
+        if (rows.rows.length === 0) throw new Error('Group not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await ChitService.unpayPayment(fastify.db, req.user.id, groupId, memberId, paymentId, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /chit/groups/:groupId/members/:memberId/void ───
+  fastify.patch('/groups/:groupId/members/:memberId/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { groupId, memberId } = req.params as { groupId: string; memberId: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          `SELECT g.branch_id FROM agila_chit_groups g
+           JOIN agila_chit_members m ON m.group_id = g.id
+           WHERE m.id = $1`,
+          [memberId]
+        );
+        if (rows.rows.length === 0) throw new Error('Not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await ChitService.voidMember(fastify.db, req.user.id, groupId, memberId, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

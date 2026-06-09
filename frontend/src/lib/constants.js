@@ -12,6 +12,7 @@ export const ROLES = Object.freeze({
   BRANCH_ADMIN:   'branch_admin',
   OA:             'oa',
   CLIENT:         'client',
+  MANAGEMENT:     'management',
 });
 
 export const ROLE_LABELS = Object.freeze({
@@ -24,6 +25,7 @@ export const ROLE_LABELS = Object.freeze({
   [ROLES.BRANCH_ADMIN]:   'Branch Admin',
   [ROLES.OA]:             'Operations Assistant',
   [ROLES.CLIENT]:         'Client',
+  [ROLES.MANAGEMENT]:     'Management',
 });
 
 // Money / payment modes used across Money + Gold + Trading Academy modules

@@ -14,7 +14,8 @@ interface AuthenticatedUser { id: string; role: string; branchId: string; }
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
 
 const WRITER_ROLES   = new Set(['md', 'director', 'gm', 'branch_manager', 'branch_admin']);
-const RULE_ADMIN     = new Set(['md', 'director']); // only they can configure commission rates
+// management added so the Control Center can edit commission rates
+const RULE_ADMIN     = new Set(['md', 'director', 'management']);
 
 export default async function incentiveRoutes(fastify: FastifyInstance): Promise<void> {
 

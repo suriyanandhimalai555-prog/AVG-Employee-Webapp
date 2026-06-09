@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -483,15 +483,57 @@ export const apiSlice = createApi({
     }),
 
     getGoldPayments: builder.query({
-      query: (memberId) => `/gold/${memberId}/payments`,
+      // Accepts either a plain memberId string (existing pages) or { memberId, branchId }
+      // (SchemeCorrectionsPage, where Management passes branchId as a query param).
+      query: (arg) => {
+        const memberId = typeof arg === 'string' ? arg : arg.memberId;
+        const branchId = arg?.branchId;
+        return `/gold/${memberId}/payments${branchId ? `?branchId=${branchId}` : ''}`;
+      },
       transformResponse: (response) => response.data,
-      providesTags: (result, error, memberId) => [{ type: 'GoldPayments', id: memberId }],
+      providesTags: (result, error, arg) => [{ type: 'GoldPayments', id: typeof arg === 'string' ? arg : arg.memberId }],
     }),
 
     addGoldPayment: builder.mutation({
       query: ({ memberId, ...data }) => ({ url: `/gold/${memberId}/payments`, method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: (result, error, { memberId }) => [{ type: 'GoldPayments', id: memberId }, 'GoldMembers', 'Incentives', 'IncentiveWallet'],
+      invalidatesTags: (result, error, { memberId }) => [
+        { type: 'GoldPayments', id: memberId }, 'GoldMembers', 'Incentives', 'IncentiveWallet',
+        'SchemeBranchEntries',
+      ],
+    }),
+
+    // ─── Correction endpoints (MD / Management) ─────────────────────────────
+    correctGoldMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/correct`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'GoldMembers', id }, 'GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    correctGoldPayment: builder.mutation({
+      query: ({ memberId, paymentId, ...data }) => ({
+        url: `/gold/${memberId}/payments/${paymentId}/correct`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { memberId }) => [
+        { type: 'GoldPayments', id: memberId }, 'GoldMembers', 'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    unpayGoldPayment: builder.mutation({
+      query: ({ memberId, paymentId, ...data }) => ({
+        url: `/gold/${memberId}/payments/${paymentId}/unpay`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { memberId }) => [
+        { type: 'GoldPayments', id: memberId }, 'GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
     }),
 
     // ─── Incentive Wallet & Commission Rules ───
@@ -590,6 +632,24 @@ export const apiSlice = createApi({
       invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet'],
     }),
 
+    correctTradingMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/trading-academy/${id}/correct`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet'],
+    }),
+
+    voidGoldMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    voidTradingMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/trading-academy/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
     // ─── Gold Coin Scheme ───
     getGoldCoinPackages: builder.query({
       query: () => '/gold-coin/packages',
@@ -674,6 +734,30 @@ export const apiSlice = createApi({
         'GoldCoinAwaitingCombine',
         'GoldCoinSummary',
       ],
+    }),
+
+    correctGoldCoinSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/slots/${id}/correct`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    voidGoldCoinSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/slots/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    voidGoldCoinRoom: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/rooms/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    removeGoldCoinSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/slots/${id}/remove`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
 
     // ─── LSS scheme ───────────────────────────────────────────────────────
@@ -762,6 +846,30 @@ export const apiSlice = createApi({
       ],
     }),
 
+    correctLssSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/correct`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    voidLssSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    voidLssRoom: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/rooms/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    removeLssSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/remove`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
     // ─── Cross-scheme dashboard (MD / Director) ───
     // Backed by /api/schemes/* which walks the SchemeService registry. Every
     // scheme that implements getOverviewByBranch shows up here automatically.
@@ -797,9 +905,11 @@ export const apiSlice = createApi({
     searchCustomers: builder.query({
       query: (params = {}) => {
         const qs = new URLSearchParams();
-        if (params.search) qs.set('search', params.search);
-        if (params.page)   qs.set('page', String(params.page));
-        if (params.limit)  qs.set('limit', String(params.limit));
+        if (params.search)   qs.set('search',   params.search);
+        if (params.page)     qs.set('page',     String(params.page));
+        if (params.limit)    qs.set('limit',    String(params.limit));
+        // management passes branchId explicitly — server uses it for scoping
+        if (params.branchId) qs.set('branchId', params.branchId);
         const q = qs.toString();
         return `/customers${q ? `?${q}` : ''}`;
       },
@@ -950,9 +1060,15 @@ export const apiSlice = createApi({
     }),
 
     getChitGroup: builder.query({
-      query: (groupId) => `/chit/groups/${groupId}`,
+      // Accepts either a plain groupId string (existing pages) or { groupId, branchId }
+      // (SchemeCorrectionsPage, where Management passes branchId as a query param).
+      query: (arg) => {
+        const groupId  = typeof arg === 'string' ? arg : arg.groupId;
+        const branchId = arg?.branchId;
+        return `/chit/groups/${groupId}${branchId ? `?branchId=${branchId}` : ''}`;
+      },
       transformResponse: (response) => response.data,
-      providesTags: (result, error, groupId) => [{ type: 'ChitGroup', id: groupId }],
+      providesTags: (result, error, arg) => [{ type: 'ChitGroup', id: typeof arg === 'string' ? arg : arg.groupId }],
     }),
 
     getChitEligibleMembers: builder.query({
@@ -981,12 +1097,16 @@ export const apiSlice = createApi({
       invalidatesTags: (result, error, { groupId, memberId }) => [
         { type: 'ChitGroup', id: groupId },
         { type: 'ChitPayments', id: memberId },
-        'ChitSummary', 'Incentives', 'IncentiveWallet',
+        'ChitSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
       ],
     }),
 
     getChitMemberPayments: builder.query({
-      query: ({ groupId, memberId }) => `/chit/groups/${groupId}/members/${memberId}/payments`,
+      // Accepts { groupId, memberId } or { groupId, memberId, branchId }.
+      // branchId is appended as a query param so Management (null branchId on JWT)
+      // can fetch payments for any branch's member.
+      query: ({ groupId, memberId, branchId }) =>
+        `/chit/groups/${groupId}/members/${memberId}/payments${branchId ? `?branchId=${branchId}` : ''}`,
       transformResponse: (response) => response.data,
       providesTags: (result, error, { memberId }) => [{ type: 'ChitPayments', id: memberId }],
     }),
@@ -1037,6 +1157,54 @@ export const apiSlice = createApi({
       invalidatesTags: (result, error, { groupId }) => [{ type: 'ChitGroup', id: groupId }],
     }),
 
+    correctChitMember: builder.mutation({
+      query: ({ groupId, memberId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/correct`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    correctChitPayment: builder.mutation({
+      query: ({ groupId, memberId, paymentId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/payments/${paymentId}/correct`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'ChitPayments', 'SchemeBranchEntries',
+      ],
+    }),
+
+    unpayChitPayment: builder.mutation({
+      query: ({ groupId, memberId, paymentId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/payments/${paymentId}/unpay`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'ChitPayments', 'SchemeBranchEntries',
+      ],
+    }),
+
+    voidChitMember: builder.mutation({
+      query: ({ groupId, memberId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/void`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
     // ─── Head-branch chit operations ───
     getChitAwaitingCombine: builder.query({
       query: () => '/chit/groups/awaiting-combine',
@@ -1070,6 +1238,64 @@ export const apiSlice = createApi({
       query: () => '/builders/packages',
       transformResponse: (response) => response.data,
       providesTags: ['BuildersPackages'],
+    }),
+
+    updateBuildersPackage: builder.mutation({
+      query: ({ packageNumber, ...data }) => ({
+        url: `/builders/packages/${packageNumber}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['BuildersPackages'],
+    }),
+
+    getChitPackages: builder.query({
+      query: () => '/chit/packages',
+      transformResponse: (response) => response.data,
+      providesTags: ['ChitPackages'],
+    }),
+
+    updateChitPackage: builder.mutation({
+      query: ({ packageNumber, ...data }) => ({
+        url: `/chit/packages/${packageNumber}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['ChitPackages'],
+    }),
+
+    getAllGoldCoinPackages: builder.query({
+      query: () => '/gold-coin/packages/all',
+      transformResponse: (response) => response.data,
+      providesTags: ['GoldCoinPackages'],
+    }),
+
+    updateGoldCoinPackage: builder.mutation({
+      query: ({ id, ...data }) => ({
+        url: `/gold-coin/packages/${id}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinPackages'],
+    }),
+
+    getAllLssPlans: builder.query({
+      query: () => '/lss/plans/all',
+      transformResponse: (response) => response.data,
+      providesTags: ['LssPlans'],
+    }),
+
+    updateLssPlan: builder.mutation({
+      query: ({ id, ...data }) => ({
+        url: `/lss/plans/${id}`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssPlans'],
     }),
 
     getBuildersIncentiveRules: builder.query({
@@ -1124,9 +1350,15 @@ export const apiSlice = createApi({
     }),
 
     getBuildersPayouts: builder.query({
-      query: (planId) => `/builders/plans/${planId}/payouts`,
+      // Accepts either a plain planId string (existing pages) or { planId, branchId }
+      // (SchemeCorrectionsPage, where Management passes branchId as a query param).
+      query: (arg) => {
+        const planId   = typeof arg === 'string' ? arg : arg.planId;
+        const branchId = arg?.branchId;
+        return `/builders/plans/${planId}/payouts${branchId ? `?branchId=${branchId}` : ''}`;
+      },
       transformResponse: (response) => response.data,
-      providesTags: (result, error, planId) => [{ type: 'BuildersPayouts', id: planId }],
+      providesTags: (result, error, arg) => [{ type: 'BuildersPayouts', id: typeof arg === 'string' ? arg : arg.planId }],
     }),
 
     recordBuildersPayout: builder.mutation({
@@ -1142,7 +1374,7 @@ export const apiSlice = createApi({
         { type: 'BuildersPlan', id: planId },
         { type: 'BuildersPayouts', id: planId },
         'BuildersPlans', 'BuildersSummary',
-        'Incentives', 'IncentiveWallet',
+        'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
       ],
     }),
 
@@ -1168,6 +1400,60 @@ export const apiSlice = createApi({
       invalidatesTags: (result, error, planId) => [
         { type: 'BuildersPlan', id: planId },
         'BuildersPlans', 'BuildersSummary',
+      ],
+    }),
+
+    correctBuildersPlan: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/correct`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary', 'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    correctBuildersPayout: builder.mutation({
+      query: ({ planId, payoutId, ...data }) => ({
+        url: `/builders/plans/${planId}/payouts/${payoutId}/correct`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        { type: 'BuildersPayouts', id: planId },
+        'BuildersSummary', 'Incentives', 'IncentiveWallet',
+      ],
+    }),
+
+    unpayBuildersPayout: builder.mutation({
+      query: ({ planId, payoutId, ...data }) => ({
+        url: `/builders/plans/${planId}/payouts/${payoutId}/unpay`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        { type: 'BuildersPayouts', id: planId },
+        'BuildersSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    voidBuildersPlan: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/void`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
       ],
     }),
 
@@ -1212,6 +1498,75 @@ export const apiSlice = createApi({
       ],
     }),
 
+    // ─── Land Layouts ───
+    getLandSiteLayouts: builder.query({
+      query: (siteId) => `/land/sites/${siteId}/layouts`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, siteId) => [{ type: 'LandLayouts', id: siteId }],
+    }),
+
+    createLandLayout: builder.mutation({
+      query: ({ siteId, ...data }) => ({ url: `/land/sites/${siteId}/layouts`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId }) => [
+        { type: 'LandLayouts', id: siteId }, { type: 'LandSite', id: siteId },
+        'LandSites', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    getLandLayout: builder.query({
+      query: (layoutId) => `/land/layouts/${layoutId}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, layoutId) => [{ type: 'LandLayout', id: layoutId }],
+    }),
+
+    updateLandLayout: builder.mutation({
+      query: ({ layoutId, ...data }) => ({ url: `/land/layouts/${layoutId}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { layoutId, siteId }) => [
+        { type: 'LandLayout', id: layoutId },
+        siteId ? { type: 'LandLayouts', id: siteId } : 'LandSites',
+        'LandSites', 'LandDashboard',
+      ],
+    }),
+
+    createLandLayoutPlot: builder.mutation({
+      query: ({ layoutId, ...data }) => ({ url: `/land/layouts/${layoutId}/plots`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { layoutId }) => [
+        { type: 'LandLayout', id: layoutId }, 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    getLandLayoutCommissionRules: builder.query({
+      query: (layoutId) => `/land/layouts/${layoutId}/commission-rules`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, layoutId) => [{ type: 'LandCommissionRules', id: layoutId }],
+    }),
+
+    updateLandLayoutCommissionRule: builder.mutation({
+      query: ({ layoutId, ...data }) => ({
+        url: `/land/layouts/${layoutId}/commission-rules`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { layoutId }) => [
+        { type: 'LandCommissionRules', id: layoutId },
+        { type: 'LandLayout', id: layoutId },
+      ],
+    }),
+
+    getLandEmployees: builder.query({
+      // Accepts either a branchId string (for branch_admin) or { branchId } for Management.
+      query: (arg) => {
+        const branchId = typeof arg === 'string' ? arg : arg?.branchId;
+        return `/land/employees${branchId ? `?branchId=${branchId}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['LandEmployees'],
+    }),
+
     createLandPlot: builder.mutation({
       query: ({ siteId, ...data }) => ({ url: `/land/sites/${siteId}/plots`, method: 'POST', body: data }),
       transformResponse: (response) => response.data,
@@ -1223,10 +1578,10 @@ export const apiSlice = createApi({
     getLandPlots: builder.query({
       query: (params = {}) => {
         const qs = new URLSearchParams();
-        if (params.status) qs.set('status', params.status);
-        if (params.siteId) qs.set('siteId', params.siteId);
-        if (params.page)   qs.set('page',   String(params.page));
-        if (params.limit)  qs.set('limit',  String(params.limit));
+        if (params.status)   qs.set('status',   params.status);
+        if (params.layoutId) qs.set('layoutId', params.layoutId);
+        if (params.page)     qs.set('page',     String(params.page));
+        if (params.limit)    qs.set('limit',    String(params.limit));
         const q = qs.toString();
         return `/land/plots${q ? `?${q}` : ''}`;
       },
@@ -1321,6 +1676,33 @@ export const apiSlice = createApi({
         'LandBookings', 'LandDashboard',
       ],
     }),
+
+    correctLandBooking: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/correct`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'SchemeBranchEntries',
+      ],
+    }),
+
+    voidLandBooking: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'LandSites', 'SchemeBranchEntries',
+      ],
+    }),
+
+    getSchemeAuditLog: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => { if (v) qs.set(k, String(v)); });
+        const q = qs.toString();
+        return `/schemes/audit${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['SchemeBranchEntries'],
+    }),
   }),
 });
 
@@ -1389,10 +1771,15 @@ export const {
   useGetGoldSummaryQuery,
   useGetGoldPaymentsQuery,
   useAddGoldPaymentMutation,
+  useCorrectGoldMemberMutation,
+  useCorrectGoldPaymentMutation,
+  useVoidGoldMemberMutation,
   useGetTradingMembersQuery,
   useGetTradingSummaryQuery,
   useGetTradingEmployeesQuery,
   useAddTradingMemberMutation,
+  useCorrectTradingMemberMutation,
+  useVoidTradingMemberMutation,
   useGetGoldCoinPackagesQuery,
   useGetGoldCoinRoomsQuery,
   useGetGoldCoinRoomQuery,
@@ -1451,6 +1838,13 @@ export const {
   useCombineChitGroupsMutation,
   useExpireChitGroupMutation,
   useGetBuildersPackagesQuery,
+  useUpdateBuildersPackageMutation,
+  useGetChitPackagesQuery,
+  useUpdateChitPackageMutation,
+  useGetAllGoldCoinPackagesQuery,
+  useUpdateGoldCoinPackageMutation,
+  useGetAllLssPlansQuery,
+  useUpdateLssPlanMutation,
   useGetBuildersIncentiveRulesQuery,
   useUpdateBuildersIncentiveRuleMutation,
   useGetLandDashboardQuery,
@@ -1458,6 +1852,14 @@ export const {
   useCreateLandSiteMutation,
   useGetLandSiteQuery,
   useUpdateLandSiteMutation,
+  useGetLandSiteLayoutsQuery,
+  useCreateLandLayoutMutation,
+  useGetLandLayoutQuery,
+  useUpdateLandLayoutMutation,
+  useCreateLandLayoutPlotMutation,
+  useGetLandLayoutCommissionRulesQuery,
+  useUpdateLandLayoutCommissionRuleMutation,
+  useGetLandEmployeesQuery,
   useCreateLandPlotMutation,
   useGetLandPlotsQuery,
   useUpdateLandPlotMutation,
@@ -1478,4 +1880,24 @@ export const {
   useRecordBuildersPayoutMutation,
   useChooseBuildersRewardMutation,
   useCompleteBuildersPlanMutation,
+  useCorrectBuildersPlanMutation,
+  useCorrectBuildersPayoutMutation,
+  useUnpayBuildersPayoutMutation,
+  useVoidBuildersPlanMutation,
+  useCorrectChitMemberMutation,
+  useCorrectChitPaymentMutation,
+  useUnpayChitPaymentMutation,
+  useVoidChitMemberMutation,
+  useCorrectGoldCoinSlotMutation,
+  useVoidGoldCoinSlotMutation,
+  useVoidGoldCoinRoomMutation,
+  useRemoveGoldCoinSlotMutation,
+  useCorrectLssSlotMutation,
+  useVoidLssSlotMutation,
+  useVoidLssRoomMutation,
+  useRemoveLssSlotMutation,
+  useUnpayGoldPaymentMutation,
+  useCorrectLandBookingMutation,
+  useVoidLandBookingMutation,
+  useGetSchemeAuditLogQuery,
 } = apiSlice;

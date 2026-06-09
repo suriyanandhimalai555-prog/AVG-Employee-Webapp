@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { assertCanManageSchemeData } from '../../shared/permissions';
 import { BuildersService } from './builders.service';
 import { BuildersIncentivesService } from './builders-incentives.service';
 import {
@@ -11,6 +12,9 @@ import {
   GetBuildersPlansQuerySchema,
   GetBuildersSummaryQuerySchema,
   UpdateBuildersIncentiveRuleSchema,
+  UpdateBuildersPackageSchema,
+  CorrectBuildersPlanSchema,
+  CorrectBuildersPayoutSchema,
 } from './builders.schema';
 
 interface AuthUser { id: string; role: string; branchId: string; }
@@ -19,25 +23,40 @@ interface AuthRequest extends FastifyRequest { user: AuthUser; }
 
 // O(1) role checks — same pattern as gold/chit route files
 const READER_ROLES        = new Set<string>(READER_LIST);
-const WRITER_ROLE: string = Role.BRANCH_ADMIN;
+const WRITER_ROLES        = new Set<string>(SCHEME_WRITER_ROLES);
+// TS: import CONFIG_ROLES here to avoid circular-import issues with the shared module
+const CONFIG_ROLES_SET    = new Set<string>([Role.MD, Role.DIRECTOR, 'management']);
 // Roles that see only enrollments they personally referred (not the full branch list)
 const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 
 export default async function buildersRoutes(fastify: FastifyInstance): Promise<void> {
 
   // ─── GET /builders/packages ───
-  // Returns the 6 fixed packages so the frontend can build the enrollment form
-  // and the packages reference table without a separate data fetch.
-  fastify.get('/packages', {
-    onRequest: [fastify.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const req = request as AuthRequest;
-      if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
-      const data = BuildersService.getPackages();
-      return reply.send({ success: true, data });
-    } catch (error) { return handleError(error, reply); }
-  });
+  fastify.get('/packages', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        // TS: now reads from DB (migration 057), falls back to hardcoded object
+        const data = await BuildersService.getPackages(fastify.db);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/packages/:number — config roles ───
+  fastify.patch('/packages/:number', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!CONFIG_ROLES_SET.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const num  = parseInt((req.params as any).number, 10);
+        const body = UpdateBuildersPackageSchema.parse(req.body);
+        const data = await BuildersService.updatePackage(fastify.db, num, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 
   // ─── GET /builders/summary ───
   fastify.get('/summary', {
@@ -76,9 +95,10 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req  = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can create plans');
-      const body = CreateBuildersPlanSchema.parse(req.body);
-      const data = await BuildersService.createPlan(fastify.db, req.user.id, req.user.branchId, body);
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can create plans');
+      const body     = CreateBuildersPlanSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await BuildersService.createPlan(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -97,6 +117,7 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   });
 
   // ─── GET /builders/plans/:id/payouts ───
+  // Management has no branchId on their JWT; they pass it as ?branchId= query param.
   fastify.get('/plans/:id/payouts', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -104,7 +125,9 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       const req    = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const { id } = req.params as { id: string };
-      const data   = await BuildersService.getPayouts(fastify.db, id, req.user.branchId);
+      // TS: resolveReadBranch handles null branchId for md/management via query param
+      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      const data   = await BuildersService.getPayouts(fastify.db, id, branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -115,10 +138,11 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req    = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can record payouts');
-      const { id } = req.params as { id: string };
-      const body   = RecordBuildersPayoutSchema.parse(req.body);
-      const data   = await BuildersService.recordPayout(fastify.db, req.user.id, id, req.user.branchId, body);
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payouts');
+      const { id }   = req.params as { id: string };
+      const body     = RecordBuildersPayoutSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data   = await BuildersService.recordPayout(fastify.db, req.user.id, id, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -130,10 +154,11 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req    = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can record reward choice');
-      const { id } = req.params as { id: string };
-      const body   = ChooseRewardSchema.parse(req.body);
-      const data   = await BuildersService.chooseReward(fastify.db, req.user.id, id, req.user.branchId, body);
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record reward choice');
+      const { id }   = req.params as { id: string };
+      const body     = ChooseRewardSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data   = await BuildersService.chooseReward(fastify.db, req.user.id, id, branchId, body);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -153,12 +178,14 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   );
 
   // ─── PATCH /builders/incentive-rules ───
-  // Updates a single cell in the matrix. MD only.
+  // Updates a single cell in the matrix. MD and Management.
   fastify.patch('/incentive-rules', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req  = request as AuthRequest;
-        if (req.user.role !== Role.MD) throw new ForbiddenError('Only MD can update incentive rules');
+        if (req.user.role !== Role.MD && req.user.role !== Role.MANAGEMENT) {
+          throw new ForbiddenError('Only MD or Management can update incentive rules');
+        }
         const body = UpdateBuildersIncentiveRuleSchema.parse(req.body);
         const data = await BuildersIncentivesService.updateRule(fastify.db, req.user.id, body);
         return reply.send({ success: true, data });
@@ -174,10 +201,75 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req    = request as AuthRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can complete plans');
-      const { id } = req.params as { id: string };
-      const data   = await BuildersService.completePlan(fastify.db, req.user.id, id, req.user.branchId);
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can complete plans');
+      const { id }   = req.params as { id: string };
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (req.body as any)?.branchId);
+      const data   = await BuildersService.completePlan(fastify.db, req.user.id, id, branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
+
+  // ─── PATCH /builders/plans/:id/correct — MD / Management: correct a plan ───
+  fastify.patch('/plans/:id/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const body   = CorrectBuildersPlanSchema.parse(req.body);
+        const plan   = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? (body as any).branchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, (body as any).branchId);
+        const data = await BuildersService.correctPlan(fastify.db, req.user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/plans/:id/payouts/:payoutId/correct ───
+  fastify.patch('/plans/:id/payouts/:payoutId/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id, payoutId } = req.params as { id: string; payoutId: string };
+        const body   = CorrectBuildersPayoutSchema.parse(req.body);
+        const plan   = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? (body as any).branchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, (body as any).branchId);
+        const data = await BuildersService.correctPayout(fastify.db, req.user.id, id, payoutId, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/plans/:id/payouts/:payoutId/unpay — delete payout + claw back incentive ───
+  fastify.patch('/plans/:id/payouts/:payoutId/unpay', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id, payoutId } = req.params as { id: string; payoutId: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const plan = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, bodyBranchId);
+        const data = await BuildersService.unpayPayout(fastify.db, req.user.id, id, payoutId, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/plans/:id/void — soft-void a plan ───
+  fastify.patch('/plans/:id/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const plan = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, bodyBranchId);
+        const data = await BuildersService.voidPlan(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

@@ -1,11 +1,15 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { IncentiveService } from '../incentives/incentives.service';
+import { runInTransaction } from '../../shared/transaction-helper';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
   UpdateGoldMemberStatus,
   AddGoldPaymentInput,
+  CorrectGoldMemberInput,
+  CorrectGoldPaymentInput,
 } from './gold.schema';
 
 // Stable project code for gold — set once at creation, never changes even if the
@@ -450,6 +454,315 @@ export const GoldService = {
       collected:  parseFloat(r.collected),
       commission: commByBranch.get(r.branch_id) ?? 0,
     }));
+  },
+
+  // ─── CORRECT MEMBER (admin: MD / Management) ────────────────────────────────
+  // Patches one or more editable fields on an existing member. When referrerId
+  // or monthlyAmount changes, the enrollment incentive is reversed and re-issued
+  // so the wallet always reflects the correct value and date.
+  async correctMember(
+    db: Pool,
+    correctedBy: string,
+    id: string,
+    branchId: string,
+    payload: CorrectGoldMemberInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Load the record; 404 if it doesn't exist in this branch
+      const before = await client.query(
+        `SELECT g.*, c.name AS customer_name
+         FROM gold_scheme_members g
+         JOIN customers c ON g.customer_id = c.id
+         WHERE g.id = $1 AND g.branch_id = $2`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Gold member not found');
+      const old = before.rows[0];
+
+      // Build dynamic SET clause from whatever fields are supplied
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+
+      if (payload.chitNumber   != null) { fields.push(`chit_number = $${idx++}`);     vals.push(payload.chitNumber); }
+      if (payload.customerId   != null) { fields.push(`customer_id = $${idx++}`);     vals.push(payload.customerId); }
+      if (payload.monthlyAmount != null) { fields.push(`monthly_amount = $${idx++}`); vals.push(payload.monthlyAmount); }
+      if (payload.startDate    != null) { fields.push(`start_date = $${idx++}`);      vals.push(payload.startDate); }
+      if (payload.totalMonths  != null) { fields.push(`total_months = $${idx++}`);    vals.push(payload.totalMonths); }
+      if (payload.notes !== undefined)  { fields.push(`notes = $${idx++}`);           vals.push(payload.notes); }
+
+      // Handle referrerId + denormalized referrer_name together
+      if (payload.referrerId !== undefined) {
+        if (payload.referrerId) {
+          const ref = await client.query('SELECT name, role FROM users WHERE id = $1', [payload.referrerId]);
+          if (ref.rows.length === 0) throw new NotFoundError('Referrer not found');
+          const { name, role } = ref.rows[0];
+          fields.push(`referrer_id = $${idx++}`);   vals.push(payload.referrerId);
+          fields.push(`referrer_name = $${idx++}`); vals.push(`${name} ${role.toUpperCase().replace(/_/g, ' ')}`);
+        } else {
+          // null clears the referrer
+          fields.push(`referrer_id = $${idx++}`);   vals.push(null);
+          fields.push(`referrer_name = $${idx++}`); vals.push(null);
+        }
+      }
+
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(id, branchId);
+      const updated = await client.query(
+        `UPDATE gold_scheme_members SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      // Determine whether the enrollment incentive needs to be recalculated.
+      // This fires when amount or referrer changed.
+      const amountChanged   = payload.monthlyAmount != null && parseFloat(payload.monthlyAmount.toString()) !== parseFloat(old.monthly_amount);
+      const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const effectiveReferrerId = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+      const effectiveDate = payload.startDate ?? old.start_date;
+      const effectiveAmount = payload.monthlyAmount ?? parseFloat(old.monthly_amount);
+
+      if ((amountChanged || referrerChanged) && effectiveReferrerId) {
+        // Reverse only enrollment incentives for this member; renewal rows stay
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode: GOLD_PROJECT_CODE,
+          sourceId:   id,
+          paymentEvent: 'enrollment',
+        });
+        // Re-issue with corrected amount and business date
+        const customerName = payload.customerId ? '' : old.customer_name;
+        await IncentiveService.distributeIncentives(client, {
+          schemeCode:        GOLD_PROJECT_CODE,
+          dealMakerUserId:   effectiveReferrerId,
+          mode:              'percent_referrer',
+          percentRole:       'referrer_new',
+          baseAmount:        parseFloat(effectiveAmount.toString()),
+          paymentEvent:      'enrollment',
+          sourceId:          id,
+          sourceDescription: `Gold enrollment (corrected): Chit ${old.chit_number}`,
+          creditedBy:        correctedBy,
+          effectiveDate,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── CORRECT PAYMENT (admin: MD / Management) ────────────────────────────────
+  // Patches an existing payment row. When amount, referrerId, or paidDate changes
+  // the renewal incentive is reversed and re-issued with the corrected values.
+  async correctPayment(
+    db: Pool,
+    correctedBy: string,
+    memberId: string,
+    paymentId: string,
+    branchId: string,
+    payload: CorrectGoldPaymentInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Verify branch ownership + load context
+      const memberRow = await client.query(
+        `SELECT g.referrer_id, g.chit_number, g.total_months, c.name AS customer_name
+         FROM gold_scheme_members g
+         JOIN customers c ON g.customer_id = c.id
+         WHERE g.id = $1 AND g.branch_id = $2`,
+        [memberId, branchId]
+      );
+      if (memberRow.rows.length === 0) throw new NotFoundError('Member not found');
+      const member = memberRow.rows[0];
+
+      const payRow = await client.query(
+        `SELECT * FROM gold_scheme_payments WHERE id = $1 AND member_id = $2`,
+        [paymentId, memberId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payment not found');
+      const old = payRow.rows[0];
+
+      // Dynamic UPDATE
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.monthNumber != null)  { fields.push(`month_number = $${idx++}`);  vals.push(payload.monthNumber); }
+      if (payload.paidDate    != null)  { fields.push(`paid_date = $${idx++}`);     vals.push(payload.paidDate); }
+      if (payload.amount      != null)  { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
+      if (payload.paymentMode != null)  { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
+      if (payload.notes !== undefined)  { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(paymentId, memberId);
+      const updated = await client.query(
+        `UPDATE gold_scheme_payments SET ${fields.join(', ')} WHERE id = $${idx} AND member_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      // Recalculate renewal incentive when amount or paidDate changed and month > 1
+      const effectiveMonth = payload.monthNumber ?? parseInt(old.month_number, 10);
+      const amountChanged  = payload.amount != null && parseFloat(payload.amount.toString()) !== parseFloat(old.amount);
+      const dateChanged    = payload.paidDate != null && payload.paidDate !== old.paid_date;
+      const effectiveDate  = payload.paidDate ?? old.paid_date;
+      const effectiveAmount = payload.amount != null ? payload.amount : parseFloat(old.amount);
+
+      if (effectiveMonth > 1 && member.referrer_id && (amountChanged || dateChanged)) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   GOLD_PROJECT_CODE,
+          sourceId:     memberId,
+          paymentEvent: 'renewal',
+        });
+        await IncentiveService.distributeIncentives(client, {
+          schemeCode:        GOLD_PROJECT_CODE,
+          dealMakerUserId:   member.referrer_id,
+          mode:              'percent_referrer',
+          percentRole:       'referrer_renewal',
+          baseAmount:        parseFloat(effectiveAmount.toString()),
+          paymentEvent:      'renewal',
+          sourceId:          memberId,
+          sourceDescription: `Gold M${effectiveMonth} payment (corrected): ${member.customer_name} – Chit ${member.chit_number}`,
+          creditedBy:        correctedBy,
+          effectiveDate,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        entityType: 'payment',
+        entityId:   paymentId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID MEMBER (admin: MD / Management) ────────────────────────────────
+  // Soft-voids a gold member: marks status='voided', claws back ALL incentives
+  // for this member (enrollment + renewals), and writes an audit row.
+  async voidMember(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM gold_scheme_members WHERE id = $1 AND branch_id = $2`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Gold member not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Member is already voided');
+
+      await client.query(
+        `UPDATE gold_scheme_members SET status = 'voided' WHERE id = $1`,
+        [id]
+      );
+
+      // Claw back all incentives for this member (all payment events)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        sourceId:   id,
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── UNPAY PAYMENT (admin: MD / Management) ─────────────────────────────
+  // Deletes a single recorded payment and claws back only that payment's
+  // incentive (renewal event). Does not touch other payments.
+  async unpayPayment(
+    db: Pool,
+    actorId: string,
+    memberId: string,
+    paymentId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const memberRow = await client.query(
+        `SELECT g.referrer_id, g.chit_number, c.name AS customer_name
+         FROM gold_scheme_members g
+         JOIN customers c ON g.customer_id = c.id
+         WHERE g.id = $1 AND g.branch_id = $2`,
+        [memberId, branchId]
+      );
+      if (memberRow.rows.length === 0) throw new NotFoundError('Member not found');
+
+      const payRow = await client.query(
+        `SELECT * FROM gold_scheme_payments WHERE id = $1 AND member_id = $2`,
+        [paymentId, memberId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payment not found');
+      const old = payRow.rows[0];
+
+      await client.query(
+        `DELETE FROM gold_scheme_payments WHERE id = $1`,
+        [paymentId]
+      );
+
+      // Reverse only this payment's renewal incentive so other months are untouched.
+      // We delete by source_id=memberId AND payment_event='renewal' only, then re-credit
+      // the remaining renewal payments to avoid leaving a gap.
+      // Simpler approach: reverse all renewals then re-distribute from remaining payments.
+      if (memberRow.rows[0].referrer_id) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   GOLD_PROJECT_CODE,
+          sourceId:     memberId,
+          paymentEvent: 'renewal',
+        });
+        // Re-credit all remaining renewal payments
+        const remaining = await client.query(
+          `SELECT * FROM gold_scheme_payments WHERE member_id = $1 AND month_number > 1 ORDER BY month_number`,
+          [memberId]
+        );
+        for (const pay of remaining.rows) {
+          await IncentiveService.distributeIncentives(client, {
+            schemeCode:        GOLD_PROJECT_CODE,
+            dealMakerUserId:   memberRow.rows[0].referrer_id,
+            mode:              'percent_referrer',
+            percentRole:       'referrer_renewal',
+            baseAmount:        parseFloat(pay.amount),
+            paymentEvent:      'renewal',
+            sourceId:          memberId,
+            sourceDescription: `Gold M${pay.month_number} (re-issued after unpay): ${memberRow.rows[0].customer_name}`,
+            creditedBy:        actorId,
+            effectiveDate:     pay.paid_date,
+          });
+        }
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        entityType: 'payment',
+        entityId:   paymentId,
+        actorId,
+        action:     'unpay',
+        oldValues:  old,
+      });
+
+      return old;
+    });
   },
 
   // ─── ADMIN DRILL-DOWN: members in a single branch for the dashboard ──────

@@ -5,22 +5,45 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
 export const CreateLandSiteSchema = z.object({
-  name:         z.string().min(1).max(200),
-  layoutName:   z.string().max(200).optional(),
-  location:     z.string().max(500).optional(),
-  address:      z.string().max(1000).optional(),
-  state:        z.string().max(100).optional(),
-  loanEnabled:  z.boolean().default(false),
+  name:        z.string().min(1).max(200),
+  location:    z.string().max(500).optional(),
+  address:     z.string().max(1000).optional(),
+  state:       z.string().max(100).optional(),
+  loanEnabled: z.boolean().default(false),
 });
 
 export const UpdateLandSiteSchema = z.object({
-  name:         z.string().min(1).max(200).optional(),
-  layoutName:   z.string().max(200).optional(),
-  location:     z.string().max(500).optional(),
-  address:      z.string().max(1000).optional(),
-  state:        z.string().max(100).optional(),
-  loanEnabled:  z.boolean().optional(),
-  status:       z.enum(['active', 'inactive']).optional(),
+  name:        z.string().min(1).max(200).optional(),
+  location:    z.string().max(500).optional(),
+  address:     z.string().max(1000).optional(),
+  state:       z.string().max(100).optional(),
+  loanEnabled: z.boolean().optional(),
+  status:      z.enum(['active', 'inactive']).optional(),
+});
+
+// ─── Layouts ─────────────────────────────────────────────────────────────────
+
+export const CreateLandLayoutSchema = z.object({
+  layoutName:           z.string().max(200).optional(),
+  locationDetail:       z.string().max(1000).optional(),
+  plotPrice:            z.number().positive().optional(),
+  plotSizeSqft:         z.number().positive().optional(),
+  pricePerSqft:         z.number().positive().optional(),
+  buybackBonusMonthly:  z.number().min(0).optional(),
+  buybackMonths:        z.coerce.number().int().min(1).max(120).optional(),
+  incentiveType:        z.enum(['spot_incentive','spot_commission']).default('spot_commission'),
+});
+
+export const UpdateLandLayoutSchema = z.object({
+  layoutName:           z.string().max(200).optional(),
+  locationDetail:       z.string().max(1000).optional(),
+  plotPrice:            z.number().positive().optional(),
+  plotSizeSqft:         z.number().positive().optional(),
+  pricePerSqft:         z.number().positive().optional(),
+  buybackBonusMonthly:  z.number().min(0).optional(),
+  buybackMonths:        z.coerce.number().int().min(1).max(120).optional(),
+  incentiveType:        z.enum(['spot_incentive','spot_commission']).optional(),
+  status:               z.enum(['active','inactive']).optional(),
 });
 
 export const ListSitesQuerySchema = z.object({
@@ -59,7 +82,19 @@ export const CreateLandBookingSchema = z.object({
   plotId:      z.string().uuid(),
   paymentMode: z.enum(['full_payment', 'advance_full_payment']),
   bookingDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
+  referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(1000).optional(),
+});
+
+// ─── Commission rules (MD / Management only) ────────────────────────────────
+// monthly_months: null = no monthly commission for this role on this layout.
+export const LAND_COMMISSION_ROLES = ['sales_officer', 'abm', 'branch_manager', 'gm'] as const;
+
+export const UpdateLandCommissionRuleSchema = z.object({
+  role:          z.enum(LAND_COMMISSION_ROLES),
+  spotAmount:    z.number().min(0),
+  monthlyAmount: z.number().min(0),
+  monthlyMonths: z.number().int().min(1).max(120).nullable().optional(),
 });
 
 export const RecordAdvanceSchema = z.object({
@@ -104,9 +139,22 @@ export const ListAuditQuerySchema = z.object({
   limit:     z.coerce.number().min(1).max(200).default(50),
 });
 
+// ─── Booking correction (MD / Management only) ───────────────────────────────
+export const CorrectLandBookingSchema = z.object({
+  bookingRef:  z.string().min(1).max(50).optional(),
+  bookingDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  paymentMode: z.enum(['full_payment', 'advance_full_payment']).optional(),
+  notes:       z.string().max(1000).optional().nullable(),
+  branchId:    z.string().uuid().optional(),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
-export type CreateLandSiteInput    = z.infer<typeof CreateLandSiteSchema>;
-export type UpdateLandSiteInput    = z.infer<typeof UpdateLandSiteSchema>;
+export type CreateLandSiteInput           = z.infer<typeof CreateLandSiteSchema>;
+export type UpdateLandSiteInput           = z.infer<typeof UpdateLandSiteSchema>;
+export type CreateLandLayoutInput         = z.infer<typeof CreateLandLayoutSchema>;
+export type UpdateLandLayoutInput         = z.infer<typeof UpdateLandLayoutSchema>;
+export type CorrectLandBookingInput       = z.infer<typeof CorrectLandBookingSchema>;
+export type UpdateLandCommissionRuleInput = z.infer<typeof UpdateLandCommissionRuleSchema>;
 export type ListSitesQuery         = z.infer<typeof ListSitesQuerySchema>;
 export type CreateLandPlotInput    = z.infer<typeof CreateLandPlotSchema>;
 export type UpdateLandPlotInput    = z.infer<typeof UpdateLandPlotSchema>;

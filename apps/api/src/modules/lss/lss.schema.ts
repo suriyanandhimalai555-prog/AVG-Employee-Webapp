@@ -11,6 +11,7 @@ export const CreateSlotSchema = z.object({
   paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
+  branchId:    z.string().uuid().optional(),
 });
 
 // ─── Room activation ──────────────────────────────────────────────────────
@@ -43,6 +44,17 @@ export const ListRoomsQuerySchema = z.object({
   page:    z.coerce.number().min(1).default(1),
   limit:   z.coerce.number().min(1).max(200).default(50),
 });
+
+// Correction schema — MD / Management only (PATCH /lss/slots/:id/correct)
+// customerId lets the admin fix who the slot is attributed to.
+export const CorrectLssSlotSchema = z.object({
+  customerId:  z.string().uuid().optional(),
+  referrerId:  z.string().uuid().optional().nullable(),
+  notes:       z.string().max(500).optional().nullable(),
+  paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  branchId:    z.string().uuid().optional(),
+});
+export type CorrectLssSlotInput = z.infer<typeof CorrectLssSlotSchema>;
 
 export type CreateSlotInput   = z.infer<typeof CreateSlotSchema>;
 export type ActivateRoomInput = z.infer<typeof ActivateRoomSchema>;

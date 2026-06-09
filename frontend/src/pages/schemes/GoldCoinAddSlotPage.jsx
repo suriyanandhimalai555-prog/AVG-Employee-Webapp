@@ -18,6 +18,7 @@ import {
   useGetGoldEmployeesQuery,
 } from '../../store/api/apiSlice';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BranchPicker } from '../../components/BranchPicker';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -27,18 +28,20 @@ import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
-const WRITER_ROLES = new Set(['branch_admin', 'md', 'director']);
+const WRITER_ROLES = new Set(['branch_admin', 'management', 'md', 'director']);
 const QUANTITY_CHIPS = [1, 2, 4, 8];
 
 export const GoldCoinAddSlotPage = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const canWrite = WRITER_ROLES.has(user?.role);
+  const canWrite     = WRITER_ROLES.has(user?.role);
+  const isManagement = user?.role === 'management';
 
   const { data: packages = [], isLoading: pkgLoading } = useGetGoldCoinPackagesQuery();
   const { data: employees = [] }                       = useGetGoldEmployeesQuery();
   const [addSlot, { isLoading }] = useAddGoldCoinSlotMutation();
 
+  const [branchId,  setBranchId]  = useState('');
   const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     packageId:   '',
@@ -80,6 +83,7 @@ export const GoldCoinAddSlotPage = () => {
     if (effectiveQuantity < 1 || effectiveQuantity > 16) {
       setError('Quantity must be between 1 and 16.'); return;
     }
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
     try {
       const res = await addSlot({
         packageId:   form.packageId,
@@ -89,6 +93,7 @@ export const GoldCoinAddSlotPage = () => {
         paymentMode: form.paymentMode,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
+        branchId:    isManagement ? branchId : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -155,8 +160,15 @@ export const GoldCoinAddSlotPage = () => {
 
       <form onSubmit={handleSubmit} className="px-4 space-y-5">
 
+        {isManagement && (
+          <FormField label="Branch" required>
+            <BranchPicker value={branchId} onChange={setBranchId} />
+          </FormField>
+        )}
+
         <FormField label="Customer" required>
-          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)} />
+          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)}
+            branchId={isManagement ? branchId : undefined} />
         </FormField>
 
         <FormField label="Package" required>

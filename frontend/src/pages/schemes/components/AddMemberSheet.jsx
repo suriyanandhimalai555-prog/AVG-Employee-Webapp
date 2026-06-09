@@ -14,7 +14,9 @@ import { SuccessConfirmation } from './SuccessConfirmation';
 const SHEET_INPUT_CLASS =
   'w-full px-4 py-3 rounded-2xl border border-navy/10 text-navy text-sm font-medium focus:outline-none focus:border-indigo bg-white';
 
-export const AddMemberSheet = ({ onClose, employees }) => {
+// branchId — passed from TradingAcademyPage when user is management role;
+// forwarded to CustomerPicker so searches + creates are scoped to the right branch.
+export const AddMemberSheet = ({ onClose, employees, branchId }) => {
   const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     amount:         '',
@@ -41,6 +43,7 @@ export const AddMemberSheet = ({ onClose, employees }) => {
         enrollmentDate: form.enrollmentDate,
         paymentMode:    form.paymentMode,
         notes:          form.notes || undefined,
+        branchId:       branchId || undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -81,7 +84,8 @@ export const AddMemberSheet = ({ onClose, employees }) => {
         <label className="block text-[10px] font-bold uppercase tracking-widest text-navy/40 mb-1.5">
           Customer *
         </label>
-        <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)} />
+        <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)}
+          branchId={branchId} />
       </div>
 
       {/* Amount */}

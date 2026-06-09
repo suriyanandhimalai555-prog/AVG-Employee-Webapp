@@ -10,6 +10,8 @@ export const AddGoldMemberSchema = z.object({
   totalMonths:      z.number().int().min(1).max(60).default(12),
   firstPaymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:            z.string().max(1000).optional(),
+  // Passed by management role only — ignored for branch_admin (branchId from JWT)
+  branchId:         z.string().uuid().optional(),
 });
 
 // Schema for listing members — optional filters
@@ -30,7 +32,8 @@ export const GetGoldSummaryQuerySchema = z.object({
 });
 
 export const UpdateGoldMemberStatusSchema = z.object({
-  status: z.enum(['active', 'completed', 'withdrawn']),
+  status:   z.enum(['active', 'completed', 'withdrawn']),
+  branchId: z.string().uuid().optional(),
 });
 
 export const AddGoldPaymentSchema = z.object({
@@ -39,9 +42,36 @@ export const AddGoldPaymentSchema = z.object({
   amount:       z.number().positive(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:        z.string().max(500).optional(),
+  branchId:     z.string().uuid().optional(),
+});
+
+// Schema for correcting an existing gold member — all fields optional except branchId guard.
+// Only scheme-admin roles (MD / Management) call this via PATCH /gold/:id/correct.
+export const CorrectGoldMemberSchema = z.object({
+  chitNumber:    z.string().min(1).max(20).optional(),
+  customerId:    z.string().uuid().optional(),
+  referrerId:    z.string().uuid().optional(),
+  monthlyAmount: z.number().positive().max(10_000_000).optional(),
+  startDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  totalMonths:   z.number().int().min(1).max(60).optional(),
+  notes:         z.string().max(1000).optional().nullable(),
+  branchId:      z.string().uuid().optional(),  // required for management, auto for MD
+});
+
+// Schema for correcting an existing gold payment row.
+// Only scheme-admin roles call this via PATCH /gold/:memberId/payments/:paymentId/correct.
+export const CorrectGoldPaymentSchema = z.object({
+  monthNumber:  z.number().int().min(1).max(60).optional(),
+  paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  amount:       z.number().positive().optional(),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  notes:        z.string().max(500).optional().nullable(),
+  branchId:     z.string().uuid().optional(),
 });
 
 export type AddGoldMemberInput      = z.infer<typeof AddGoldMemberSchema>;
 export type GetGoldMembersQuery     = z.infer<typeof GetGoldMembersQuerySchema>;
 export type UpdateGoldMemberStatus  = z.infer<typeof UpdateGoldMemberStatusSchema>;
 export type AddGoldPaymentInput     = z.infer<typeof AddGoldPaymentSchema>;
+export type CorrectGoldMemberInput  = z.infer<typeof CorrectGoldMemberSchema>;
+export type CorrectGoldPaymentInput = z.infer<typeof CorrectGoldPaymentSchema>;

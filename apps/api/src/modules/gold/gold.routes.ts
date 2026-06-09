@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, hasRole } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, hasRole, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { assertCanManageSchemeData } from '../../shared/permissions';
 import { GoldService } from './gold.service';
 import {
   AddGoldMemberSchema,
@@ -9,6 +10,8 @@ import {
   GetGoldSummaryQuerySchema,
   UpdateGoldMemberStatusSchema,
   AddGoldPaymentSchema,
+  CorrectGoldMemberSchema,
+  CorrectGoldPaymentSchema,
 } from './gold.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
@@ -16,7 +19,7 @@ interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser;
 
 // Local Set wrappers around shared constants for O(1) membership checks
 const READER_ROLES = new Set<string>(READER_LIST);
-const WRITER_ROLE: string = Role.BRANCH_ADMIN;
+const WRITER_ROLES = new Set<string>(SCHEME_WRITER_ROLES);
 const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 
 export default async function goldRoutes(fastify: FastifyInstance): Promise<void> {
@@ -76,11 +79,12 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== WRITER_ROLE) {
-        throw new ForbiddenError('Only Branch Admin can add gold scheme members');
+      if (!WRITER_ROLES.has(req.user.role)) {
+        throw new ForbiddenError('Only Branch Admin or Management can add gold scheme members');
       }
-      const body = AddGoldMemberSchema.parse(req.body);
-      const data = await GoldService.addMember(fastify.db, req.user.id, req.user.branchId, body);
+      const body     = AddGoldMemberSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await GoldService.addMember(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -101,6 +105,7 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
   });
 
   // ─── GET /gold/:id/payments — list payments for a member ───
+  // Management has no branchId on their JWT; they pass it as ?branchId= query param.
   fastify.get('/:id/payments', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -108,7 +113,9 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthenticatedRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const { id } = req.params as { id: string };
-      const data = await GoldService.getPayments(fastify.db, id, req.user.branchId);
+      // TS: resolveReadBranch handles null branchId for md/management via query param
+      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      const data = await GoldService.getPayments(fastify.db, id, branchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -119,10 +126,11 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== WRITER_ROLE) throw new ForbiddenError('Only Branch Admin can record payments');
+      if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payments');
       const { id } = req.params as { id: string };
-      const body = AddGoldPaymentSchema.parse(req.body);
-      const data = await GoldService.addPayment(fastify.db, id, req.user.branchId, req.user.id, body);
+      const body     = AddGoldPaymentSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await GoldService.addPayment(fastify.db, id, branchId, req.user.id, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -133,13 +141,81 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== WRITER_ROLE) {
-        throw new ForbiddenError('Only Branch Admin can update member status');
+      if (!WRITER_ROLES.has(req.user.role)) {
+        throw new ForbiddenError('Only Branch Admin or Management can update member status');
       }
-      const { id } = req.params as { id: string };
-      const body = UpdateGoldMemberStatusSchema.parse(req.body);
-      const data = await GoldService.updateStatus(fastify.db, id, req.user.branchId, body);
+      const { id }   = req.params as { id: string };
+      const body     = UpdateGoldMemberStatusSchema.parse(req.body);
+      const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      const data = await GoldService.updateStatus(fastify.db, id, branchId, body);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
+
+  // ─── PATCH /gold/:id/correct — MD / Management: correct a member record ───
+  fastify.patch('/:id/correct', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: assertCanManageSchemeData throws 403 for any role other than md/management
+      assertCanManageSchemeData(req.user.role as any);
+      const { id } = req.params as { id: string };
+      const body   = CorrectGoldMemberSchema.parse(req.body);
+      // Load the record's branch from DB via the service (branchId comes from the record)
+      const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? (body as any).branchId ?? '');
+      const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, (body as any).branchId);
+      const data = await GoldService.correctMember(fastify.db, req.user.id, id, branchId, body);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── PATCH /gold/:id/payments/:paymentId/correct — correct a payment ───
+  fastify.patch('/:id/payments/:paymentId/correct', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      assertCanManageSchemeData(req.user.role as any);
+      const { id, paymentId } = req.params as { id: string; paymentId: string };
+      const body = CorrectGoldPaymentSchema.parse(req.body);
+      // Resolve the branch from the member record
+      const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? (body as any).branchId ?? '');
+      const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, (body as any).branchId);
+      const data = await GoldService.correctPayment(fastify.db, req.user.id, id, paymentId, branchId, body);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── PATCH /gold/:id/payments/:paymentId/unpay — delete payment + claw back incentive ───
+  fastify.patch('/:id/payments/:paymentId/unpay', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      assertCanManageSchemeData(req.user.role as any);
+      const { id, paymentId } = req.params as { id: string; paymentId: string };
+      const bodyBranchId = (req.body as any)?.branchId;
+      const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+      const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, bodyBranchId);
+      const data = await GoldService.unpayPayment(fastify.db, req.user.id, id, paymentId, branchId);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── PATCH /gold/:id/void — soft-void a member (and clawback incentives) ───
+  fastify.patch('/:id/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, bodyBranchId);
+        const data = await GoldService.voidMember(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

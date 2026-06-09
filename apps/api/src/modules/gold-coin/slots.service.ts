@@ -10,12 +10,13 @@
 // Total amount paid = quantity × payload.amountPaid (which must match
 // package.price). The slot's amount_paid column stores the PER-SLOT price.
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { IncentiveService } from '../incentives/incentives.service';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import { RoomsService, GC_SLOTS_PER_ROOM } from './rooms.service';
-import type { CreateSlotInput } from './gold-coin.schema';
+import type { CreateSlotInput, CorrectGoldCoinSlotInput } from './gold-coin.schema';
 
 const SCHEME_CODE = 'gold_coin_scheme';
 
@@ -151,8 +152,8 @@ export const SlotsService = {
   // Used by branch admins only; combine.refundRoom has its own path and skips this guard.
   async refundSlot(db: Pool, slotId: string, callerBranchId: string): Promise<void> {
     await runInTransaction(db, async (client) => {
-      const res = await client.query<{ status: string; room_id: string; branch_id: string }>(
-        `SELECT status, room_id, branch_id FROM gold_coin_slots WHERE id = $1 FOR UPDATE`,
+      const res = await client.query<{ status: string; room_id: string; branch_id: string; referrer_id: string | null }>(
+        `SELECT status, room_id, branch_id, referrer_id FROM gold_coin_slots WHERE id = $1 FOR UPDATE`,
         [slotId]
       );
       if (res.rows.length === 0) {
@@ -169,6 +170,176 @@ export const SlotsService = {
         `UPDATE gold_coin_slots SET status = 'refunded' WHERE id = $1`,
         [slotId]
       );
+      // Claw back the enrollment incentive that was credited for this batch
+      // (sourceId = first slot of the batch = slotId for single-slot purchases)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+    });
+  },
+
+  // ─── CORRECT SLOT (admin: MD / Management) ───────────────────────────────────
+  // Patches editable fields on a slot batch. When referrerId changes the enrollment
+  // incentive is reversed and re-distributed. sourceId is the first slot in the batch.
+  async correctSlot(
+    db: Pool,
+    correctedBy: string,
+    slotId: string,
+    branchId: string,
+    payload: CorrectGoldCoinSlotInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const beforeRes = await client.query(
+        `SELECT s.*, c.name AS customer_name, c.customer_code, pkg.name AS pkg_name,
+                s.amount_paid * (SELECT COUNT(*) FROM gold_coin_slots WHERE room_id = s.room_id AND customer_id = s.customer_id) AS total_amount
+         FROM gold_coin_slots s
+         JOIN customers c ON c.id = s.customer_id
+         JOIN gold_coin_packages pkg ON pkg.id = s.package_id
+         WHERE s.id = $1 AND s.branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (beforeRes.rows.length === 0) throw new NotFoundError('Slot not found');
+      const old = beforeRes.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.notes      !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
+      if (payload.paymentMode != null)      { fields.push(`payment_mode = $${idx++}`); vals.push(payload.paymentMode); }
+      if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
+      // TS: customerId allows admin to re-assign slot to correct customer
+      if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`);  vals.push(payload.customerId); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(slotId);
+      const updated = await client.query(
+        `UPDATE gold_coin_slots SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+
+      const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+
+      if (referrerChanged) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     slotId,
+          paymentEvent: 'enrollment',
+        });
+        if (effectiveReferrer) {
+          const totalAmount = parseFloat(old.total_amount ?? old.amount_paid);
+          await IncentiveService.distributeIncentives(client, {
+            schemeCode:        SCHEME_CODE,
+            dealMakerUserId:   effectiveReferrer,
+            mode:              'percent_referrer',
+            percentRole:       'referrer_direct',
+            baseAmount:        totalAmount,
+            paymentEvent:      'enrollment',
+            sourceId:          slotId,
+            sourceDescription: `Gold Coin (corrected) — ${old.customer_name} (${old.customer_code})`,
+            creditedBy:        correctedBy,
+          });
+        }
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID SLOT (admin: MD / Management) ─────────────────────────────────────
+  async voidSlot(
+    db: Pool,
+    actorId: string,
+    slotId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM gold_coin_slots WHERE id = $1 AND branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Slot not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Slot is already voided');
+
+      await client.query(
+        `UPDATE gold_coin_slots SET status = 'voided' WHERE id = $1`,
+        [slotId]
+      );
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── REMOVE SLOT (admin: MD / Management) ───────────────────────────────────
+  // Refunds a slot from inside a room and reverses its enrollment incentive.
+  // Available for any non-completed, non-voided slot (stricter than voidSlot
+  // which only handles non-voided). Frees the room seat.
+  async removeSlot(
+    db: Pool,
+    actorId: string,
+    slotId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT s.*, r.status AS room_status
+         FROM gold_coin_slots s
+         JOIN gold_coin_rooms r ON r.id = s.room_id
+         WHERE s.id = $1 AND s.branch_id = $2`,
+        [slotId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Slot not found');
+      const old = before.rows[0];
+      if (old.status === 'refunded' || old.status === 'voided') {
+        throw new ValidationError('Slot is already removed or voided');
+      }
+
+      await client.query(`UPDATE gold_coin_slots SET status = 'refunded' WHERE id = $1`, [slotId]);
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     slotId,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId,
+        action:     'remove',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'refunded' };
     });
   },
 

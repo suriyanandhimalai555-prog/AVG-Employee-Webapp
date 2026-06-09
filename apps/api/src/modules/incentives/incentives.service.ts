@@ -26,7 +26,10 @@ export interface DistributeArgs {
   sourceDescription: string;
   creditedBy:        string;
   sourceId?:         string;
-  paymentEvent?:     'enrollment' | 'renewal';
+  paymentEvent?:     'enrollment' | 'renewal' | 'monthly';
+  // When supplied the incentive row is dated to this business date instead of
+  // now() — enables past-data entry to land in the correct wallet period.
+  effectiveDate?:    string;                      // 'YYYY-MM-DD'
   // percent_referrer only
   baseAmount?:       number;
   percentRole?:      string;                      // e.g. 'referrer_new' | 'referrer_renewal'
@@ -234,11 +237,14 @@ export const IncentiveService = {
 
     const created: any[] = [];
     for (const r of recipients) {
+      // TS: when effectiveDate is supplied, override created_at so wallet period
+      // filtering shows the credit in the correct historical period, not today.
       const insertResult = await db.query(
         `INSERT INTO employee_incentives
            (user_id, amount, source_type, scheme_code, payment_event,
-            source_id, source_description, credited_by)
-         VALUES ($1, $2, 'scheme', $3, $4, $5, $6, $7)
+            source_id, source_description, credited_by, created_at)
+         VALUES ($1, $2, 'scheme', $3, $4, $5, $6, $7,
+                 COALESCE($8::timestamptz, now()))
          RETURNING *`,
         [
           r.userId,
@@ -248,12 +254,42 @@ export const IncentiveService = {
           args.sourceId ?? null,
           args.sourceDescription,
           args.creditedBy,
+          args.effectiveDate ?? null,
         ]
       );
       created.push(insertResult.rows[0]);
     }
 
     return created;
+  },
+
+  // ─── REVERSE INCENTIVES ───
+  // Deletes all employee_incentives rows for a given source so a correction
+  // can re-distribute with updated amounts/dates.  Called inside a transaction
+  // by every update<Entity> service method that touches incentive-driving fields.
+  // paymentEvent is optional — when supplied only that event's rows are removed
+  // (e.g. only 'enrollment' rows, leaving 'renewal' rows for gold corrections).
+  async reverseIncentives(
+    db: Pool | PoolClient,
+    args: { schemeCode: string; sourceId: string; paymentEvent?: string }
+  ): Promise<number> {
+    // TS: build WHERE dynamically so the single paymentEvent path avoids null comparisons
+    const params: any[] = [args.schemeCode, args.sourceId];
+    const eventClause = args.paymentEvent
+      ? ` AND payment_event = $3`
+      : '';
+    if (args.paymentEvent) params.push(args.paymentEvent);
+
+    const result = await db.query(
+      `DELETE FROM employee_incentives
+       WHERE source_type = 'scheme'
+         AND scheme_code = $1
+         AND source_id   = $2
+         ${eventClause}`,
+      params
+    );
+    // TS: result.rowCount may be null when no rows matched — normalise to 0
+    return result.rowCount ?? 0;
   },
 
   // ─── CREDIT INCENTIVE (manual) ───

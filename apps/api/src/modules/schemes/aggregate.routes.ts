@@ -30,7 +30,8 @@ interface AuthenticatedUser { id: string; role: string; branchId: string | null;
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
 
 // Roles allowed to see cross-scheme cross-branch data.
-const VIEWER_ROLES = new Set(['md', 'director']);
+// Management is included so they can load entries in the Corrections Center.
+const VIEWER_ROLES = new Set(['md', 'director', 'management']);
 
 const DateFilterSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startDate must be YYYY-MM-DD').optional(),
@@ -71,7 +72,7 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
       try {
         const req = request as AuthenticatedRequest;
         if (!VIEWER_ROLES.has(req.user.role)) {
-          throw new ForbiddenError('Only MD or Director can view the cross-scheme dashboard');
+          throw new ForbiddenError('Access denied');
         }
         const dateFilter: SchemeDateFilter = DateFilterSchema.parse(request.query ?? {});
 
@@ -103,7 +104,7 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
       try {
         const req = request as AuthenticatedRequest;
         if (!VIEWER_ROLES.has(req.user.role)) {
-          throw new ForbiddenError('Only MD or Director can view the cross-scheme dashboard');
+          throw new ForbiddenError('Access denied');
         }
         const { code } = request.params as { code: string };
         const svc = getScheme(code);
@@ -161,7 +162,7 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
       try {
         const req = request as AuthenticatedRequest;
         if (!VIEWER_ROLES.has(req.user.role)) {
-          throw new ForbiddenError('Only MD or Director can list schemes');
+          throw new ForbiddenError('Access denied');
         }
         const codes = Object.keys(SCHEME_REGISTRY);
         const names = await loadSchemeNames(fastify.db, codes);
@@ -169,6 +170,47 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
           success: true,
           data: codes.map((c) => ({ schemeCode: c, schemeName: names.get(c) ?? c })),
         });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── GET /audit — correction audit log (md / management) ─────────────────
+  // Returns recent correction/void events from scheme_corrections_audit.
+  // Filterable by schemeCode, actorId, action, entityId, and date range.
+  fastify.get('/audit', { onRequest: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        // Only correction actors (md/management) may read the audit log; director is read-only
+        if (!['md', 'management'].includes(req.user.role)) {
+          throw new ForbiddenError('Only MD or Management can view the corrections audit log');
+        }
+        const q = request.query as Record<string, string>;
+        const params: any[] = [];
+        const clauses: string[] = [];
+        let idx = 1;
+        if (q.schemeCode) { clauses.push(`scheme_code = $${idx++}`); params.push(q.schemeCode); }
+        if (q.entityType) { clauses.push(`entity_type = $${idx++}`); params.push(q.entityType); }
+        if (q.action)     { clauses.push(`action = $${idx++}`);      params.push(q.action); }
+        if (q.actorId)    { clauses.push(`actor_id = $${idx++}`);    params.push(q.actorId); }
+        if (q.entityId)   { clauses.push(`entity_id = $${idx++}`);   params.push(q.entityId); }
+        if (q.startDate)  { clauses.push(`created_at >= $${idx++}::timestamptz`); params.push(q.startDate); }
+        if (q.endDate)    { clauses.push(`created_at < ($${idx++}::date + INTERVAL '1 day')::timestamptz`); params.push(q.endDate); }
+
+        const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+        const limit = Math.min(parseInt(q.limit ?? '100', 10), 500);
+        params.push(limit);
+
+        const result = await fastify.db.query(
+          `SELECT a.*, u.name AS actor_name
+           FROM scheme_corrections_audit a
+           JOIN users u ON u.id = a.actor_id
+           ${where}
+           ORDER BY a.created_at DESC
+           LIMIT $${idx}`,
+          params
+        );
+        return reply.send({ success: true, data: result.rows });
       } catch (error) { return handleError(error, reply); }
     }
   );

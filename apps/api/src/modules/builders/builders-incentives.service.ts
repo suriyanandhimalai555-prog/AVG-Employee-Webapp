@@ -88,12 +88,14 @@ export const BuildersIncentivesService = {
   // one_time amount for the plan's package_number.
   // No "absorption" — every present role in the chain earns their own rate.
   // No-op when plan.referrer_id is null.
+  // effectiveDate overrides created_at so past-data entries land in the correct wallet period.
   async distributeOneTime(
     client: PoolClient,
     args: {
-      plan:         { id: string; referrer_id: string | null; package_number: number };
-      creditedBy:   string;
-      customerName: string;
+      plan:          { id: string; referrer_id: string | null; package_number: number };
+      creditedBy:    string;
+      customerName:  string;
+      effectiveDate?: string;   // 'YYYY-MM-DD' — for backdated correction
     }
   ): Promise<void> {
     if (!args.plan.referrer_id) return;
@@ -141,12 +143,14 @@ export const BuildersIncentivesService = {
       const amount = rulesMap.get(key) ?? 0;
       if (amount <= 0) continue;
 
+      // TS: override created_at when an effective date is provided (backdated entry)
       await client.query(
         `INSERT INTO employee_incentives
            (user_id, amount, source_type, scheme_code, payment_event,
-            source_id, source_description, credited_by)
-         VALUES ($1, $2, 'scheme', $3, 'enrollment', $4, $5, $6)`,
-        [person.id, amount, SCHEME_CODE, args.plan.id, description, args.creditedBy]
+            source_id, source_description, credited_by, created_at)
+         VALUES ($1, $2, 'scheme', $3, 'enrollment', $4, $5, $6,
+                 COALESCE($7::timestamptz, now()))`,
+        [person.id, amount, SCHEME_CODE, args.plan.id, description, args.creditedBy, args.effectiveDate ?? null]
       );
     }
   },
@@ -156,12 +160,14 @@ export const BuildersIncentivesService = {
   // Only fires when the plan has a referrer AND the referrer is a sales_officer.
   // Managers above the SO do NOT earn monthly incentives.
   // No-op when plan.referrer_id is null.
+  // effectiveDate overrides created_at so backdated payouts credit the right period.
   async creditMonthly(
     client: PoolClient,
     args: {
-      plan:        { id: string; referrer_id: string | null; package_number: number };
-      monthNumber: number;
-      creditedBy:  string;
+      plan:           { id: string; referrer_id: string | null; package_number: number };
+      monthNumber:    number;
+      creditedBy:     string;
+      effectiveDate?: string;   // 'YYYY-MM-DD' — for backdated correction
     }
   ): Promise<void> {
     if (!args.plan.referrer_id) return;
@@ -181,12 +187,14 @@ export const BuildersIncentivesService = {
     const description =
       `Builders monthly incentive: Month ${args.monthNumber} (Tier ${args.plan.package_number})`;
 
+    // TS: override created_at when an effective date is provided (backdated payout)
     await client.query(
       `INSERT INTO employee_incentives
          (user_id, amount, source_type, scheme_code, payment_event,
-          source_id, source_description, credited_by)
-       VALUES ($1, $2, 'scheme', $3, 'monthly', $4, $5, $6)`,
-      [args.plan.referrer_id, amount, SCHEME_CODE, args.plan.id, description, args.creditedBy]
+          source_id, source_description, credited_by, created_at)
+       VALUES ($1, $2, 'scheme', $3, 'monthly', $4, $5, $6,
+               COALESCE($7::timestamptz, now()))`,
+      [args.plan.referrer_id, amount, SCHEME_CODE, args.plan.id, description, args.creditedBy, args.effectiveDate ?? null]
     );
   },
 };

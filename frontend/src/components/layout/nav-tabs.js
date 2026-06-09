@@ -1,4 +1,4 @@
-import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2, Layers } from 'lucide-react';
+import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2, Layers, Settings2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { selectCurrentUser } from '../../store/slices/authSlice';
@@ -14,7 +14,8 @@ export const NAV_TABS = [
   { key: 'profile',    icon: UserCircle2, label: 'Profile',    path: '/profile' },
 ];
 
-export const MD_TAB = { key: 'branches', icon: Building2, label: 'Branches', path: '/branches' };
+export const MD_TAB             = { key: 'branches',       icon: Building2, label: 'Branches', path: '/branches' };
+export const CONTROL_CENTER_TAB = { key: 'control-center', icon: Settings2, label: 'Control',  path: '/control-center' };
 
 // Cross-scheme dashboard. Visible to MD and Director only — the page itself
 // is gated again server-side, so this is purely a discoverability hint.
@@ -25,6 +26,7 @@ export const getActiveTab = (pathname) => {
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/branches')) return 'branches';
   if (pathname === '/schemes' || pathname.startsWith('/schemes/')) return 'schemes';
+  if (pathname.startsWith('/control-center')) return 'control-center';
   if (pathname.startsWith('/money')) return 'money';
   if (pathname === '/alerts') return 'alerts';
   if (pathname === '/profile') return 'profile';
@@ -48,19 +50,23 @@ export const useNavTabs = () => {
     (c) => c.assigned_verifier_id === currentUser?.id
   ).length;
 
-  const baseTabs = currentUser?.role === 'oa'
+  const role = currentUser?.role;
+
+  const baseTabs = role === 'oa'
     ? NAV_TABS.filter((t) => t.key !== 'money')
+    : role === 'management'
+    // management: no attendance; gains the Control Center tab
+    ? NAV_TABS.filter((t) => t.key !== 'attendance')
     : NAV_TABS;
 
-  // MD picks up its Branches tab; MD and Director both pick up the cross-scheme
-  // dashboard. Order: ...base, Schemes (md/director), Branches (md only) so the
-  // Schemes tab sits next to Money in the bottom bar's natural reading order.
-  const role = currentUser?.role;
+  // Management gets a dedicated Control Center tab for scheme configuration
+  const managementTabs = role === 'management' ? [CONTROL_CENTER_TAB] : [];
   const showSchemes = role === 'md' || role === 'director';
   const tabs = [
     ...baseTabs,
     ...(showSchemes ? [SCHEMES_TAB] : []),
     ...(role === 'md' ? [MD_TAB] : []),
+    ...managementTabs,
   ];
   const activeTab = getActiveTab(location.pathname);
 

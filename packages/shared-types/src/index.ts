@@ -12,7 +12,8 @@ export type Role =
   | 'sales_officer'
   | 'branch_admin'
   | 'oa'
-  | 'client';
+  | 'client'
+  | 'management';
 
 // Define the core user profile object used in session management and UI display
 export interface UserProfile {

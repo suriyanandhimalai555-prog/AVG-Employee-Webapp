@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
   CreateChitGroupInput,
   AddChitMemberInput,
@@ -10,6 +11,8 @@ import type {
   CancelMemberInput,
   GetChitGroupsQuery,
   CombineChitGroupsInput,
+  CorrectChitMemberInput,
+  CorrectChitPaymentInput,
 } from './chit.schema';
 import { CHIT_PACKAGES } from './chit.schema';
 
@@ -67,6 +70,53 @@ async function promoteStaleFormingGroups(db: Pool | PoolClient): Promise<void> {
 
 export const ChitService = {
   schemeCode: SCHEME_CODE,
+
+  // ─── GET PACKAGES (DB) ────────────────────────────────────────────────────
+  async getPackages(db: Pool): Promise<any[]> {
+    const res = await db.query(
+      `SELECT package_number, full_amount, half_amount, is_active
+       FROM chit_packages
+       WHERE is_active = true
+       ORDER BY package_number ASC`
+    );
+    // TS: fall back to hardcoded constant if table not yet migrated
+    if (res.rows.length === 0) {
+      return Object.entries(CHIT_PACKAGES).map(([num, pkg]) => ({
+        package_number: parseInt(num),
+        full_amount:    pkg.fullAmount,
+        half_amount:    pkg.halfAmount,
+        is_active:      true,
+      }));
+    }
+    return res.rows.map(r => ({
+      package_number: r.package_number,
+      full_amount:    parseFloat(r.full_amount),
+      half_amount:    parseFloat(r.half_amount),
+      is_active:      r.is_active,
+    }));
+  },
+
+  // ─── UPDATE PACKAGE (config roles only) ────────────────────────────────────
+  async updatePackage(
+    db: Pool,
+    packageNumber: number,
+    payload: { fullAmount?: number; halfAmount?: number }
+  ): Promise<any> {
+    const fields: string[] = [];
+    const values: any[]    = [];
+    let idx = 1;
+    if (payload.fullAmount != null) { fields.push(`full_amount = $${idx++}`); values.push(payload.fullAmount); }
+    if (payload.halfAmount != null) { fields.push(`half_amount = $${idx++}`); values.push(payload.halfAmount); }
+    if (fields.length === 0) throw new Error('No fields to update');
+    fields.push(`updated_at = now()`);
+    values.push(packageNumber);
+    const res = await db.query(
+      `UPDATE chit_packages SET ${fields.join(', ')} WHERE package_number = $${idx} RETURNING *`,
+      values
+    );
+    if (res.rows.length === 0) throw new Error(`Package ${packageNumber} not found`);
+    return res.rows[0];
+  },
 
   // ─── CREATE GROUP ──────────────────────────────────────────────────────────
   async createGroup(
@@ -485,21 +535,32 @@ export const ChitService = {
 
   // ─── CANCEL MEMBER CARD ────────────────────────────────────────────────────
   async cancelMember(db: Pool, groupId: string, memberId: string, branchId: string, payload: CancelMemberInput): Promise<any> {
-    const groupCheck = await db.query(
-      'SELECT id FROM agila_chit_groups WHERE id = $1 AND branch_id = $2',
-      [groupId, branchId]
-    );
-    if (groupCheck.rows.length === 0) throw new NotFoundError('Group not found');
+    return runInTransaction(db, async (client: PoolClient) => {
+      const groupCheck = await client.query(
+        'SELECT id FROM agila_chit_groups WHERE id = $1 AND branch_id = $2',
+        [groupId, branchId]
+      );
+      if (groupCheck.rows.length === 0) throw new NotFoundError('Group not found');
 
-    const result = await db.query(
-      `UPDATE agila_chit_members
-       SET status = 'cancelled', cancellation_due_month_1 = $1, cancellation_due_month_2 = $2
-       WHERE id = $3 AND group_id = $4 AND status = 'active'
-       RETURNING *`,
-      [payload.cancelDueMonth1, payload.cancelDueMonth2 || null, memberId, groupId]
-    );
-    if (result.rows.length === 0) throw new NotFoundError('Member not found or already cancelled');
-    return result.rows[0];
+      const result = await client.query(
+        `UPDATE agila_chit_members
+         SET status = 'cancelled', cancellation_due_month_1 = $1, cancellation_due_month_2 = $2
+         WHERE id = $3 AND group_id = $4 AND status = 'active'
+         RETURNING *`,
+        [payload.cancelDueMonth1, payload.cancelDueMonth2 || null, memberId, groupId]
+      );
+      if (result.rows.length === 0) throw new NotFoundError('Member not found or already cancelled');
+
+      // Reverse the enrollment incentive that was credited when this member joined.
+      // Previously this was skipped, leaving orphan incentive rows in the ledger.
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     memberId,
+        paymentEvent: 'enrollment',
+      });
+
+      return result.rows[0];
+    });
   },
 
   // ─── REINSTATE MEMBER CARD ─────────────────────────────────────────────────
@@ -567,6 +628,233 @@ export const ChitService = {
     );
     if (result.rows.length === 0) throw new NotFoundError('Member not found, not cancelled, or refund already credited');
     return result.rows[0];
+  },
+
+  // ─── CORRECT MEMBER (admin: MD / Management) ────────────────────────────────
+  // Patches editable fields on an existing chit member. When referrerId or
+  // amount changes the enrollment incentive is reversed and re-distributed.
+  async correctMember(
+    db: Pool,
+    correctedBy: string,
+    groupId: string,
+    memberId: string,
+    branchId: string,
+    payload: CorrectChitMemberInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const beforeRes = await client.query(
+        `SELECT m.*, c.name AS customer_name, g.full_amount, g.group_name
+         FROM agila_chit_members m
+         JOIN agila_chit_groups g ON g.id = m.group_id
+         JOIN customers c ON c.id = m.customer_id
+         WHERE m.id = $1 AND m.group_id = $2 AND g.branch_id = $3`,
+        [memberId, groupId, branchId]
+      );
+      if (beforeRes.rows.length === 0) throw new NotFoundError('Chit member not found');
+      const old = beforeRes.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.notes      !== undefined) { fields.push(`notes = $${idx++}`);       vals.push(payload.notes); }
+      // TS: customerId allows admin to re-assign the enrollment to the correct customer
+      if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`); vals.push(payload.customerId); }
+
+      // Handle referrerId + denormalised name together
+      if (payload.referrerId !== undefined) {
+        if (payload.referrerId) {
+          const ref = await client.query('SELECT name, role FROM users WHERE id = $1', [payload.referrerId]);
+          if (ref.rows.length === 0) throw new NotFoundError('Referrer not found');
+          const { name, role } = ref.rows[0];
+          fields.push(`referrer_id = $${idx++}`);   vals.push(payload.referrerId);
+          fields.push(`referrer_name = $${idx++}`); vals.push(`${name} ${role.toUpperCase().replace(/_/g, ' ')}`);
+        } else {
+          fields.push(`referrer_id = $${idx++}`);   vals.push(null);
+          fields.push(`referrer_name = $${idx++}`); vals.push(null);
+        }
+      }
+
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(memberId, groupId);
+      const updated = await client.query(
+        `UPDATE agila_chit_members SET ${fields.join(', ')} WHERE id = $${idx} AND group_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+
+      if (referrerChanged && effectiveReferrer) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     memberId,
+          paymentEvent: 'enrollment',
+        });
+        await IncentiveService.distributeIncentives(client, {
+          schemeCode:        SCHEME_CODE,
+          dealMakerUserId:   effectiveReferrer,
+          mode:              'percent_referrer',
+          percentRole:       'referrer_direct',
+          baseAmount:        parseFloat(old.full_amount),
+          paymentEvent:      'enrollment',
+          sourceId:          memberId,
+          sourceDescription: `Agila Chit enrollment (corrected): ${old.customer_name} – ${old.group_name}`,
+          creditedBy:        correctedBy,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'member',
+        entityId:   memberId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID MEMBER (admin: MD / Management) ────────────────────────────────────
+  async voidMember(
+    db: Pool,
+    actorId: string,
+    groupId: string,
+    memberId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT m.* FROM agila_chit_members m
+         JOIN agila_chit_groups g ON g.id = m.group_id
+         WHERE m.id = $1 AND m.group_id = $2 AND g.branch_id = $3`,
+        [memberId, groupId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Chit member not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Member is already voided');
+
+      await client.query(
+        `UPDATE agila_chit_members SET status = 'voided' WHERE id = $1`,
+        [memberId]
+      );
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   SCHEME_CODE,
+        sourceId:     memberId,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'member',
+        entityId:   memberId,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── CORRECT PAYMENT (admin: MD / Management) ────────────────────────────────
+  // Edits an existing chit payment row (month/amount/date/mode/notes).
+  async correctPayment(
+    db: Pool,
+    correctedBy: string,
+    groupId: string,
+    memberId: string,
+    paymentId: string,
+    branchId: string,
+    payload: CorrectChitPaymentInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const groupRow = await client.query(
+        `SELECT * FROM agila_chit_groups WHERE id = $1 AND branch_id = $2`,
+        [groupId, branchId]
+      );
+      if (groupRow.rows.length === 0) throw new NotFoundError('Chit group not found');
+
+      const payRow = await client.query(
+        `SELECT * FROM agila_chit_payments WHERE id = $1 AND member_id = $2 AND group_id = $3`,
+        [paymentId, memberId, groupId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payment not found');
+      const old = payRow.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.monthNumber  != null)  { fields.push(`month_number = $${idx++}`);  vals.push(payload.monthNumber); }
+      if (payload.amount       != null)  { fields.push(`amount = $${idx++}`);         vals.push(payload.amount); }
+      if (payload.paymentDate  != null)  { fields.push(`payment_date = $${idx++}`);   vals.push(payload.paymentDate); }
+      if (payload.paymentMode  != null)  { fields.push(`payment_mode = $${idx++}`);   vals.push(payload.paymentMode); }
+      if (payload.notes !== undefined)   { fields.push(`notes = $${idx++}`);          vals.push(payload.notes); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(paymentId, memberId, groupId);
+      const updated = await client.query(
+        `UPDATE agila_chit_payments SET ${fields.join(', ')}
+         WHERE id = $${idx} AND member_id = $${idx + 1} AND group_id = $${idx + 2} RETURNING *`,
+        vals
+      );
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'payment',
+        entityId:   paymentId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── UNPAY PAYMENT (admin: MD / Management) ──────────────────────────────────
+  // Deletes a single chit payment. Chit payments currently carry no incentive
+  // (only the initial enrollment does), so no incentive reversal is needed.
+  async unpayPayment(
+    db: Pool,
+    actorId: string,
+    groupId: string,
+    memberId: string,
+    paymentId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const groupRow = await client.query(
+        `SELECT * FROM agila_chit_groups WHERE id = $1 AND branch_id = $2`,
+        [groupId, branchId]
+      );
+      if (groupRow.rows.length === 0) throw new NotFoundError('Chit group not found');
+
+      const payRow = await client.query(
+        `SELECT * FROM agila_chit_payments WHERE id = $1 AND member_id = $2 AND group_id = $3`,
+        [paymentId, memberId, groupId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payment not found');
+      const old = payRow.rows[0];
+
+      await client.query('DELETE FROM agila_chit_payments WHERE id = $1', [paymentId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'payment',
+        entityId:   paymentId,
+        actorId,
+        action:     'unpay',
+        oldValues:  old,
+      });
+
+      return old;
+    });
   },
 
   // ─── SEND TO HEAD BRANCH ───────────────────────────────────────────────────

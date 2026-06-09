@@ -7,6 +7,11 @@
 import { Pool, PoolClient } from 'pg';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { assertTransition, isStaleFilling, nextDrawDate, RoomStatus } from './status-machine';
+import { IncentiveService } from '../incentives/incentives.service';
+import { SchemeAudit } from '../../shared/scheme-audit';
+import { runInTransaction } from '../../shared/transaction-helper';
+
+const SCHEME_CODE = 'lss_scheme';
 
 const FILL_WINDOW_DAYS = 30;
 const SLOTS_PER_ROOM   = 20;
@@ -313,6 +318,51 @@ export const RoomsService = {
       return true;
     }
     return false;
+  },
+
+  // ─── VOID ROOM (admin: MD / Management) ────────────────────────────────────
+  async voidRoom(
+    db: Pool,
+    actorId: string,
+    roomId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const roomRow = await client.query(
+        `SELECT * FROM lss_rooms WHERE id = $1 AND branch_id = $2`,
+        [roomId, branchId]
+      );
+      if (roomRow.rows.length === 0) throw new NotFoundError('Room not found');
+      const room = roomRow.rows[0];
+      if (room.status === 'voided') throw new ValidationError('Room is already voided');
+
+      const slots = await client.query(
+        `SELECT id, status FROM lss_slots WHERE room_id = $1 AND status NOT IN ('refunded','voided')`,
+        [roomId]
+      );
+
+      for (const slot of slots.rows) {
+        await client.query(`UPDATE lss_slots SET status = 'refunded' WHERE id = $1`, [slot.id]);
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     slot.id,
+          paymentEvent: 'enrollment',
+        });
+      }
+
+      await client.query(`UPDATE lss_rooms SET status = 'voided' WHERE id = $1`, [roomId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'room',
+        entityId:   roomId,
+        actorId,
+        action:     'void',
+        oldValues:  { ...room, slotsRefunded: slots.rows.length },
+      });
+
+      return { ...room, status: 'voided', slotsRefunded: slots.rows.length };
+    });
   },
 
 };

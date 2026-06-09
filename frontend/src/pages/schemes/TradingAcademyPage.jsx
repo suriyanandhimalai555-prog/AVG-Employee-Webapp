@@ -27,7 +27,10 @@ export const TradingAcademyPage = () => {
 
   const { data: summary }                = useGetTradingSummaryQuery({ startDate: period.startDate, endDate: period.endDate });
   const { data: membersData, isLoading } = useGetTradingMembersQuery({ search, page, limit: 30, startDate: period.startDate, endDate: period.endDate });
-  const { data: employees = [] }         = useGetTradingEmployeesQuery(undefined, { skip: user?.role !== 'branch_admin' });
+  const isManagement = user?.role === 'management';
+  const [branchId, setBranchId] = useState('');
+
+  const { data: employees = [] }         = useGetTradingEmployeesQuery(undefined, { skip: user?.role !== 'branch_admin' && !isManagement });
 
   const members = membersData?.data ?? [];
   const total   = membersData?.total ?? 0;
@@ -38,10 +41,10 @@ export const TradingAcademyPage = () => {
       {/* Header */}
       <SchemePageHeader
         backTo="/money/schemes"
-        title={user?.role === 'branch_admin' ? 'Agilavetri Trading Academy' : 'My Referrals'}
-        subtitle={user?.role === 'branch_admin' ? 'PVT LTD' : 'Trading Academy · customers you referred'}
+        title={(user?.role === 'branch_admin' || isManagement) ? 'Agilavetri Trading Academy' : 'My Referrals'}
+        subtitle={(user?.role === 'branch_admin' || isManagement) ? 'PVT LTD' : 'Trading Academy · customers you referred'}
         action={
-          user?.role === 'branch_admin' ? (
+          (user?.role === 'branch_admin' || isManagement) ? (
             <button
               onClick={() => setShowAdd(true)}
               className="w-10 h-10 rounded-2xl bg-indigo flex items-center justify-center text-white shadow-md tactile-press"
@@ -170,7 +173,8 @@ export const TradingAcademyPage = () => {
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-[32px] max-h-[90vh] overflow-y-auto"
             >
-              <AddMemberSheet onClose={() => setShowAdd(false)} employees={employees} />
+              <AddMemberSheet onClose={() => setShowAdd(false)} employees={employees}
+                branchId={isManagement ? branchId : undefined} />
             </motion.div>
           </>
         )}

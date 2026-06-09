@@ -1,11 +1,15 @@
 import { Pool, PoolClient } from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
+import { IncentiveService } from '../incentives/incentives.service';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
   CreateBuildersPlanInput,
   RecordBuildersPayoutInput,
   ChooseRewardInput,
   GetBuildersPlansQuery,
+  CorrectBuildersPlanInput,
+  CorrectBuildersPayoutInput,
 } from './builders.schema';
 import { BUILDERS_PACKAGES } from './builders.schema';
 import { BuildersIncentivesService } from './builders-incentives.service';
@@ -18,11 +22,51 @@ const FINAL_MONTH    = 60;  // last payout month (cash path only)
 export const BuildersService = {
   schemeCode: SCHEME_CODE,
 
-  // ─── GET PACKAGES ────────────────────────────────────────────────────────────
-  // Returns the in-memory package table — used by GET /packages to inform the UI
-  // without a DB round-trip.
-  getPackages(): typeof BUILDERS_PACKAGES {
-    return BUILDERS_PACKAGES;
+  // ─── GET PACKAGES (DB) ───────────────────────────────────────────────────────
+  // Reads from builders_packages table (migration 057). Falls back to the hardcoded
+  // BUILDERS_PACKAGES object when the table returns no rows (e.g. pre-migration env).
+  async getPackages(db: Pool): Promise<Record<number, typeof BUILDERS_PACKAGES[keyof typeof BUILDERS_PACKAGES]>> {
+    const res = await db.query(
+      `SELECT package_number, investment_amount, monthly_payout, cash_final_monthly, house_worth
+       FROM builders_packages
+       WHERE is_active = true
+       ORDER BY package_number ASC`
+    );
+    if (res.rows.length === 0) return BUILDERS_PACKAGES;
+    const map: Record<number, { investmentAmount: number; monthlyPayout: number; cashFinalMonthly: number; houseWorth: number }> = {};
+    for (const r of res.rows) {
+      map[r.package_number] = {
+        investmentAmount:  parseFloat(r.investment_amount),
+        monthlyPayout:     parseFloat(r.monthly_payout),
+        cashFinalMonthly:  parseFloat(r.cash_final_monthly),
+        houseWorth:        parseFloat(r.house_worth),
+      };
+    }
+    return map;
+  },
+
+  // ─── UPDATE PACKAGE (DB, config roles only) ──────────────────────────────────
+  async updatePackage(
+    db: Pool,
+    packageNumber: number,
+    payload: { investmentAmount?: number; monthlyPayout?: number; cashFinalMonthly?: number; houseWorth?: number }
+  ): Promise<any> {
+    const fields: string[] = [];
+    const values: any[]    = [];
+    let idx = 1;
+    if (payload.investmentAmount  != null) { fields.push(`investment_amount = $${idx++}`);  values.push(payload.investmentAmount); }
+    if (payload.monthlyPayout     != null) { fields.push(`monthly_payout = $${idx++}`);     values.push(payload.monthlyPayout); }
+    if (payload.cashFinalMonthly  != null) { fields.push(`cash_final_monthly = $${idx++}`); values.push(payload.cashFinalMonthly); }
+    if (payload.houseWorth        != null) { fields.push(`house_worth = $${idx++}`);        values.push(payload.houseWorth); }
+    if (fields.length === 0) throw new Error('No fields to update');
+    fields.push(`updated_at = now()`);
+    values.push(packageNumber);
+    const res = await db.query(
+      `UPDATE builders_packages SET ${fields.join(', ')} WHERE package_number = $${idx} RETURNING *`,
+      values
+    );
+    if (res.rows.length === 0) throw new Error(`Package ${packageNumber} not found`);
+    return res.rows[0];
   },
 
   // ─── CREATE PLAN ─────────────────────────────────────────────────────────────
@@ -35,7 +79,9 @@ export const BuildersService = {
     branchId: string,
     payload: CreateBuildersPlanInput
   ): Promise<any> {
-    const pkg = BUILDERS_PACKAGES[payload.packageNumber];
+    // TS: load live packages from DB; fall back to hardcoded if table not yet migrated
+    const packages = await BuildersService.getPackages(db);
+    const pkg = packages[payload.packageNumber];
     if (!pkg) throw new ValidationError('Invalid package number');
 
     // Validate customer belongs to this branch (same pattern as gold/chit)
@@ -523,6 +569,276 @@ export const BuildersService = {
       collected:  parseFloat(r.collected),
       commission: commByBranch.get(r.branch_id) ?? 0,
     }));
+  },
+
+  // ─── CORRECT PLAN (admin: MD / Management) ──────────────────────────────────
+  // Patches editable plan fields. When referrerId or lumpSumDate changes the
+  // one-time enrollment incentive is reversed and re-distributed with the
+  // corrected referrer and the business date as effectiveDate.
+  async correctPlan(
+    db: Pool,
+    correctedBy: string,
+    planId: string,
+    branchId: string,
+    payload: CorrectBuildersPlanInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT p.*, c.name AS customer_name
+         FROM builders_plans p
+         JOIN customers c ON c.id = p.customer_id
+         WHERE p.id = $1 AND p.branch_id = $2`,
+        [planId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Plan not found');
+      const old = before.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+
+      if (payload.customerId  != null) { fields.push(`customer_id = $${idx++}`);   vals.push(payload.customerId); }
+      if (payload.lumpSumDate != null) { fields.push(`lump_sum_date = $${idx++}`); vals.push(payload.lumpSumDate); }
+      if (payload.lumpSumMode != null) { fields.push(`lump_sum_mode = $${idx++}`); vals.push(payload.lumpSumMode); }
+      if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
+
+      // Handle referrerId + denormalised name together
+      if (payload.referrerId !== undefined) {
+        if (payload.referrerId) {
+          const ref = await client.query('SELECT name, role FROM users WHERE id = $1', [payload.referrerId]);
+          if (ref.rows.length === 0) throw new NotFoundError('Referrer not found');
+          const { name, role } = ref.rows[0];
+          fields.push(`referrer_id = $${idx++}`);   vals.push(payload.referrerId);
+          fields.push(`referrer_name = $${idx++}`); vals.push(`${name} ${role.toUpperCase().replace(/_/g, ' ')}`);
+        } else {
+          fields.push(`referrer_id = $${idx++}`);   vals.push(null);
+          fields.push(`referrer_name = $${idx++}`); vals.push(null);
+        }
+      }
+
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(planId, branchId);
+      const updated = await client.query(
+        `UPDATE builders_plans SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      const referrerChanged   = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+      const effectiveDate     = payload.lumpSumDate ?? old.lump_sum_date;
+
+      if (referrerChanged && effectiveReferrer) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     planId,
+          paymentEvent: 'enrollment',
+        });
+        await BuildersIncentivesService.distributeOneTime(client, {
+          plan:          { id: planId, referrer_id: effectiveReferrer, package_number: old.package_number },
+          creditedBy:    correctedBy,
+          customerName:  old.customer_name,
+          effectiveDate,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'plan',
+        entityId:   planId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── CORRECT PAYOUT (admin: MD / Management) ────────────────────────────────
+  // Patches an existing payout row. When amount or payoutDate changes the
+  // monthly SO incentive is reversed and re-credited with the corrected values.
+  async correctPayout(
+    db: Pool,
+    correctedBy: string,
+    planId: string,
+    payoutId: string,
+    branchId: string,
+    payload: CorrectBuildersPayoutInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const planRow = await client.query(
+        'SELECT * FROM builders_plans WHERE id = $1 AND branch_id = $2',
+        [planId, branchId]
+      );
+      if (planRow.rows.length === 0) throw new NotFoundError('Plan not found');
+      const plan = planRow.rows[0];
+
+      const payRow = await client.query(
+        'SELECT * FROM builders_payouts WHERE id = $1 AND plan_id = $2',
+        [payoutId, planId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payout not found');
+      const old = payRow.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.amount      != null) { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
+      if (payload.payoutDate  != null) { fields.push(`payout_date = $${idx++}`);   vals.push(payload.payoutDate); }
+      if (payload.paymentMode != null) { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
+      if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(payoutId, planId);
+      const updated = await client.query(
+        `UPDATE builders_payouts SET ${fields.join(', ')} WHERE id = $${idx} AND plan_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      const amountChanged = payload.amount != null && parseFloat(payload.amount.toString()) !== parseFloat(old.amount);
+      const dateChanged   = payload.payoutDate != null && payload.payoutDate !== old.payout_date;
+      const effectiveDate = payload.payoutDate ?? old.payout_date;
+
+      if ((amountChanged || dateChanged) && plan.referrer_id) {
+        // Reverse the monthly credit for this specific month, then re-issue
+        await client.query(
+          `DELETE FROM employee_incentives
+           WHERE source_type = 'scheme' AND scheme_code = $1
+             AND source_id = $2 AND payment_event = 'monthly'`,
+          [SCHEME_CODE, planId]
+        );
+        await BuildersIncentivesService.creditMonthly(client, {
+          plan:          { id: planId, referrer_id: plan.referrer_id, package_number: plan.package_number },
+          monthNumber:   parseInt(old.month_number, 10),
+          creditedBy:    correctedBy,
+          effectiveDate,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'payout',
+        entityId:   payoutId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID PLAN (admin: MD / Management) ──────────────────────────────────────
+  // Soft-voids a builders plan: marks status='voided', claws back ALL incentives
+  // (enrollment + all monthly credits), and writes an audit row.
+  async voidPlan(
+    db: Pool,
+    actorId: string,
+    planId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        'SELECT * FROM builders_plans WHERE id = $1 AND branch_id = $2',
+        [planId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Plan not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Plan is already voided');
+
+      await client.query(
+        `UPDATE builders_plans SET status = 'voided' WHERE id = $1`,
+        [planId]
+      );
+
+      // Reverse all incentives (enrollment one-time + all monthly SO credits)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: SCHEME_CODE,
+        sourceId:   planId,
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'plan',
+        entityId:   planId,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── UNPAY PAYOUT (admin: MD / Management) ───────────────────────────────────
+  // Deletes a single recorded payout and claws back its monthly incentive credit.
+  async unpayPayout(
+    db: Pool,
+    actorId: string,
+    planId: string,
+    payoutId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const planRow = await client.query(
+        'SELECT * FROM builders_plans WHERE id = $1 AND branch_id = $2',
+        [planId, branchId]
+      );
+      if (planRow.rows.length === 0) throw new NotFoundError('Plan not found');
+      const plan = planRow.rows[0];
+
+      const payRow = await client.query(
+        'SELECT * FROM builders_payouts WHERE id = $1 AND plan_id = $2',
+        [payoutId, planId]
+      );
+      if (payRow.rows.length === 0) throw new NotFoundError('Payout not found');
+      const old = payRow.rows[0];
+
+      await client.query('DELETE FROM builders_payouts WHERE id = $1', [payoutId]);
+
+      // Decrement the plan's current_month so next recording is possible again
+      await client.query(
+        'UPDATE builders_plans SET current_month = GREATEST(0, current_month - 1) WHERE id = $1',
+        [planId]
+      );
+
+      // Reverse this payout's monthly incentive (all monthly credits for this plan),
+      // then re-credit remaining payouts exactly like correctPayout does.
+      if (plan.referrer_id) {
+        await client.query(
+          `DELETE FROM employee_incentives
+           WHERE source_type = 'scheme' AND scheme_code = $1
+             AND source_id = $2 AND payment_event = 'monthly'`,
+          [SCHEME_CODE, planId]
+        );
+        const remaining = await client.query(
+          'SELECT * FROM builders_payouts WHERE plan_id = $1 ORDER BY month_number',
+          [planId]
+        );
+        for (const pay of remaining.rows) {
+          await BuildersIncentivesService.creditMonthly(client, {
+            plan:        { id: planId, referrer_id: plan.referrer_id, package_number: plan.package_number },
+            monthNumber: parseInt(pay.month_number, 10),
+            creditedBy:  actorId,
+            effectiveDate: pay.payout_date,
+          });
+        }
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'payout',
+        entityId:   payoutId,
+        actorId,
+        action:     'unpay',
+        oldValues:  old,
+      });
+
+      return old;
+    });
   },
 
   // ─── ENTRIES BY BRANCH (SchemeService contract — optional) ───────────────────

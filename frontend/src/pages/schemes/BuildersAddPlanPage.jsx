@@ -21,6 +21,7 @@ import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BranchPicker } from '../../components/BranchPicker';
 
 const INITIAL_FORM = {
   packageNumber: '',
@@ -48,7 +49,10 @@ export const BuildersAddPlanPage = () => {
   // Derive package preview from selected package number
   const selectedPkg = form.packageNumber ? packages?.[form.packageNumber] : null;
 
-  if (user?.role !== 'branch_admin') {
+  const isManagement = user?.role === 'management';
+  const [branchId, setBranchId] = useState('');
+
+  if (user?.role !== 'branch_admin' && !isManagement) {
     return (
       <SchemePageWrapper>
         <SchemePageHeader backTo="/money/schemes/builders" title="Enroll Plan" />
@@ -76,6 +80,7 @@ export const BuildersAddPlanPage = () => {
 
     if (!customer) { setError('Please select a customer.'); return; }
     if (!form.packageNumber) { setError('Please select a package.'); return; }
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
 
     try {
       const res = await createPlan({
@@ -85,6 +90,7 @@ export const BuildersAddPlanPage = () => {
         lumpSumMode:   form.lumpSumMode,
         referrerId:    form.referrerId || undefined,
         notes:         form.notes || undefined,
+        branchId:      isManagement ? branchId : undefined,
       }).unwrap();
       setDone(res);
     } catch (err) {
@@ -126,12 +132,20 @@ export const BuildersAddPlanPage = () => {
 
       <form onSubmit={handleSubmit} className="px-4 space-y-5 mt-2">
 
+        {/* Branch picker — management only */}
+        {isManagement && (
+          <FormField label="Branch" required>
+            <BranchPicker value={branchId} onChange={setBranchId} />
+          </FormField>
+        )}
+
         {/* Customer picker */}
         <FormField label="Customer" required>
           <CustomerPicker
             value={customer}
             onChange={setCustomer}
             onClear={() => setCustomer(null)}
+            branchId={isManagement ? branchId : undefined}
           />
         </FormField>
 

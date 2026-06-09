@@ -1,25 +1,42 @@
-// Bookings, payments, buyback schedule — branch_admin operations.
+// Bookings, payments, buyback schedule — branch_admin (and Management) write operations.
+//
+// Who does what:
+//   Management  — creates sites/layouts/plots via land-sites.service
+//   Branch Admin — creates bookings and records payments here
+//   MD / all roles — read-only views
 //
 // Booking lifecycle:
-//   booked → advance_paid (advance_full_payment mode only)
-//          → full_paid    (direct or from advance_paid)
-//          → completed    (all 60 buyback payouts marked paid)
-//          → cancelled    (advance forfeited; plot returns to available)
+//   booked       → after customer signs up (no money yet)
+//   advance_paid → advance amount recorded (advance_full_payment mode only)
+//   full_paid    → full payment recorded; 60 buyback payout rows auto-created
+//   completed    → all 60 customer buyback payouts marked paid
+//   cancelled    → booking voided; plot returns to 'available'
+//   voided       → Management/MD correction; incentives clawed back
 //
-// Buyback schedule (60 rows) is auto-created inside the recordFullPayment transaction.
+// Commission flow:
+//   createBooking       → distributeSpot (one-time credit to referrer chain)
+//   markPayoutPaid      → distributeMonthly (per buyback month, per-role cap)
+//   voidBooking         → IncentiveService.reverseIncentives (claw back all)
 
 import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
+import { IncentiveService } from '../incentives/incentives.service';
 import { LandAuditService } from './land-audit.service';
+import { LandIncentivesService } from './land-incentives.service';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
   CreateLandBookingInput, RecordAdvanceInput, RecordFullPaymentInput,
   CancelBookingInput, ListBookingsQuery, MarkPayoutPaidInput,
+  CorrectLandBookingInput,
 } from './land.schema';
 
-const COOLING_DAYS   = 60;   // days between full payment and buyback start
-const BUYBACK_MONTHS = 60;   // number of monthly buyback payouts
-const ADVANCE_DAYS   = 30;   // initial advance deadline window
+// Number of days before buyback payments start after full payment is received
+const COOLING_DAYS   = 60;
+// How many monthly buyback payout rows are created for the customer (fixed per booking)
+const BUYBACK_MONTHS = 60;
+// Initial window (days) for the customer to pay the full amount after advance
+const ADVANCE_DAYS   = 30;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,6 +158,14 @@ export const LandBookingsService = {
   },
 
   // ─── CREATE BOOKING ───────────────────────────────────────────────────────
+  // Main entry point for Branch Admins recording a new land booking.
+  // Steps inside the transaction:
+  //   1. Verify customer is in this branch
+  //   2. Lock the plot (FOR UPDATE) and confirm it's 'available'
+  //   3. Insert the booking row (with optional referrer_id)
+  //   4. Set plot status → 'booked'
+  //   5. If referrerId is set, distribute spot commission (LandIncentivesService)
+  //   6. Write to land_audit_log
   async createBooking(
     db: Pool,
     userId: string,
@@ -148,7 +173,7 @@ export const LandBookingsService = {
     payload: CreateLandBookingInput
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
-      // Verify customer belongs to this branch
+      // Step 1 — customer must exist in this branch (prevents cross-branch bookings)
       const custResult = await client.query(
         `SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2`,
         [payload.customerId, branchId]
@@ -157,11 +182,12 @@ export const LandBookingsService = {
         throw new NotFoundError('Customer not found in this branch');
       }
 
-      // Lock the plot and verify it's available
+      // Lock the plot and verify it's available; capture layout_id for commissions
       const plotResult = await client.query(
-        `SELECT p.*, s.loan_enabled
+        `SELECT p.*, ll.id AS layout_id, ll.buyback_bonus_monthly AS layout_buyback, s.loan_enabled
          FROM land_plots p
-         JOIN land_sites s ON s.id = p.site_id
+         JOIN land_layouts ll ON ll.id = p.layout_id
+         JOIN land_sites   s  ON s.id  = ll.site_id
          WHERE p.id = $1
          FOR UPDATE`,
         [payload.plotId]
@@ -177,14 +203,14 @@ export const LandBookingsService = {
         ? addDays(payload.bookingDate, ADVANCE_DAYS)
         : null;
 
-      // Insert booking
+      // Insert booking (now includes referrer_id for commission attribution)
       let bookingResult: any;
       try {
         bookingResult = await client.query(
           `INSERT INTO land_bookings
              (booking_ref, branch_id, customer_id, plot_id, payment_mode,
-              booking_date, advance_deadline, notes, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              booking_date, advance_deadline, notes, referrer_id, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *`,
           [
             payload.bookingRef.trim(),
@@ -195,12 +221,12 @@ export const LandBookingsService = {
             payload.bookingDate,
             advanceDeadline,
             payload.notes || null,
+            payload.referrerId || null,
             userId,
           ]
         );
       } catch (err: any) {
         if (err.code === '23505') {
-          // Could be duplicate booking_ref or active-booking-per-plot constraint
           throw new ConflictError('Booking reference already exists, or plot already has an active booking');
         }
         throw err;
@@ -213,6 +239,19 @@ export const LandBookingsService = {
         [userId, payload.plotId]
       );
 
+      // Distribute spot (one-time) commission to the referrer's chain
+      if (payload.referrerId) {
+        await LandIncentivesService.distributeSpot(client, {
+          bookingId:      booking.id,
+          referrerId:     payload.referrerId,
+          layoutId:       plot.layout_id,
+          creditedBy:     userId,
+          customerName:   custResult.rows[0].name,
+          plotSiteNumber: plot.site_number,
+          effectiveDate:  payload.bookingDate,
+        });
+      }
+
       await LandAuditService.log(client, {
         entity:    'booking',
         recordId:  booking.id,
@@ -222,6 +261,7 @@ export const LandBookingsService = {
           booking_ref:  booking.booking_ref,
           plot_id:      payload.plotId,
           payment_mode: payload.paymentMode,
+          referrer_id:  payload.referrerId || null,
           status:       booking.status,
         },
       });
@@ -492,6 +532,105 @@ export const LandBookingsService = {
     });
   },
 
+  // ─── CORRECT BOOKING (admin: MD / Management) ────────────────────────────
+  // Patches editable booking fields. Land has no incentives so no reversal needed.
+  async correctBooking(
+    db: Pool,
+    correctedBy: string,
+    bookingId: string,
+    branchId: string,
+    payload: CorrectLandBookingInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM land_bookings WHERE id = $1 AND branch_id = $2`,
+        [bookingId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Booking not found');
+      const old = before.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.bookingRef  != null) { fields.push(`booking_ref = $${idx++}`);   vals.push(payload.bookingRef); }
+      if (payload.bookingDate != null) { fields.push(`booking_date = $${idx++}`);  vals.push(payload.bookingDate); }
+      if (payload.paymentMode != null) { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
+      if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(bookingId, branchId);
+      const updated = await client.query(
+        `UPDATE land_bookings SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      // Use the shared scheme audit (not just Land's own audit) for consistency
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'booking',
+        entityId:   bookingId,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID BOOKING (Management only — called from the corrections page) ──────
+  // Soft-voids a land booking and claws back ALL commission credits
+  // (both spot enrollment credits and any monthly credits already distributed).
+  // The plot is returned to 'available' so it can be re-booked.
+  // Uses SchemeAudit.log for the correction audit trail.
+  async voidBooking(
+    db: Pool,
+    actorId: string,
+    bookingId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM land_bookings WHERE id = $1 AND branch_id = $2`,
+        [bookingId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Booking not found');
+      const old = before.rows[0];
+      if (old.status === 'voided') throw new ValidationError('Booking is already voided');
+
+      await client.query(
+        `UPDATE land_bookings SET status = 'voided' WHERE id = $1`,
+        [bookingId]
+      );
+
+      // Restore plot to 'available' so it can be re-booked
+      await client.query(
+        `UPDATE land_plots SET status = 'available' WHERE id = $1`,
+        [old.plot_id]
+      );
+
+      // Claw back all spot + monthly commissions for this booking
+      if (old.referrer_id) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode: 'land_scheme',
+          sourceId:   bookingId,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'booking',
+        entityId:   bookingId,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
+  },
+
   // ─── GET BUYBACK PAYOUTS ─────────────────────────────────────────────────
   async getBuybackPayouts(
     db: Pool,
@@ -521,6 +660,11 @@ export const LandBookingsService = {
   },
 
   // ─── MARK PAYOUT PAID ─────────────────────────────────────────────────────
+  // Records that a specific monthly buyback payout was sent to the customer.
+  // Also distributes the monthly employee commission to the referrer chain for
+  // this month (if the booking has a referrer and the month is within the
+  // per-role monthly_months cap configured on the layout).
+  // When all 60 payouts are marked paid, the booking and plot auto-complete.
   async markPayoutPaid(
     db: Pool,
     userId: string,
@@ -530,17 +674,24 @@ export const LandBookingsService = {
     payload: MarkPayoutPaidInput
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
-      // Verify booking exists and is accessible
+      // Verify booking and load info needed for commission distribution
       const params: any[] = [bookingId];
-      let bookingWhere = 'id = $1';
-      if (branchId) { bookingWhere += ` AND branch_id = $2`; params.push(branchId); }
+      let bookingWhere = 'bk.id = $1';
+      if (branchId) { bookingWhere += ` AND bk.branch_id = $2`; params.push(branchId); }
 
       const bookingResult = await client.query(
-        `SELECT status FROM land_bookings WHERE ${bookingWhere}`,
+        `SELECT bk.status, bk.referrer_id,
+                p.layout_id, p.site_number,
+                c.name AS customer_name
+         FROM land_bookings bk
+         JOIN land_plots  p  ON p.id  = bk.plot_id
+         JOIN customers   c  ON c.id  = bk.customer_id
+         WHERE ${bookingWhere}`,
         params
       );
       if (bookingResult.rows.length === 0) throw new NotFoundError('Booking not found');
-      if (bookingResult.rows[0].status !== 'full_paid') {
+      const bk = bookingResult.rows[0];
+      if (bk.status !== 'full_paid') {
         throw new ValidationError('Buyback payouts are only available for full_paid bookings');
       }
 
@@ -554,6 +705,21 @@ export const LandBookingsService = {
       );
       if (payoutResult.rows.length === 0) {
         throw new NotFoundError('Payout not found or already marked paid');
+      }
+
+      // Distribute monthly commission to the referrer chain (if one exists).
+      // monthly_months is per-role inside the service — no extra param needed.
+      if (bk.referrer_id) {
+        await LandIncentivesService.distributeMonthly(client, {
+          bookingId:      bookingId,
+          referrerId:     bk.referrer_id,
+          layoutId:       bk.layout_id,
+          monthNumber,
+          creditedBy:     userId,
+          customerName:   bk.customer_name,
+          plotSiteNumber: bk.site_number,
+          effectiveDate:  payload.paidDate,
+        });
       }
 
       await LandAuditService.log(client, {

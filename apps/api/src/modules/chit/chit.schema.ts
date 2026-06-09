@@ -12,21 +12,28 @@ export const CHIT_PACKAGES: Record<number, { fullAmount: number; halfAmount: num
   5: { fullAmount: 25_000, halfAmount: 12_500 },
 };
 
+// ─── Package edit (config roles) ─────────────────────────────────────────────
+export const UpdateChitPackageSchema = z.object({
+  fullAmount: z.number().positive().optional(),
+  halfAmount: z.number().positive().optional(),
+});
+export type UpdateChitPackageInput = z.infer<typeof UpdateChitPackageSchema>;
+
 export const CreateChitGroupSchema = z.object({
   groupName:     z.string().min(1).max(100),
   packageNumber: z.number().int().min(1).max(5),
   startDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   notes:         z.string().max(1000).optional(),
+  branchId:      z.string().uuid().optional(),
 });
 
 export const AddChitMemberSchema = z.object({
   customerId:       z.string().uuid(),
-  // Optional employee who referred this member — receives 20% of the Month-1 full amount.
   referrerId:       z.string().uuid().optional(),
-  // Date and mode for the auto-recorded Month-1 payment; defaults to group.start_date if omitted.
   firstPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   firstPaymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:            z.string().max(500).optional(),
+  branchId:         z.string().uuid().optional(),
 });
 
 export const RecordChitPaymentSchema = z.object({
@@ -35,6 +42,7 @@ export const RecordChitPaymentSchema = z.object({
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   notes:        z.string().max(500).optional(),
+  branchId:     z.string().uuid().optional(),
 });
 
 export const SelectWinnerSchema = z.object({
@@ -71,10 +79,31 @@ export const GetChitSummaryQuerySchema = z.object({
   endDate:   z.string().regex(DATE_RE).optional(),
 });
 
-export type CreateChitGroupInput    = z.infer<typeof CreateChitGroupSchema>;
-export type AddChitMemberInput       = z.infer<typeof AddChitMemberSchema>;
-export type RecordChitPaymentInput  = z.infer<typeof RecordChitPaymentSchema>;
-export type SelectWinnerInput       = z.infer<typeof SelectWinnerSchema>;
-export type CancelMemberInput       = z.infer<typeof CancelMemberSchema>;
-export type GetChitGroupsQuery      = z.infer<typeof GetChitGroupsQuerySchema>;
-export type CombineChitGroupsInput  = z.infer<typeof CombineChitGroupsSchema>;
+// Correction schema — MD / Management only
+// customerId lets the admin fix the customer on an existing enrollment.
+export const CorrectChitMemberSchema = z.object({
+  customerId:  z.string().uuid().optional(),
+  referrerId:  z.string().uuid().optional().nullable(),
+  notes:       z.string().max(500).optional().nullable(),
+  branchId:    z.string().uuid().optional(),
+});
+
+// Per-payment correction — edit month/amount/date/mode on a recorded chit payment.
+export const CorrectChitPaymentSchema = z.object({
+  monthNumber:  z.number().int().min(1).max(20).optional(),
+  amount:       z.number().positive().optional(),
+  paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  notes:        z.string().max(500).optional().nullable(),
+  branchId:     z.string().uuid().optional(),
+});
+
+export type CreateChitGroupInput      = z.infer<typeof CreateChitGroupSchema>;
+export type AddChitMemberInput        = z.infer<typeof AddChitMemberSchema>;
+export type RecordChitPaymentInput    = z.infer<typeof RecordChitPaymentSchema>;
+export type SelectWinnerInput         = z.infer<typeof SelectWinnerSchema>;
+export type CancelMemberInput         = z.infer<typeof CancelMemberSchema>;
+export type GetChitGroupsQuery        = z.infer<typeof GetChitGroupsQuerySchema>;
+export type CombineChitGroupsInput    = z.infer<typeof CombineChitGroupsSchema>;
+export type CorrectChitMemberInput    = z.infer<typeof CorrectChitMemberSchema>;
+export type CorrectChitPaymentInput   = z.infer<typeof CorrectChitPaymentSchema>;

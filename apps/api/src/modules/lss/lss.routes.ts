@@ -17,7 +17,8 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, GOLD_COIN_VIEWER_ROLES, REFERRER_ONLY_ROLES, hasRole } from '../../shared/role-constants';
+import { Role, GOLD_COIN_VIEWER_ROLES, REFERRER_ONLY_ROLES, hasRole, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { assertCanManageSchemeData } from '../../shared/permissions';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { getOversightBranchIds } from '../../shared/hierarchy';
 import {
@@ -35,6 +36,7 @@ import {
   CombineRoomsSchema,
   RefundRoomSchema,
   ListRoomsQuerySchema,
+  CorrectLssSlotSchema,
 } from './lss.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string | null; }
@@ -74,9 +76,13 @@ async function resolveViewScope(
 async function resolveSingleBranch(
   fastify: FastifyInstance,
   req: AuthenticatedRequest,
+  bodyBranchId?: string,
 ): Promise<string> {
+  if (req.user.role === Role.MANAGEMENT) {
+    return resolveWriterBranch(req.user.role, req.user.branchId, bodyBranchId);
+  }
   if (req.user.role !== Role.BRANCH_ADMIN) {
-    throw new ForbiddenError('Only branch admins can perform this action');
+    throw new ForbiddenError('Only Branch Admin or Management can perform this action');
   }
   return resolveBranchAdminBranchId(fastify.db, req.user.id, req.user.branchId);
 }
@@ -93,13 +99,41 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
     }
   );
 
+  // ─── GET /plans/all — includes inactive, for the control-center editor ───
+  fastify.get('/plans/all', { onRequest: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        const CONFIG = new Set(['md', 'director', 'management']);
+        if (!CONFIG.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const data = await PlansService.listAll(fastify.db);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /plans/:id — config roles ─────────────────────────────────────
+  fastify.patch('/plans/:id', { onRequest: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        const CONFIG = new Set(['md', 'director', 'management']);
+        if (!CONFIG.has(req.user.role)) throw new ForbiddenError('Access denied');
+        const { id } = request.params as { id: string };
+        const body   = request.body as { name?: string; price?: number; isActive?: boolean };
+        const data   = await PlansService.updatePlan(fastify.db, id, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
   // ─── POST /slots ─────────────────────────────────────────────────────────
   fastify.post('/slots', { onRequest: [fastify.authenticate] },
     async (request, reply) => {
       try {
-        const req = request as AuthenticatedRequest;
-        const branchId = await resolveSingleBranch(fastify, req);
+        const req  = request as AuthenticatedRequest;
         const body = CreateSlotSchema.parse(request.body);
+        const branchId = await resolveSingleBranch(fastify, req, (body as any).branchId);
         const result = await SlotsService.createSlot(fastify.db, branchId, req.user.id, body);
         return reply.code(201).send({ success: true, data: result });
       } catch (error) { return handleError(error, reply); }
@@ -110,9 +144,9 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
   fastify.post('/slots/:id/refund', { onRequest: [fastify.authenticate] },
     async (request, reply) => {
       try {
-        const req = request as AuthenticatedRequest;
-        const branchId = await resolveSingleBranch(fastify, req);
-        const { id } = request.params as { id: string };
+        const req      = request as AuthenticatedRequest;
+        const branchId = await resolveSingleBranch(fastify, req, (request.body as any)?.branchId);
+        const { id }   = request.params as { id: string };
         await SlotsService.refundSlot(fastify.db, id, branchId);
         return reply.send({ success: true });
       } catch (error) { return handleError(error, reply); }
@@ -268,6 +302,74 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
         }
 
         const data = await LSSService.getBranchSummary(fastify.db, summaryArg, undefined, undefined);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /lss/rooms/:id/void — soft-void a room (admin) ───────────────
+  fastify.patch('/rooms/:id/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_rooms WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new Error('Room not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await RoomsService.voidRoom(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /lss/slots/:id/remove — remove a member from a room (admin) ──
+  fastify.patch('/slots/:id/remove', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_slots WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new Error('Slot not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await SlotsService.removeSlot(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /lss/slots/:id/correct ────────────────────────────────────────
+  fastify.patch('/slots/:id/correct', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as { user: { id: string; role: string; branchId: string | null }; params: any; body: any };
+        assertCanManageSchemeData((req as any).user.role as any);
+        const { id } = req.params as { id: string };
+        const body = CorrectLssSlotSchema.parse(req.body);
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_slots WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new Error('Slot not found');
+        const branchId = resolveCorrectionBranch((req as any).user.role, (req as any).user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        const data = await SlotsService.correctSlot(fastify.db, (req as any).user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /lss/slots/:id/void ───────────────────────────────────────────
+  fastify.patch('/slots/:id/void', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as { user: { id: string; role: string; branchId: string | null }; params: any; body: any };
+        assertCanManageSchemeData((req as any).user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req as any).body?.branchId;
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_slots WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new Error('Slot not found');
+        const branchId = resolveCorrectionBranch((req as any).user.role, (req as any).user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await SlotsService.voidSlot(fastify.db, (req as any).user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

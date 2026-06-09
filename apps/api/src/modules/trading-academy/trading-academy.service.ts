@@ -1,7 +1,9 @@
-import { Pool } from 'pg';
-import { NotFoundError } from '../../shared/errors';
+import { Pool, PoolClient } from 'pg';
+import { NotFoundError, ValidationError } from '../../shared/errors';
 import { IncentiveService } from '../incentives/incentives.service';
-import type { AddTradingMemberInput, GetTradingMembersQuery } from './trading-academy.schema';
+import { runInTransaction } from '../../shared/transaction-helper';
+import { SchemeAudit } from '../../shared/scheme-audit';
+import type { AddTradingMemberInput, GetTradingMembersQuery, CorrectTradingMemberInput } from './trading-academy.schema';
 
 // Stable project code for trading academy — set once at creation, never changes
 // even if the admin renames the project display name. See migration 026.
@@ -205,6 +207,124 @@ export const TradingAcademyService = {
       [branchId]
     );
     return res.rows;
+  },
+
+  // ─── CORRECT MEMBER (admin: MD / Management) ────────────────────────────────
+  // Patches editable fields on an existing member. When enrolledBy or amount
+  // changes the incentive chain is reversed and re-distributed so the wallet
+  // always reflects the correct value and historical date.
+  async correctMember(
+    db: Pool,
+    correctedBy: string,
+    id: string,
+    branchId: string,
+    payload: CorrectTradingMemberInput
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT t.*, c.name AS customer_name, c.customer_code
+         FROM trading_academy_members t
+         JOIN customers c ON c.id = t.customer_id
+         WHERE t.id = $1 AND t.branch_id = $2`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Trading Academy member not found');
+      const old = before.rows[0];
+
+      const fields: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (payload.customerId     != null) { fields.push(`customer_id = $${idx++}`);      vals.push(payload.customerId); }
+      if (payload.enrolledBy     != null) { fields.push(`enrolled_by = $${idx++}`);      vals.push(payload.enrolledBy); }
+      if (payload.amount         != null) { fields.push(`amount = $${idx++}`);           vals.push(payload.amount); }
+      if (payload.enrollmentDate != null) { fields.push(`enrollment_date = $${idx++}`);  vals.push(payload.enrollmentDate); }
+      if (payload.paymentMode    != null) { fields.push(`payment_mode = $${idx++}`);     vals.push(payload.paymentMode); }
+      if (payload.notes !== undefined)    { fields.push(`notes = $${idx++}`);            vals.push(payload.notes); }
+      if (fields.length === 0) throw new ValidationError('No fields to update');
+
+      vals.push(id, branchId);
+      const updated = await client.query(
+        `UPDATE trading_academy_members SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
+        vals
+      );
+
+      const enrolledByChanged = payload.enrolledBy != null && payload.enrolledBy !== old.enrolled_by;
+      const amountChanged     = payload.amount     != null && parseFloat(payload.amount.toString()) !== parseFloat(old.amount);
+      const effectiveDate     = payload.enrollmentDate ?? old.enrollment_date;
+      const effectiveDealMaker = payload.enrolledBy ?? old.enrolled_by;
+
+      if (enrolledByChanged || amountChanged) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   PROJECT_CODE,
+          sourceId:     id,
+          paymentEvent: 'enrollment',
+        });
+        const customerName = old.customer_name;
+        const effectiveAmount = payload.amount != null ? parseFloat(payload.amount.toString()) : parseFloat(old.amount);
+        const description = `Trading Academy (corrected) — ${customerName} (${old.customer_code}) ₹${effectiveAmount.toLocaleString('en-IN')}`;
+        await IncentiveService.distributeIncentives(client, {
+          schemeCode:        PROJECT_CODE,
+          dealMakerUserId:   effectiveDealMaker,
+          mode:              'fixed_chain',
+          paymentEvent:      'enrollment',
+          sourceId:          id,
+          sourceDescription: description,
+          creditedBy:        correctedBy,
+          effectiveDate,
+        });
+      }
+
+      await SchemeAudit.log(client, {
+        schemeCode: PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId:    correctedBy,
+        action:     'edit',
+        oldValues:  old,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
+  // ─── VOID MEMBER (admin: MD / Management) ────────────────────────────────
+  async voidMember(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM trading_academy_members WHERE id = $1 AND branch_id = $2`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Trading Academy member not found');
+      const old = before.rows[0];
+
+      await client.query(
+        `UPDATE trading_academy_members SET status = 'voided' WHERE id = $1`,
+        [id]
+      );
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode:   PROJECT_CODE,
+        sourceId:     id,
+        paymentEvent: 'enrollment',
+      });
+
+      await SchemeAudit.log(client, {
+        schemeCode: PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId,
+        action:     'void',
+        oldValues:  old,
+      });
+
+      return { ...old, status: 'voided' };
+    });
   },
 
   // ─── ADMIN AGGREGATE: per-branch breakdown for the MD/Director dashboard ───

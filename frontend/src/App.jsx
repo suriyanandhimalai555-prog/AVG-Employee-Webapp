@@ -55,12 +55,15 @@ const LandSchemePage           = lazy(() => import('./pages/schemes/LandSchemePa
 const LandSitesPage            = lazy(() => import('./pages/schemes/LandSitesPage').then(m => ({ default: m.LandSitesPage })));
 const LandAddSitePage          = lazy(() => import('./pages/schemes/LandAddSitePage').then(m => ({ default: m.LandAddSitePage })));
 const LandSiteDetailPage       = lazy(() => import('./pages/schemes/LandSiteDetailPage').then(m => ({ default: m.LandSiteDetailPage })));
+const LandAddLayoutPage        = lazy(() => import('./pages/schemes/LandAddLayoutPage').then(m => ({ default: m.LandAddLayoutPage })));
 const LandBookingsPage         = lazy(() => import('./pages/schemes/LandBookingsPage').then(m => ({ default: m.LandBookingsPage })));
 const LandAddBookingPage       = lazy(() => import('./pages/schemes/LandAddBookingPage').then(m => ({ default: m.LandAddBookingPage })));
 const LandBookingDetailPage    = lazy(() => import('./pages/schemes/LandBookingDetailPage').then(m => ({ default: m.LandBookingDetailPage })));
-const LeadershipListPage       = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
+const LeadershipListPage          = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
+const ManagementControlCenter     = lazy(() => import('./pages/ManagementControlCenter').then(m => ({ default: m.ManagementControlCenter })));
 const SchemesOverviewPage      = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
 const SchemeBranchListPage     = lazy(() => import('./pages/SchemeBranchListPage').then(m => ({ default: m.SchemeBranchListPage })));
+const SchemeCorrectionsPage    = lazy(() => import('./pages/schemes/SchemeCorrectionsPage').then(m => ({ default: m.SchemeCorrectionsPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
 const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
 const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
@@ -180,7 +183,8 @@ function App() {
         <Route path="/money/schemes/land"                element={<LandSchemePage />} />
         <Route path="/money/schemes/land/sites"          element={<LandSitesPage />} />
         <Route path="/money/schemes/land/sites/new"      element={<LandAddSitePage />} />
-        <Route path="/money/schemes/land/sites/:siteId"  element={<LandSiteDetailPage />} />
+        <Route path="/money/schemes/land/sites/:siteId"               element={<LandSiteDetailPage />} />
+        <Route path="/money/schemes/land/sites/:siteId/layouts/new" element={<LandAddLayoutPage />} />
         <Route path="/money/schemes/land/bookings"       element={<LandBookingsPage />} />
         <Route path="/money/schemes/land/bookings/new"   element={<LandAddBookingPage />} />
         <Route path="/money/schemes/land/bookings/:id"   element={<LandBookingDetailPage />} />
@@ -189,6 +193,10 @@ function App() {
         <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />
         <Route path="/gold/add"                  element={<Navigate to="/money/schemes/gold/add" replace />} />
         <Route path="/gold/:id"                  element={<Navigate to="/money/schemes/gold" replace />} />
+
+        {/* Management Control Center */}
+        <Route path="/control-center"             element={<ManagementControlCenter />} />
+        <Route path="/control-center/corrections" element={<SchemeCorrectionsPage />} />
 
         {/* Leadership */}
         <Route path="/leadership/:kind"          element={<LeadershipListPage />} />

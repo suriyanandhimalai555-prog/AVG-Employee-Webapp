@@ -9,7 +9,8 @@ export const UserRole = z.enum([
   'abm',
   'sales_officer',
   'branch_admin',
-  'oa'
+  'oa',
+  'management',
 ]);
 
 export const CreateUserSchema = z.object({

@@ -7,6 +7,8 @@ import { useSelector } from 'react-redux';
 import { CheckCircle2, Loader2, X } from 'lucide-react';
 import { selectCurrentUser } from '../../../store/slices/authSlice';
 import { useAddGoldPaymentMutation } from '../../../store/api/apiSlice';
+import { needsBranchSelection } from '../../../lib/schemeAuth';
+import { BranchPicker } from '../../../components/BranchPicker';
 import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { SCHEME_MODE_LABELS, SCHEME_MODE_STYLES, getTodayISO } from '../../../lib/schemeConstants';
 import { FormError } from './FormError';
@@ -15,7 +17,8 @@ const MODAL_INPUT_CLASS =
   'w-full px-4 py-3 bg-navy/2 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20';
 
 export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
-  useSelector(selectCurrentUser); // keep auth context for potential future use
+  const user = useSelector(selectCurrentUser);
+  const isManagement = needsBranchSelection(user?.role);
 
   const paidMonths = new Set((payments || []).map(p => p.month_number));
   const nextMonth  = (() => {
@@ -32,6 +35,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
     paymentMode: 'cash',
     notes:       '',
   });
+  const [branchId, setBranchId]             = useState('');
   const [error, setError]                   = useState(null);
   const [addPayment, { isLoading }]         = useAddGoldPaymentMutation();
 
@@ -40,6 +44,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
     try {
       await addPayment({
         memberId:    member.id,
@@ -48,6 +53,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         amount:      parseFloat(form.amount),
         paymentMode: form.paymentMode,
         notes:       form.notes.trim() || undefined,
+        branchId:    isManagement ? branchId : undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -84,6 +90,16 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Branch picker — only shown for management accounts */}
+          {isManagement && (
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1.5">
+                Branch *
+              </label>
+              <BranchPicker value={branchId} onChange={setBranchId} className={MODAL_INPUT_CLASS} />
+            </div>
+          )}
+
           {/* Month + date */}
           <div className="grid grid-cols-2 gap-3">
             <div>

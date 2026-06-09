@@ -5,6 +5,7 @@ import { Save, Loader2, AlertCircle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useAddGoldMemberMutation, useGetGoldEmployeesQuery } from '../../store/api/apiSlice';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BranchPicker } from '../../components/BranchPicker';
 import { PeriodDateInput } from '../../components/PeriodDateInput';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
@@ -22,6 +23,8 @@ export const GoldSchemeAddPage = () => {
   const { data: employees = [] } = useGetGoldEmployeesQuery();
   const [addMember, { isLoading }] = useAddGoldMemberMutation();
 
+  const isManagement = user?.role === 'management';
+  const [branchId,  setBranchId]  = useState('');
   const [customer, setCustomer] = useState(null);
   const [form, setForm] = useState({
     chitNumber:       '',
@@ -46,6 +49,7 @@ export const GoldSchemeAddPage = () => {
       setError('Chit number, monthly amount, and start date are required.');
       return;
     }
+    if (isManagement && !branchId) { setError('Please select a branch.'); return; }
     try {
       const res = await addMember({
         chitNumber:       form.chitNumber.trim(),
@@ -56,6 +60,7 @@ export const GoldSchemeAddPage = () => {
         totalMonths:      parseInt(form.totalMonths, 10),
         firstPaymentMode: form.firstPaymentMode,
         notes:            form.notes.trim() || undefined,
+        branchId:         isManagement ? branchId : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -63,7 +68,7 @@ export const GoldSchemeAddPage = () => {
     }
   };
 
-  if (user?.role !== 'branch_admin') {
+  if (user?.role !== 'branch_admin' && !isManagement) {
     return (
       <div className="flex flex-col items-center justify-center p-12 pt-24">
         <AlertCircle size={32} className="text-red-400 mb-3" aria-hidden="true" />
@@ -115,8 +120,15 @@ export const GoldSchemeAddPage = () => {
 
       <form onSubmit={handleSubmit} className="px-4 space-y-5">
 
+        {isManagement && (
+          <FormField label="Branch" required>
+            <BranchPicker value={branchId} onChange={setBranchId} />
+          </FormField>
+        )}
+
         <FormField label="Customer" required>
-          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)} />
+          <CustomerPicker value={customer} onChange={setCustomer} onClear={() => setCustomer(null)}
+            branchId={isManagement ? branchId : undefined} />
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">

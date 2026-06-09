@@ -8,11 +8,13 @@ const inputClass = "w-full px-4 py-3 bg-white rounded-2xl border border-navy/10 
  * CustomerPicker — search for an existing customer or create a new one inline.
  *
  * Props:
- *   value        string | null   — selected customer id
+ *   value        object | null   — selected customer object
  *   onChange     (customer) => void — called with the full customer object on selection
  *   onClear      () => void
+ *   branchId     string | undefined — required when used by management role;
+ *                passed to search + create so the server scopes to the right branch.
  */
-export const CustomerPicker = ({ value, onChange, onClear }) => {
+export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
   const [query, setQuery]       = useState('');
   const [showNew, setShowNew]   = useState(false);
   const [newForm, setNewForm]   = useState({ name: '', phone: '', address: '' });
@@ -28,7 +30,7 @@ export const CustomerPicker = ({ value, onChange, onClear }) => {
     const q = e.target.value;
     setQuery(q);
     setShowNew(false);
-    if (q.length >= 2) searchCustomers({ search: q, limit: 10 });
+    if (q.length >= 2) searchCustomers({ search: q, limit: 10, branchId });
   };
 
   const handleSelect = (customer) => {
@@ -41,9 +43,11 @@ export const CustomerPicker = ({ value, onChange, onClear }) => {
     if (!newForm.name.trim()) { setNewError('Name is required'); return; }
     try {
       const customer = await createCustomer({
-        name:    newForm.name.trim(),
-        phone:   newForm.phone.trim()   || undefined,
-        address: newForm.address.trim() || undefined,
+        name:     newForm.name.trim(),
+        phone:    newForm.phone.trim()   || undefined,
+        address:  newForm.address.trim() || undefined,
+        // management passes branchId so the server knows which branch to assign to
+        branchId: branchId || undefined,
       }).unwrap();
       onChange(customer);
       setShowNew(false);
