@@ -80,6 +80,7 @@ export const BuildersAddPlanPage = () => {
 
     if (!customer) { setError('Please select a customer.'); return; }
     if (!form.packageNumber) { setError('Please select a package.'); return; }
+    if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
 
     try {
@@ -210,14 +211,15 @@ export const BuildersAddPlanPage = () => {
           />
         </FormField>
 
-        {/* Referrer (optional) */}
-        <FormField label="Referred By (optional)">
+        {/* Referrer (required — drives one-time + monthly incentives) */}
+        <FormField label="Referred By" required>
           <select
             value={form.referrerId}
             onChange={set('referrerId')}
             className={SCHEME_INPUT_CLASS}
+            required
           >
-            <option value="">No referrer</option>
+            <option value="">Select referrer…</option>
             {(employees || []).map(emp => (
               <option key={emp.id} value={emp.id}>
                 {emp.name} · {emp.role?.replace(/_/g, ' ').toUpperCase()}

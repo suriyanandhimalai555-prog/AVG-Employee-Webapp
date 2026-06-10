@@ -218,4 +218,20 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       } catch (error) { return handleError(error, reply); }
     }
   );
+
+  // ─── PATCH /gold/:id/delete — permanently delete a member + payments ───
+  fastify.patch('/:id/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, bodyBranchId);
+        const data = await GoldService.deleteMember(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

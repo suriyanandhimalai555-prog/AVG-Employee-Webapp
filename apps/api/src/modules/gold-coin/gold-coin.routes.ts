@@ -62,7 +62,8 @@ async function resolveViewScope(
     return { branchIds: [branchId], branchId, isHeadBranch };
   }
 
-  if (role === Role.MD) {
+  if (role === Role.MD || role === Role.MANAGEMENT) {
+    // TS: management has no branchId on the JWT; treat as global scope like MD
     return { branchIds: null, branchId: null, isHeadBranch: false };
   }
 
@@ -389,6 +390,25 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
         if (rows.rows.length === 0) throw new Error('Slot not found');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
         const data = await SlotsService.voidSlot(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /gold-coin/slots/:id/delete — permanently delete a slot ─────────
+  fastify.patch('/slots/:id/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM gold_coin_slots WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Slot not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await SlotsService.deleteSlot(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

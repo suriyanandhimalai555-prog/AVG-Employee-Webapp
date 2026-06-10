@@ -689,6 +689,52 @@ export const GoldService = {
     });
   },
 
+  // ─── DELETE MEMBER (admin: MD / Management) ──────────────────────────────
+  // Permanently deletes a gold member and all of its payments, claws back ALL
+  // incentives, and snapshots the full before-state into the audit log so the
+  // data is recoverable from scheme_corrections_audit.old_values.
+  async deleteMember(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM gold_scheme_members WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Gold member not found');
+      const old = before.rows[0];
+
+      const payments = await client.query(
+        `SELECT * FROM gold_scheme_payments WHERE member_id = $1 ORDER BY month_number`,
+        [id]
+      );
+
+      // Claw back all incentives for this member (enrollment + renewals)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        sourceId:   id,
+      });
+
+      // Payments cascade on member delete, but delete explicitly to keep intent visible
+      await client.query(`DELETE FROM gold_scheme_payments WHERE member_id = $1`, [id]);
+      await client.query(`DELETE FROM gold_scheme_members WHERE id = $1`, [id]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: GOLD_PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId,
+        action:     'delete',
+        oldValues:  { member: old, payments: payments.rows },
+      });
+
+      return { deleted: true, id, payments: payments.rows.length };
+    });
+  },
+
   // ─── UNPAY PAYMENT (admin: MD / Management) ─────────────────────────────
   // Deletes a single recorded payment and claws back only that payment's
   // incentive (renewal event). Does not touch other payments.

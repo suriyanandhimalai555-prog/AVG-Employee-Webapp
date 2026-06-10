@@ -327,6 +327,44 @@ export const TradingAcademyService = {
     });
   },
 
+  // ─── DELETE MEMBER (admin: MD / Management) ──────────────────────────────
+  // Permanently deletes the enrollment row, claws back its incentives, and
+  // snapshots the before-state into the audit log. No payments table here —
+  // trading academy is a one-time enrollment scheme.
+  async deleteMember(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM trading_academy_members WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [id, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Trading Academy member not found');
+      const old = before.rows[0];
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: PROJECT_CODE,
+        sourceId:   id,
+      });
+
+      await client.query(`DELETE FROM trading_academy_members WHERE id = $1`, [id]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: PROJECT_CODE,
+        entityType: 'member',
+        entityId:   id,
+        actorId,
+        action:     'delete',
+        oldValues:  { member: old },
+      });
+
+      return { deleted: true, id };
+    });
+  },
+
   // ─── ADMIN AGGREGATE: per-branch breakdown for the MD/Director dashboard ───
   // One pass for member counts + collected (member.amount is the one-time fee),
   // a second pass for commission via the unified ledger. Merged by branch_id.

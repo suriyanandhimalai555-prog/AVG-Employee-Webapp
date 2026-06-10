@@ -119,4 +119,23 @@ export default async function tradingAcademyRoutes(fastify: FastifyInstance): Pr
       } catch (error) { return handleError(error, reply); }
     }
   );
+
+  // PATCH /trading-academy/:id/delete — permanently delete a member ───
+  fastify.patch('/:id/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          `SELECT branch_id FROM trading_academy_members WHERE id = $1`, [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await TradingAcademyService.deleteMember(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

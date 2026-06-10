@@ -12,12 +12,12 @@
 // Audit, incentive clawback on void/unpay, and the correction write path
 // are all unchanged — they were already production-correct on the backend.
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
   Loader2, Search, Edit2, Trash2, X, Check,
   ChevronDown, ChevronUp, ShieldAlert, History, Undo2, CreditCard,
-  PlusCircle, Users,
+  PlusCircle, Users, ArrowLeftRight, Home, Banknote,
 } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
@@ -26,29 +26,40 @@ import {
   useGetBuildersPayoutsQuery,
   useGetChitMemberPaymentsQuery,
   useGetChitGroupQuery,
+  useGetGoldCoinRoomQuery,
+  useGetLssRoomQuery,
   useCorrectGoldMemberMutation,
   useCorrectGoldPaymentMutation,
   useUnpayGoldPaymentMutation,
   useVoidGoldMemberMutation,
+  useDeleteGoldMemberMutation,
   useAddGoldPaymentMutation,
   useCorrectTradingMemberMutation,
   useVoidTradingMemberMutation,
+  useDeleteTradingMemberMutation,
   useCorrectBuildersPlanMutation,
   useCorrectBuildersPayoutMutation,
   useUnpayBuildersPayoutMutation,
   useVoidBuildersPlanMutation,
+  useDeleteBuildersPlanMutation,
+  useChangeBuildersRewardMutation,
+  useChooseBuildersRewardMutation,
   useRecordBuildersPayoutMutation,
   useCorrectChitMemberMutation,
   useCorrectChitPaymentMutation,
   useUnpayChitPaymentMutation,
   useVoidChitMemberMutation,
+  useDeleteChitMemberMutation,
   useRecordChitPaymentMutation,
   useCorrectGoldCoinSlotMutation,
   useVoidGoldCoinSlotMutation,
+  useDeleteGoldCoinSlotMutation,
   useCorrectLssSlotMutation,
   useVoidLssSlotMutation,
+  useDeleteLssSlotMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
+  useDeleteLandBookingMutation,
   useGetSchemeAuditLogQuery,
   useGetGoldEmployeesQuery,
 } from '../../store/api/apiSlice';
@@ -135,27 +146,36 @@ const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt' };
 function useSchemeActions() {
   const [correctGold]      = useCorrectGoldMemberMutation();
   const [voidGold]         = useVoidGoldMemberMutation();
+  const [deleteGold]       = useDeleteGoldMemberMutation();
   const [correctTrading]   = useCorrectTradingMemberMutation();
   const [voidTrading]      = useVoidTradingMemberMutation();
-  const [correctBuilders]  = useCorrectBuildersPlanMutation();
-  const [voidBuilders]     = useVoidBuildersPlanMutation();
+  const [deleteTrading]    = useDeleteTradingMemberMutation();
+  const [correctBuilders]      = useCorrectBuildersPlanMutation();
+  const [voidBuilders]         = useVoidBuildersPlanMutation();
+  const [deleteBuilders]       = useDeleteBuildersPlanMutation();
+  const [changeRewardBuilders] = useChangeBuildersRewardMutation();
+  const [chooseRewardBuilders] = useChooseBuildersRewardMutation();
   const [correctChit]      = useCorrectChitMemberMutation();
   const [voidChit]         = useVoidChitMemberMutation();
+  const [deleteChit]       = useDeleteChitMemberMutation();
   const [correctGC]        = useCorrectGoldCoinSlotMutation();
   const [voidGC]           = useVoidGoldCoinSlotMutation();
+  const [deleteGC]         = useDeleteGoldCoinSlotMutation();
   const [correctLss]       = useCorrectLssSlotMutation();
   const [voidLss]          = useVoidLssSlotMutation();
+  const [deleteLss]        = useDeleteLssSlotMutation();
   const [correctLand]      = useCorrectLandBookingMutation();
   const [voidLand]         = useVoidLandBookingMutation();
+  const [deleteLand]       = useDeleteLandBookingMutation();
 
   return {
-    gold_scheme:       { correct: correctGold,    void: voidGold,    entityKey: (e) => ({ id: e.id }) },
-    trading_academy:   { correct: correctTrading, void: voidTrading, entityKey: (e) => ({ id: e.id }) },
-    builders_scheme:   { correct: correctBuilders,void: voidBuilders,entityKey: (e) => ({ planId: e.id }) },
-    agila_chit_scheme: { correct: correctChit,    void: voidChit,    entityKey: (e) => ({ groupId: e.group_id, memberId: e.id }) },
-    gold_coin_scheme:  { correct: correctGC,      void: voidGC,      entityKey: (e) => ({ id: e.id }) },
-    lss_scheme:        { correct: correctLss,     void: voidLss,     entityKey: (e) => ({ id: e.id }) },
-    land_scheme:       { correct: correctLand,    void: voidLand,    entityKey: (e) => ({ id: e.id }) },
+    gold_scheme:       { correct: correctGold,    void: voidGold,    delete: deleteGold,    entityKey: (e) => ({ id: e.id }) },
+    trading_academy:   { correct: correctTrading, void: voidTrading, delete: deleteTrading, entityKey: (e) => ({ id: e.id }) },
+    builders_scheme:   { correct: correctBuilders, void: voidBuilders, delete: deleteBuilders, changeReward: changeRewardBuilders, chooseReward: chooseRewardBuilders, entityKey: (e) => ({ planId: e.id }) },
+    agila_chit_scheme: { correct: correctChit,    void: voidChit,    delete: deleteChit,    entityKey: (e) => ({ groupId: e.group_id, memberId: e.id }) },
+    gold_coin_scheme:  { correct: correctGC,      void: voidGC,      delete: deleteGC,      entityKey: (e) => ({ id: e.id }) },
+    lss_scheme:        { correct: correctLss,     void: voidLss,     delete: deleteLss,     entityKey: (e) => ({ id: e.id }) },
+    land_scheme:       { correct: correctLand,    void: voidLand,    delete: deleteLand,    entityKey: (e) => ({ id: e.id }) },
   };
 }
 
@@ -746,21 +766,34 @@ const CHIT_MEMBER_STATUS = {
 const ChitMemberCard = ({ member, groupId, branchId, chitActions }) => {
   // Attach group_id so ChitPaymentsPanel and entityKey can use it
   const memberWithGroup = { ...member, group_id: groupId };
-  const [editOpen, setEditOpen] = useState(false);
-  const [voidOpen, setVoidOpen] = useState(false);
-  const [voidError, setVoidError] = useState('');
+  const [editOpen,   setEditOpen]   = useState(false);
+  const [voidOpen,   setVoidOpen]   = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const isVoided = member.status === 'voided';
   const fields   = SCHEME_FIELDS.agila_chit_scheme;
 
+  const closeAll = () => { setEditOpen(false); setVoidOpen(false); setDeleteOpen(false); setActionError(''); };
+
   const handleVoid = async () => {
-    setBusy(true); setVoidError('');
+    setBusy(true); setActionError('');
     try {
       await chitActions.void({ groupId, memberId: member.id, branchId }).unwrap();
       setVoidOpen(false);
     } catch (err) {
-      setVoidError(err?.data?.error?.message || 'Failed to void member.');
+      setActionError(err?.data?.error?.message || 'Failed to void member.');
+    } finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true); setActionError('');
+    try {
+      await chitActions.delete({ groupId, memberId: member.id, branchId }).unwrap();
+      setDeleteOpen(false);
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to delete member.');
     } finally { setBusy(false); }
   };
 
@@ -779,20 +812,27 @@ const ChitMemberCard = ({ member, groupId, branchId, chitActions }) => {
           <span className={`block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${CHIT_MEMBER_STATUS[member.status] ?? 'bg-navy/5 text-navy/40'}`}>
             {member.status}
           </span>
-          {!isVoided && (
-            <div className="flex gap-1 justify-end">
-              <button type="button" onClick={() => { setEditOpen((v) => !v); setVoidOpen(false); }}
-                className="w-7 h-7 rounded-xl bg-white flex items-center justify-center text-navy/50 tactile-press hover:bg-indigo/10 hover:text-indigo"
-                aria-label="Edit member">
-                <Edit2 size={12} />
-              </button>
-              <button type="button" onClick={() => { setVoidOpen((v) => !v); setEditOpen(false); }}
-                className="w-7 h-7 rounded-xl bg-white flex items-center justify-center text-navy/50 tactile-press hover:bg-red-50 hover:text-red-600"
-                aria-label="Void member">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          )}
+          <div className="flex gap-1 justify-end">
+            {!isVoided && (
+              <>
+                <button type="button" onClick={() => { closeAll(); setEditOpen(true); }}
+                  className="w-7 h-7 rounded-xl bg-white flex items-center justify-center text-navy/50 tactile-press hover:bg-indigo/10 hover:text-indigo"
+                  aria-label="Edit member">
+                  <Edit2 size={12} />
+                </button>
+                <button type="button" onClick={() => { closeAll(); setVoidOpen(true); }}
+                  className="w-7 h-7 rounded-xl bg-white flex items-center justify-center text-navy/50 tactile-press hover:bg-red-50 hover:text-red-600"
+                  aria-label="Void member">
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+            <button type="button" onClick={() => { closeAll(); setDeleteOpen(true); }}
+              className="w-7 h-7 rounded-xl bg-red-50 flex items-center justify-center text-red-400 tactile-press hover:bg-red-100 hover:text-red-700"
+              aria-label="Delete permanently">
+              <ShieldAlert size={12} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -822,7 +862,7 @@ const ChitMemberCard = ({ member, groupId, branchId, chitActions }) => {
               The record will be marked voided and any incentive credits will be clawed back. This cannot be undone.
             </p>
           </div>
-          {voidError && <FormError error={voidError} />}
+          {actionError && <FormError error={actionError} />}
           <div className="flex gap-2">
             <button type="button" onClick={handleVoid} disabled={busy}
               className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
@@ -830,6 +870,31 @@ const ChitMemberCard = ({ member, groupId, branchId, chitActions }) => {
               Confirm Void
             </button>
             <button type="button" onClick={() => setVoidOpen(false)}
+              className="px-4 py-2.5 rounded-xl bg-navy/5 text-navy/60 text-xs font-bold tactile-press">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteOpen && (
+        <div className="border-t border-red-200 pt-3 space-y-3">
+          <div className="bg-red-100 rounded-xl px-3 py-2.5">
+            <p className="text-xs font-bold text-red-800">Delete permanently?</p>
+            <p className="text-[10px] text-red-700 mt-0.5">
+              This erases the record and all of its payments from the database and claws back every incentive.
+              A snapshot is kept in the audit log. This cannot be undone.
+            </p>
+          </div>
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleDelete} disabled={busy}
+              className="flex-1 py-2.5 rounded-xl bg-red-700 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <ShieldAlert size={12} />}
+              Confirm Permanent Delete
+            </button>
+            <button type="button" onClick={() => setDeleteOpen(false)}
               className="px-4 py-2.5 rounded-xl bg-navy/5 text-navy/60 text-xs font-bold tactile-press">
               Cancel
             </button>
@@ -913,22 +978,59 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
   const Row    = ENTRY_ROW[schemeCode];
   const fields = SCHEME_FIELDS[schemeCode] ?? [];
 
-  const [editOpen,  setEditOpen]  = useState(false);
-  const [voidOpen,  setVoidOpen]  = useState(false);
-  const [voidError, setVoidError] = useState('');
-  const [busy,      setBusy]      = useState(false);
+  const [editOpen,         setEditOpen]         = useState(false);
+  const [voidOpen,         setVoidOpen]         = useState(false);
+  const [deleteOpen,       setDeleteOpen]        = useState(false);
+  const [rewardOpen,       setRewardOpen]        = useState(false);
+  const [rewardChoice,     setRewardChoice]      = useState('');
+  const [landProvided,     setLandProvided]      = useState(false);
+  const [actionError,      setActionError]       = useState('');
+  const [busy,             setBusy]              = useState(false);
 
-  const isVoided    = entry.status === 'voided';
-  const hasPayments = PAYMENT_SCHEMES.has(schemeCode) && !isVoided;
+  const isVoided         = entry.status === 'voided';
+  const hasPayments      = PAYMENT_SCHEMES.has(schemeCode) && !isVoided;
+  const canChangeReward  = schemeCode === 'builders_scheme'
+    && ['house', 'cash', 'decision_pending'].includes(entry.status)
+    && !!(entry.status === 'decision_pending' ? actions.chooseReward : actions.changeReward);
+
+  const closeAll = () => {
+    setEditOpen(false); setVoidOpen(false); setDeleteOpen(false); setRewardOpen(false);
+    setActionError(''); setRewardChoice(''); setLandProvided(false);
+  };
 
   const handleVoid = async () => {
-    setBusy(true); setVoidError('');
+    setBusy(true); setActionError('');
     try {
       const entityArgs = actions.entityKey(entry);
       await actions.void({ ...entityArgs, branchId }).unwrap();
       setVoidOpen(false);
     } catch (err) {
-      setVoidError(err?.data?.error?.message || 'Failed to void entry.');
+      setActionError(err?.data?.error?.message || 'Failed to void entry.');
+    } finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true); setActionError('');
+    try {
+      const entityArgs = actions.entityKey(entry);
+      await actions.delete({ ...entityArgs, branchId }).unwrap();
+      setDeleteOpen(false);
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to delete entry.');
+    } finally { setBusy(false); }
+  };
+
+  const handleChangeReward = async () => {
+    if (!rewardChoice) { setActionError('Please select a reward option.'); return; }
+    if (rewardChoice === 'house' && !landProvided) { setActionError('Please confirm that the customer has provided land.'); return; }
+    setBusy(true); setActionError('');
+    try {
+      const entityArgs = actions.entityKey(entry);
+      const mutFn = entry.status === 'decision_pending' ? actions.chooseReward : actions.changeReward;
+      await mutFn({ ...entityArgs, choice: rewardChoice, landProvided, branchId }).unwrap();
+      closeAll();
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to change reward.');
     } finally { setBusy(false); }
   };
 
@@ -940,20 +1042,34 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
           <span className={`block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>
             {(entry.status || '').replace(/_/g, ' ')}
           </span>
-          {!isVoided && (
-            <div className="flex gap-1 justify-end">
-              <button type="button" onClick={() => { setEditOpen((v) => !v); setVoidOpen(false); }}
-                className="w-7 h-7 rounded-xl bg-navy/5 flex items-center justify-center text-navy/50 tactile-press hover:bg-indigo/10 hover:text-indigo"
-                aria-label="Edit">
-                <Edit2 size={12} />
+          <div className="flex gap-1 justify-end">
+            {canChangeReward && (
+              <button type="button" onClick={() => { closeAll(); setRewardOpen(true); setRewardChoice(entry.status === 'decision_pending' ? '' : (entry.status === 'house' ? 'cash' : 'house')); }}
+                className="w-7 h-7 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 tactile-press hover:bg-amber-100 hover:text-amber-700"
+                aria-label="Change reward choice">
+                <ArrowLeftRight size={12} />
               </button>
-              <button type="button" onClick={() => { setVoidOpen((v) => !v); setEditOpen(false); }}
-                className="w-7 h-7 rounded-xl bg-navy/5 flex items-center justify-center text-navy/50 tactile-press hover:bg-red-50 hover:text-red-600"
-                aria-label="Void">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          )}
+            )}
+            {!isVoided && (
+              <>
+                <button type="button" onClick={() => { closeAll(); setEditOpen(true); }}
+                  className="w-7 h-7 rounded-xl bg-navy/5 flex items-center justify-center text-navy/50 tactile-press hover:bg-indigo/10 hover:text-indigo"
+                  aria-label="Edit">
+                  <Edit2 size={12} />
+                </button>
+                <button type="button" onClick={() => { closeAll(); setVoidOpen(true); }}
+                  className="w-7 h-7 rounded-xl bg-navy/5 flex items-center justify-center text-navy/50 tactile-press hover:bg-red-50 hover:text-red-600"
+                  aria-label="Void">
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+            <button type="button" onClick={() => { closeAll(); setDeleteOpen(true); }}
+              className="w-7 h-7 rounded-xl bg-red-50 flex items-center justify-center text-red-400 tactile-press hover:bg-red-100 hover:text-red-700"
+              aria-label="Delete permanently">
+              <ShieldAlert size={12} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -976,6 +1092,50 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
             : null // chit payments are handled inside ChitGroupCard → ChitMemberCard
       )}
 
+      {rewardOpen && (
+        <div className="border-t border-amber-100 pt-3 space-y-3">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-amber-700">Change Reward Choice</p>
+          <p className="text-[10px] text-navy/50">
+            Current: <span className="font-bold text-navy">{entry.status}</span>. Select the correct reward:
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => { setRewardChoice('house'); setLandProvided(false); }}
+              className={`p-3 rounded-xl border-2 text-left transition-all ${rewardChoice === 'house' ? 'border-sky-500 bg-sky-50' : 'border-navy/10 bg-white'}`}>
+              <div className="flex items-center gap-2">
+                <Home size={14} className={rewardChoice === 'house' ? 'text-sky-600' : 'text-navy/30'} />
+                <span className="text-xs font-bold text-navy">House</span>
+              </div>
+            </button>
+            <button type="button" onClick={() => setRewardChoice('cash')}
+              className={`p-3 rounded-xl border-2 text-left transition-all ${rewardChoice === 'cash' ? 'border-violet-500 bg-violet-50' : 'border-navy/10 bg-white'}`}>
+              <div className="flex items-center gap-2">
+                <Banknote size={14} className={rewardChoice === 'cash' ? 'text-violet-600' : 'text-navy/30'} />
+                <span className="text-xs font-bold text-navy">Cash</span>
+              </div>
+            </button>
+          </div>
+          {rewardChoice === 'house' && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={landProvided} onChange={(e) => setLandProvided(e.target.checked)}
+                className="w-4 h-4 rounded accent-sky-600" />
+              <span className="text-xs font-medium text-navy">Customer has provided land</span>
+            </label>
+          )}
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleChangeReward} disabled={busy || !rewardChoice}
+              className="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <ArrowLeftRight size={12} />}
+              Confirm Change
+            </button>
+            <button type="button" onClick={closeAll}
+              className="px-4 py-2.5 rounded-xl bg-navy/5 text-navy/60 text-xs font-bold tactile-press">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {voidOpen && (
         <div className="border-t border-red-100 pt-3 space-y-3">
           <div className="bg-red-50 rounded-xl px-3 py-2.5">
@@ -984,7 +1144,7 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
               The record will be marked voided and any incentive credits will be clawed back. This cannot be undone.
             </p>
           </div>
-          {voidError && <FormError error={voidError} />}
+          {actionError && <FormError error={actionError} />}
           <div className="flex gap-2">
             <button type="button" onClick={handleVoid} disabled={busy}
               className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
@@ -998,6 +1158,204 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
           </div>
         </div>
       )}
+
+      {deleteOpen && (
+        <div className="border-t border-red-200 pt-3 space-y-3">
+          <div className="bg-red-100 rounded-xl px-3 py-2.5">
+            <p className="text-xs font-bold text-red-800">Delete permanently?</p>
+            <p className="text-[10px] text-red-700 mt-0.5">
+              This erases the record and all of its payments from the database and claws back every incentive.
+              A snapshot is kept in the audit log. This cannot be undone.
+            </p>
+          </div>
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleDelete} disabled={busy}
+              className="flex-1 py-2.5 rounded-xl bg-red-700 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <ShieldAlert size={12} />}
+              Confirm Permanent Delete
+            </button>
+            <button type="button" onClick={() => setDeleteOpen(false)}
+              className="px-4 py-2.5 rounded-xl bg-navy/5 text-navy/60 text-xs font-bold tactile-press">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Room Slots Panel — correct/void/delete individual slots inside a room ────
+// Gold-coin and LSS entries are ROOMS; slot-level actions live here.
+// This also fixes the pre-existing bug where the old code fed room IDs into
+// slot-level mutations (room id ≠ slot id → "Slot not found").
+
+const SLOT_STATUS_STYLES = {
+  held:    'bg-blue-50 text-blue-600',
+  won:     'bg-amber-50 text-amber-700',
+  refunded:'bg-gray-100 text-gray-500',
+  voided:  'bg-gray-100 text-gray-400',
+};
+
+const SlotRow = ({ slot, branchId, schemeCode, slotActions }) => {
+  const [editOpen,   setEditOpen]   = useState(false);
+  const [voidOpen,   setVoidOpen]   = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const isWon    = slot.status === 'won';
+  const isInactive = slot.status === 'voided' || slot.status === 'refunded';
+
+  const closeAll = () => { setEditOpen(false); setVoidOpen(false); setDeleteOpen(false); setActionError(''); };
+
+  const handleVoid = async () => {
+    setBusy(true); setActionError('');
+    try {
+      await slotActions.void({ id: slot.id, branchId }).unwrap();
+      setVoidOpen(false);
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to void slot.');
+    } finally { setBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true); setActionError('');
+    try {
+      await slotActions.delete({ id: slot.id, branchId }).unwrap();
+      setDeleteOpen(false);
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to delete slot.');
+    } finally { setBusy(false); }
+  };
+
+  const fields = SCHEME_FIELDS[schemeCode] ?? [];
+
+  return (
+    <div className={`bg-white rounded-xl px-3 py-2.5 border space-y-2 ${isInactive ? 'border-gray-200 opacity-60' : 'border-navy/5'}`}>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-navy truncate">{slot.customer_name || '—'}
+            <span className="ml-1.5 text-[10px] text-navy/40">#{slot.slot_number}</span>
+          </p>
+          <p className="text-[10px] text-navy/40">{formatCurrency(slot.amount_paid)} · {slot.customer_code || ''}</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase ${SLOT_STATUS_STYLES[slot.status] ?? 'bg-navy/5 text-navy/40'}`}>
+            {slot.status}
+          </span>
+          {!isInactive && !isWon && (
+            <>
+              <button type="button" onClick={() => { closeAll(); setEditOpen(true); }}
+                className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press hover:bg-indigo/10 hover:text-indigo"
+                aria-label="Edit slot"><Edit2 size={10} /></button>
+              <button type="button" onClick={() => { closeAll(); setVoidOpen(true); }}
+                className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press hover:bg-red-50 hover:text-red-600"
+                aria-label="Void slot"><Trash2 size={10} /></button>
+            </>
+          )}
+          <button type="button"
+            onClick={() => { closeAll(); setDeleteOpen(true); }}
+            disabled={isWon}
+            className="w-6 h-6 rounded-lg bg-red-50 flex items-center justify-center text-red-400 tactile-press hover:bg-red-100 hover:text-red-700 disabled:opacity-30 disabled:pointer-events-none"
+            aria-label="Delete permanently" title={isWon ? 'Won slots cannot be deleted' : 'Delete permanently'}>
+            <ShieldAlert size={10} />
+          </button>
+        </div>
+      </div>
+
+      {editOpen && (
+        <EntryEditForm
+          entry={slot}
+          schemeCode={schemeCode}
+          branchId={branchId}
+          fields={fields}
+          actions={slotActions}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {voidOpen && (
+        <div className="border-t border-red-100 pt-2 space-y-2">
+          <p className="text-[10px] text-red-700 font-semibold">Void this slot? Incentive credits will be clawed back.</p>
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleVoid} disabled={busy}
+              className="flex-1 py-2 rounded-xl bg-red-600 text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {busy ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />} Confirm Void
+            </button>
+            <button type="button" onClick={() => setVoidOpen(false)} className="px-3 py-2 rounded-xl bg-navy/5 text-navy/60 text-[10px] font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {deleteOpen && (
+        <div className="border-t border-red-200 pt-2 space-y-2">
+          <p className="text-[10px] text-red-800 font-semibold">Delete permanently? Row is removed from DB and incentives clawed back. Snapshot kept in audit log.</p>
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleDelete} disabled={busy}
+              className="flex-1 py-2 rounded-xl bg-red-700 text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {busy ? <Loader2 size={10} className="animate-spin" /> : <ShieldAlert size={10} />} Confirm Delete
+            </button>
+            <button type="button" onClick={() => setDeleteOpen(false)} className="px-3 py-2 rounded-xl bg-navy/5 text-navy/60 text-[10px] font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Separate fetcher components avoid calling hooks conditionally.
+const GoldCoinRoomSlots = ({ roomId, expanded, branchId, slotActions }) => {
+  const { data: room, isFetching } = useGetGoldCoinRoomQuery(roomId, { skip: !expanded });
+  const slots = room?.slots ?? [];
+  if (!expanded) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      {isFetching && <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-navy/30" /></div>}
+      {!isFetching && slots.length === 0 && <p className="text-xs text-navy/40 text-center py-2">No slots in this room.</p>}
+      {!isFetching && slots.map((slot) => (
+        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="gold_coin_scheme" slotActions={slotActions} />
+      ))}
+    </div>
+  );
+};
+
+const LssRoomSlots = ({ roomId, expanded, branchId, slotActions }) => {
+  const { data: room, isFetching } = useGetLssRoomQuery(roomId, { skip: !expanded });
+  const slots = room?.slots ?? [];
+  if (!expanded) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      {isFetching && <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-navy/30" /></div>}
+      {!isFetching && slots.length === 0 && <p className="text-xs text-navy/40 text-center py-2">No slots in this room.</p>}
+      {!isFetching && slots.map((slot) => (
+        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="lss_scheme" slotActions={slotActions} />
+      ))}
+    </div>
+  );
+};
+
+const RoomSlotsPanel = ({ entry, branchId, schemeCode, slotActions }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const isGC  = schemeCode === 'gold_coin_scheme';
+
+  return (
+    <div className="border-t border-navy/5 pt-2 mt-1">
+      <button type="button" onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-[10px] font-bold text-navy/50 hover:text-indigo tactile-press">
+        <Users size={11} />
+        {expanded ? 'Hide Slots' : `Slots (${entry.slots_held ?? '…'})`}
+        {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+      </button>
+
+      {isGC
+        ? <GoldCoinRoomSlots roomId={entry.id} expanded={expanded} branchId={branchId} slotActions={slotActions} />
+        : <LssRoomSlots      roomId={entry.id} expanded={expanded} branchId={branchId} slotActions={slotActions} />
+      }
     </div>
   );
 };
@@ -1009,6 +1367,7 @@ const ACTION_STYLES = {
   unpay:  'bg-amber-50 text-amber-700',
   remove: 'bg-orange-50 text-orange-600',
   edit:   'bg-blue-50 text-blue-700',
+  delete: 'bg-red-100 text-red-700',
 };
 
 const AuditHistory = ({ schemeCode }) => {
@@ -1056,6 +1415,17 @@ const AuditHistory = ({ schemeCode }) => {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+// Per-scheme keys to search across when filtering loaded entries.
+const SEARCH_KEYS = {
+  gold_scheme:       ['customer_name', 'customer_code', 'customer_phone', 'chit_number'],
+  trading_academy:   ['customer_name', 'customer_code', 'customer_phone'],
+  builders_scheme:   ['customer_name', 'customer_code'],
+  agila_chit_scheme: ['group_name'],
+  gold_coin_scheme:  ['room_number', 'package_name'],
+  lss_scheme:        ['room_number', 'plan_name'],
+  land_scheme:       ['customer_name', 'customer_code', 'booking_ref', 'site_number', 'site_name'],
+};
+
 export const SchemeCorrectionsPage = () => {
   const user = useSelector(selectCurrentUser);
 
@@ -1063,6 +1433,7 @@ export const SchemeCorrectionsPage = () => {
   const [branchId,   setBranchId]   = useState('');
   const [startDate,  setStartDate]  = useState('');
   const [endDate,    setEndDate]    = useState('');
+  const [search,     setSearch]     = useState('');
   const [filterError, setFilterError] = useState('');
 
   const [getEntries, { data, isFetching }] = useLazyGetSchemeBranchEntriesQuery();
@@ -1085,12 +1456,22 @@ export const SchemeCorrectionsPage = () => {
   const handleApply = () => {
     setFilterError('');
     if (!branchId) { setFilterError('Please select a branch.'); return; }
+    setSearch('');
     getEntries({ code: schemeCode, branchId, startDate: startDate || undefined, endDate: endDate || undefined });
   };
 
   const entries       = data?.entries ?? [];
   const schemeActions = actions[schemeCode];
   const isChit        = schemeCode === 'agila_chit_scheme';
+  const isRoomScheme  = schemeCode === 'gold_coin_scheme' || schemeCode === 'lss_scheme';
+
+  // Client-side search filter across the already-loaded entries.
+  const q = search.trim().toLowerCase();
+  const visible = q
+    ? entries.filter((e) =>
+        (SEARCH_KEYS[schemeCode] ?? []).some((k) => String(e[k] ?? '').toLowerCase().includes(q))
+      )
+    : entries;
 
   return (
     <SchemePageWrapper>
@@ -1099,7 +1480,7 @@ export const SchemeCorrectionsPage = () => {
       <div className="px-4 space-y-3 mb-4">
         <div>
           <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1.5">Scheme</label>
-          <select value={schemeCode} onChange={(e) => setSchemeCode(e.target.value)}
+          <select value={schemeCode} onChange={(e) => { setSchemeCode(e.target.value); setSearch(''); }}
             className="w-full px-4 py-3 bg-navy/3 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 appearance-none">
             {SCHEMES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
           </select>
@@ -1135,17 +1516,32 @@ export const SchemeCorrectionsPage = () => {
 
       {data && (
         <div className="px-4 space-y-3">
-          {entries.length === 0 ? (
+          {/* In-scheme search filter */}
+          {entries.length > 0 && (
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/30 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, code, chit #…"
+                className="w-full pl-8 pr-3 py-2.5 bg-navy/3 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
+              />
+            </div>
+          )}
+
+          {visible.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
-              <p className="text-sm font-bold text-navy">No entries found</p>
-              <p className="text-xs text-navy/40 mt-1">Try different filters.</p>
+              <p className="text-sm font-bold text-navy">{q ? 'No matches' : 'No entries found'}</p>
+              <p className="text-xs text-navy/40 mt-1">{q ? 'Try a different search term.' : 'Try different filters.'}</p>
             </div>
           ) : (
             <>
               <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40">
-                {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                {q ? `${visible.length} of ${entries.length}` : visible.length}{' '}
+                {visible.length === 1 ? 'entry' : 'entries'}
               </p>
-              {entries.map((entry) =>
+              {visible.map((entry) =>
                 isChit ? (
                   // Chit shows groups; drill into members for individual corrections.
                   <ChitGroupCard
@@ -1154,6 +1550,22 @@ export const SchemeCorrectionsPage = () => {
                     branchId={branchId}
                     chitActions={chitActions}
                   />
+                ) : isRoomScheme ? (
+                  // Gold-coin / LSS show rooms; slot-level actions live in RoomSlotsPanel.
+                  <div key={entry.id} className="bg-white rounded-2xl card-shadow border border-navy/5 px-4 py-3 space-y-2">
+                    <div className="flex items-center gap-3">
+                      {ENTRY_ROW[schemeCode] && React.createElement(ENTRY_ROW[schemeCode], { e: entry })}
+                      <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>
+                        {(entry.status || '').replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <RoomSlotsPanel
+                      entry={entry}
+                      branchId={branchId}
+                      schemeCode={schemeCode}
+                      slotActions={schemeActions}
+                    />
+                  </div>
                 ) : (
                   <EntryCard
                     key={entry.id}

@@ -503,4 +503,23 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
       } catch (error) { return handleError(error, reply); }
     }
   );
+
+  // PATCH /land/bookings/:id/delete — permanently delete a booking + payouts
+  fastify.patch('/bookings/:id/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await LandBookingsService.deleteBooking(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

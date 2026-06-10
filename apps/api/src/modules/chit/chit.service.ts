@@ -761,6 +761,61 @@ export const ChitService = {
     });
   },
 
+  // ─── DELETE MEMBER (admin: MD / Management) ──────────────────────────────────
+  // Permanently deletes a chit member and all of their payments, claws back ALL
+  // incentives, and snapshots the before-state into the audit log. Members who
+  // have already won a month are blocked — deleting them would erase the group's
+  // winner history (agila_chit_winners holds the month slot); void instead.
+  async deleteMember(
+    db: Pool,
+    actorId: string,
+    groupId: string,
+    memberId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT m.* FROM agila_chit_members m
+         JOIN agila_chit_groups g ON g.id = m.group_id
+         WHERE m.id = $1 AND m.group_id = $2 AND g.branch_id = $3
+         FOR UPDATE OF m`,
+        [memberId, groupId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Chit member not found');
+      const old = before.rows[0];
+      if (old.has_won) {
+        throw new ValidationError('Member has already won a month — void the member instead of deleting');
+      }
+
+      const payments = await client.query(
+        `SELECT * FROM agila_chit_payments WHERE member_id = $1 ORDER BY month_number`,
+        [memberId]
+      );
+
+      // Claw back all incentives for this member (enrollment + any payment events)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: SCHEME_CODE,
+        sourceId:   memberId,
+      });
+
+      await client.query(`DELETE FROM agila_chit_payments WHERE member_id = $1`, [memberId]);
+      // Defensive: zero rows given the has_won guard, but keeps the FK path clean
+      await client.query(`DELETE FROM agila_chit_winners WHERE member_id = $1`, [memberId]);
+      await client.query(`DELETE FROM agila_chit_members WHERE id = $1`, [memberId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'member',
+        entityId:   memberId,
+        actorId,
+        action:     'delete',
+        oldValues:  { member: old, payments: payments.rows },
+      });
+
+      return { deleted: true, id: memberId, payments: payments.rows.length };
+    });
+  },
+
   // ─── CORRECT PAYMENT (admin: MD / Management) ────────────────────────────────
   // Edits an existing chit payment row (month/amount/date/mode/notes).
   async correctPayment(

@@ -326,4 +326,55 @@ export const SlotsService = {
     });
   },
 
+  // ─── DELETE SLOT (admin: MD / Management) ───────────────────────────────────
+  // Permanently deletes a slot row, claws back its incentives, and snapshots the
+  // before-state into the audit log. Won slots are blocked: lss_draws holds a
+  // NOT NULL FK to the winning slot, so deleting one would corrupt draw history.
+  // Known limitation (same as voidSlot/removeSlot): batch purchases credit their
+  // enrollment incentive against the FIRST slot of the batch, so deleting a
+  // non-head slot reverses nothing and deleting the head slot claws back the
+  // whole batch's credit.
+  async deleteSlot(
+    db: Pool,
+    actorId: string,
+    slotId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM lss_slots WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [slotId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Slot not found');
+      const old = before.rows[0];
+
+      // Block when the slot has won, or any draw row references it (FK safety)
+      const draw = await client.query(
+        `SELECT id FROM lss_draws WHERE winning_slot_id = $1 LIMIT 1`,
+        [slotId]
+      );
+      if (old.status === 'won' || draw.rows.length > 0) {
+        throw new ValidationError('Slot has won a draw — it cannot be deleted; void it instead');
+      }
+
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: SCHEME_CODE,
+        sourceId:   slotId,
+      });
+
+      await client.query(`DELETE FROM lss_slots WHERE id = $1`, [slotId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'slot',
+        entityId:   slotId,
+        actorId,
+        action:     'delete',
+        oldValues:  { slot: old },
+      });
+
+      return { deleted: true, id: slotId };
+    });
+  },
+
 };

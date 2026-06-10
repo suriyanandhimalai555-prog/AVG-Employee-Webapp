@@ -1,24 +1,17 @@
-// Import the configured database client pool from your internal configuration
 import db from '../config/db';
 import { Pool } from 'pg';
-// Import the configured Redis client from your internal configuration for caching
 import redis from '../config/redis';
 
-// Function to retrieve all subordinate IDs for a specific user, using a Redis cache for optimized performance
 export const getSubtreeIds = async (userId: string): Promise<string[]> => {
-  // Define a unique cache key based on the userId in a standardized hierarchy format
   const cacheKey = `hier:subtree:${userId}`;
-  
-  // Attempt to fetch the cached version of the ID list from the Redis store
-  const cached = await redis.get(cacheKey);
-  
-  // If the data is found in cache, parse it into an array of strings and return it
+
+  let cached: string | null = null;
+  try { cached = await redis.get(cacheKey); } catch { /* Redis unavailable — skip cache */ }
+
   if (cached) {
-    // The JSON.parse function converts a string representation back into a JavaScript array of strings
     return JSON.parse(cached) as string[];
   }
 
-  // If not found in cache, run a Recursive Common Table Expression (CTE) query in PostgreSQL
   const result = await db.query(
     `WITH RECURSIVE subordinates AS (
       SELECT id FROM users WHERE id = $1
@@ -30,13 +23,10 @@ export const getSubtreeIds = async (userId: string): Promise<string[]> => {
     [userId]
   );
 
-  // Map each row from the PostgreSQL result set to just the ID string
   const ids = result.rows.map(row => row.id);
 
-  // Store the retrieved IDs in Redis with a Time To Live (TTL) of 3600 seconds (1 hour)
-  await redis.setex(cacheKey, 3600, JSON.stringify(ids));
+  try { await redis.setex(cacheKey, 3600, JSON.stringify(ids)); } catch { /* skip cache write */ }
 
-  // Return the newly fetched list of IDs to the caller
   return ids;
 };
 
@@ -57,10 +47,11 @@ export const getOversightScopeIds = async (
   poolDb: Pool,
   userId: string,
 ): Promise<string[]> => {
-  // Same TTL as `hier:subtree:` — busted by the same upstream hooks (bustHierarchyCache)
-  // because every change that affects subtree ids also affects the oversight scope.
   const cacheKey = `hier:oversight:${userId}`;
-  const cached = await redis.get(cacheKey);
+
+  let cached: string | null = null;
+  try { cached = await redis.get(cacheKey); } catch { /* Redis unavailable — skip cache */ }
+
   if (cached) {
     return JSON.parse(cached) as string[];
   }
@@ -118,8 +109,7 @@ export const getOversightScopeIds = async (
   // Union — deduplicate using Set
   const ids = [...new Set([...subtreeIds, ...oversightIds, ...gmCascadeIds])];
 
-  // Cache for an hour — same TTL semantics as the subtree cache.
-  await redis.setex(cacheKey, 3600, JSON.stringify(ids));
+  try { await redis.setex(cacheKey, 3600, JSON.stringify(ids)); } catch { /* skip cache write */ }
 
   return ids;
 };
@@ -138,11 +128,12 @@ export const getOversightBranchIds = async (
   userId: string,
 ): Promise<string[]> => {
   const cacheKey = `hier:oversight-branches:${userId}`;
-  const cached = await redis.get(cacheKey);
+
+  let cached: string | null = null;
+  try { cached = await redis.get(cacheKey); } catch { /* Redis unavailable — skip cache */ }
+
   if (cached) return JSON.parse(cached) as string[];
 
-  // Direct oversight branches (user_oversight_branches rows for this user)
-  // UNION the home branch of every user in the subtree.
   const subtreeIds = await getSubtreeIds(userId);
 
   const { rows } = await poolDb.query<{ branch_id: string }>(
@@ -159,7 +150,9 @@ export const getOversightBranchIds = async (
   );
 
   const ids = rows.map(r => r.branch_id);
-  await redis.setex(cacheKey, 3600, JSON.stringify(ids));
+
+  try { await redis.setex(cacheKey, 3600, JSON.stringify(ids)); } catch { /* skip cache write */ }
+
   return ids;
 };
 
@@ -167,7 +160,6 @@ export const getOversightBranchIds = async (
 // This ensures that directors, GMs, and all levels above see the new subordinate without
 // waiting for the 1-hour TTL — a single-arg replacement for the old two-arg version.
 export const bustHierarchyCache = async (userId: string): Promise<void> => {
-  // Upward recursive CTE: start at userId, follow manager_id until no parent remains
   const result = await db.query(
     `WITH RECURSIVE ancestors AS (
       SELECT id, manager_id FROM users WHERE id = $1
@@ -180,7 +172,8 @@ export const bustHierarchyCache = async (userId: string): Promise<void> => {
   );
 
   // Delete subtree, oversight, and oversight-branches cache keys for every ancestor.
-  await Promise.all(
+  // Redis.del failures are swallowed — cache will expire naturally on its own TTL.
+  await Promise.allSettled(
     result.rows.flatMap((row: { id: string }) => [
       redis.del(`hier:subtree:${row.id}`),
       redis.del(`hier:oversight:${row.id}`),

@@ -332,13 +332,20 @@ export const LandBookingsService = {
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
       const params: any[] = [bookingId];
-      let findWhere = 'id = $1';
-      if (branchId) { findWhere += ` AND branch_id = $2`; params.push(branchId); }
+      // TS: qualify with bk. alias — all three joined tables have an 'id' column,
+      // so an unqualified reference causes a PostgreSQL ambiguity error.
+      let findWhere = 'bk.id = $1';
+      if (branchId) { findWhere += ` AND bk.branch_id = $2`; params.push(branchId); }
 
+      // Join land_layouts to get the authoritative buyback_bonus_monthly and
+      // buyback_months — these moved from land_plots to land_layouts in migration 062.
+      // land_plots.buyback_bonus_monthly still exists but defaults to 0 for new plots
+      // and would cause the land_buyback_payouts CHECK(amount > 0) to fail.
       const bookingResult = await client.query(
-        `SELECT bk.*, p.buyback_bonus_monthly
+        `SELECT bk.*, ll.buyback_bonus_monthly, ll.buyback_months
          FROM land_bookings bk
-         JOIN land_plots p ON p.id = bk.plot_id
+         JOIN land_plots   p  ON p.id  = bk.plot_id
+         JOIN land_layouts ll ON ll.id = p.layout_id
          WHERE ${findWhere}
          FOR UPDATE`,
         params
@@ -391,16 +398,23 @@ export const LandBookingsService = {
       );
       const updated = updResult.rows[0];
 
-      // Auto-create 60 buyback payout rows
-      const bonusAmount = parseFloat(booking.buyback_bonus_monthly);
-      for (let month = 1; month <= BUYBACK_MONTHS; month++) {
-        const dueDate = addMonths(buybackStartDate, month - 1);
-        await client.query(
-          `INSERT INTO land_buyback_payouts
-             (booking_id, month_number, amount, due_date)
-           VALUES ($1, $2, $3, $4)`,
-          [bookingId, month, bonusAmount, dueDate]
-        );
+      // Auto-create buyback payout rows using the layout's monthly amount and
+      // duration. Skip entirely for spot_incentive layouts where buyback_bonus_monthly
+      // is NULL/0 — those layouts have no customer buyback, and the
+      // land_buyback_payouts CHECK(amount > 0) would reject a 0-amount row anyway.
+      const bonusAmount  = parseFloat(booking.buyback_bonus_monthly);
+      // TS: use the layout's buyback_months when set; fall back to the module constant
+      const buybackCount: number = booking.buyback_months ?? BUYBACK_MONTHS;
+      if (bonusAmount > 0 && buybackCount > 0) {
+        for (let month = 1; month <= buybackCount; month++) {
+          const dueDate = addMonths(buybackStartDate, month - 1);
+          await client.query(
+            `INSERT INTO land_buyback_payouts
+               (booking_id, month_number, amount, due_date)
+             VALUES ($1, $2, $3, $4)`,
+            [bookingId, month, bonusAmount, dueDate]
+          );
+        }
       }
 
       await LandAuditService.log(client, {
@@ -628,6 +642,57 @@ export const LandBookingsService = {
       });
 
       return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── DELETE BOOKING (Management only) ───────────────────────────────────────
+  // Permanently deletes a booking and all buyback payouts (no FK cascade, so
+  // payouts go first), restores the plot to 'available', claws back ALL
+  // incentives, and snapshots the full before-state into the audit log.
+  async deleteBooking(
+    db: Pool,
+    actorId: string,
+    bookingId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        `SELECT * FROM land_bookings WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [bookingId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Booking not found');
+      const old = before.rows[0];
+
+      const payouts = await client.query(
+        `SELECT * FROM land_buyback_payouts WHERE booking_id = $1 ORDER BY month_number`,
+        [bookingId]
+      );
+
+      // Restore plot to 'available' so it can be re-booked
+      await client.query(
+        `UPDATE land_plots SET status = 'available' WHERE id = $1`,
+        [old.plot_id]
+      );
+
+      // Claw back all spot + monthly commissions (unconditional — reverse is harmless if none)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: 'land_scheme',
+        sourceId:   bookingId,
+      });
+
+      await client.query(`DELETE FROM land_buyback_payouts WHERE booking_id = $1`, [bookingId]);
+      await client.query(`DELETE FROM land_bookings WHERE id = $1`, [bookingId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'booking',
+        entityId:   bookingId,
+        actorId,
+        action:     'delete',
+        oldValues:  { booking: old, payouts: payouts.rows },
+      });
+
+      return { deleted: true, id: bookingId, payouts: payouts.rows.length };
     });
   },
 

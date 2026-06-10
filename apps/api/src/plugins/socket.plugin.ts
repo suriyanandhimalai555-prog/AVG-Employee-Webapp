@@ -70,12 +70,22 @@ const socketPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstance) => 
   // A dedicated Redis client is required for subscribe mode —
   // a pub/sub client cannot issue regular Redis commands while subscribed.
   const subRedis = new IORedis(env.REDIS_URL, {
-    // Required by BullMQ and sub clients to avoid retry recursion
     maxRetriesPerRequest: null,
+    retryStrategy: (times) => Math.min(times * 200, 5000),
+    enableReadyCheck: false,
   });
 
-  // Subscribe to both check-in and sign-off confirmation channels
-  await subRedis.subscribe('attendance:confirmed', 'signoff:confirmed');
+  // Subscribe to both check-in and sign-off confirmation channels.
+  // The 'ready' handler re-subscribes after each reconnection so pub/sub
+  // notifications resume automatically when Redis recovers.
+  subRedis.on('ready', async () => {
+    try {
+      await subRedis.subscribe('attendance:confirmed', 'signoff:confirmed');
+      fastify.log.info('[Socket.io] Redis subscriber ready');
+    } catch (err) {
+      fastify.log.error({ err }, '[Socket.io] Failed to subscribe after reconnect');
+    }
+  });
 
   subRedis.on('message', (channel, message) => {
     try {

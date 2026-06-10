@@ -365,4 +365,26 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       } catch (error) { return handleError(error, reply); }
     }
   );
+
+  // ─── PATCH /chit/groups/:groupId/members/:memberId/delete — permanent delete ───
+  fastify.patch('/groups/:groupId/members/:memberId/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { groupId, memberId } = req.params as { groupId: string; memberId: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          `SELECT g.branch_id FROM agila_chit_groups g
+           JOIN agila_chit_members m ON m.group_id = g.id
+           WHERE m.id = $1`,
+          [memberId]
+        );
+        if (rows.rows.length === 0) throw new Error('Not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await ChitService.deleteMember(fastify.db, req.user.id, groupId, memberId, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
 }

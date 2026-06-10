@@ -107,10 +107,20 @@ export const CorrectBuildersPayoutSchema = z.object({
   branchId:     z.string().uuid().optional(),
 });
 
+// ─── Change reward (MD / Management correction — allowed after choice is made) ─
+// Same shape as ChooseRewardSchema; a separate named schema keeps the route
+// intent explicit and lets guards differ in the service layer.
+export const ChangeRewardSchema = z.object({
+  choice:       z.enum(['house', 'cash']),
+  landProvided: z.boolean().optional(),
+  branchId:     z.string().uuid().optional(),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
 export type CreateBuildersPlanInput            = z.infer<typeof CreateBuildersPlanSchema>;
 export type RecordBuildersPayoutInput          = z.infer<typeof RecordBuildersPayoutSchema>;
 export type ChooseRewardInput                  = z.infer<typeof ChooseRewardSchema>;
+export type ChangeRewardInput                  = z.infer<typeof ChangeRewardSchema>;
 export type GetBuildersPlansQuery              = z.infer<typeof GetBuildersPlansQuerySchema>;
 export type GetBuildersSummaryQuery            = z.infer<typeof GetBuildersSummaryQuerySchema>;
 export type UpdateBuildersIncentiveRuleInput   = z.infer<typeof UpdateBuildersIncentiveRuleSchema>;

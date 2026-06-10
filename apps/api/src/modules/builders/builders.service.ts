@@ -7,6 +7,7 @@ import type {
   CreateBuildersPlanInput,
   RecordBuildersPayoutInput,
   ChooseRewardInput,
+  ChangeRewardInput,
   GetBuildersPlansQuery,
   CorrectBuildersPlanInput,
   CorrectBuildersPayoutInput,
@@ -287,12 +288,6 @@ export const BuildersService = {
           'Customer must choose House or Cash before further payouts can be recorded'
         );
       }
-      if (plan.status === 'house') {
-        throw new ValidationError(
-          'This plan opted for a house. Use "Complete Plan" when the house is delivered.'
-        );
-      }
-
       // Cooling-period guard: month 1 cannot be recorded before cooling_end_date
       if (plan.status === 'cooling') {
         const coolingEnd = plan.cooling_end_date as string; // stored as 'YYYY-MM-DD'
@@ -390,9 +385,6 @@ export const BuildersService = {
         `Reward choice is only available when status is "decision_pending". Current status: ${plan.status}`
       );
     }
-    if (plan.reward_choice) {
-      throw new ValidationError('A reward has already been chosen for this plan');
-    }
     if (payload.choice === 'house' && !payload.landProvided) {
       throw new ValidationError(
         'The customer must provide land to choose the house option. Set landProvided to true.'
@@ -417,6 +409,69 @@ export const BuildersService = {
       ]
     );
     return result.rows[0];
+  },
+
+  // ─── CHANGE REWARD (admin: MD / Management — corrects a wrong reward choice) ─
+  // Only permitted when status = 'house' or 'cash' (i.e. a choice was already made).
+  // Allows flipping house→cash or cash→house without touching payouts or incentives.
+  // The calling admin should also correct any M51-60 payout amounts separately if needed.
+  async changeReward(
+    db: Pool,
+    actorId: string,
+    planId: string,
+    branchId: string,
+    payload: ChangeRewardInput
+  ): Promise<any> {
+    const planResult = await db.query(
+      'SELECT * FROM builders_plans WHERE id = $1 AND branch_id = $2',
+      [planId, branchId]
+    );
+    if (planResult.rows.length === 0) throw new NotFoundError('Plan not found');
+    const old = planResult.rows[0];
+
+    if (!['house', 'cash'].includes(old.status)) {
+      throw new ValidationError(
+        `Reward can only be changed on plans in "house" or "cash" status. Current status: ${old.status}`
+      );
+    }
+    if (old.status === payload.choice) {
+      throw new ValidationError(`Plan is already on the "${payload.choice}" path`);
+    }
+    if (payload.choice === 'house' && !payload.landProvided) {
+      throw new ValidationError(
+        'The customer must provide land to choose the house option. Set landProvided to true.'
+      );
+    }
+
+    const updated = await db.query(
+      `UPDATE builders_plans
+       SET reward_choice  = $1,
+           status         = $2,
+           land_provided  = $3,
+           choice_made_at = NOW(),
+           choice_made_by = $4
+       WHERE id = $5
+       RETURNING *`,
+      [
+        payload.choice,
+        payload.choice,
+        payload.choice === 'house' ? true : (payload.landProvided ?? false),
+        actorId,
+        planId,
+      ]
+    );
+
+    await SchemeAudit.log(db as any, {
+      schemeCode: SCHEME_CODE,
+      entityType: 'plan',
+      entityId:   planId,
+      actorId,
+      action:     'edit',
+      oldValues:  old,
+      newValues:  updated.rows[0],
+    });
+
+    return updated.rows[0];
   },
 
   // ─── COMPLETE PLAN (house path) ──────────────────────────────────────────────
@@ -770,6 +825,51 @@ export const BuildersService = {
       });
 
       return { ...old, status: 'voided' };
+    });
+  },
+
+  // ─── DELETE PLAN (admin: MD / Management) ────────────────────────────────────
+  // Permanently deletes a plan and all of its payouts (no FK cascade, so payouts
+  // go first), claws back ALL incentives, and snapshots the before-state into
+  // the audit log.
+  async deletePlan(
+    db: Pool,
+    actorId: string,
+    planId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const before = await client.query(
+        'SELECT * FROM builders_plans WHERE id = $1 AND branch_id = $2 FOR UPDATE',
+        [planId, branchId]
+      );
+      if (before.rows.length === 0) throw new NotFoundError('Plan not found');
+      const old = before.rows[0];
+
+      const payouts = await client.query(
+        `SELECT * FROM builders_payouts WHERE plan_id = $1 ORDER BY month_number`,
+        [planId]
+      );
+
+      // Reverse all incentives (enrollment one-time + all monthly SO credits)
+      await IncentiveService.reverseIncentives(client, {
+        schemeCode: SCHEME_CODE,
+        sourceId:   planId,
+      });
+
+      await client.query(`DELETE FROM builders_payouts WHERE plan_id = $1`, [planId]);
+      await client.query(`DELETE FROM builders_plans WHERE id = $1`, [planId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'plan',
+        entityId:   planId,
+        actorId,
+        action:     'delete',
+        oldValues:  { plan: old, payouts: payouts.rows },
+      });
+
+      return { deleted: true, id: planId, payouts: payouts.rows.length };
     });
   },
 

@@ -10,7 +10,7 @@ import {
 // Reusable 7-to-7 period picker used across all scheme, salary, and incentive pages.
 // Shows the current business period (7th to 6th) with prev/next navigation.
 // onPeriodChange is called with { label, startDate, endDate, periodMonth, periodYear }
-export const SchemeCalendar = ({ onPeriodChange, initialDate, compact = false }) => {
+export const SchemeCalendar = ({ onPeriodChange, initialDate, compact = false, allowFuture = false }) => {
   const [period, setPeriod] = useState(() => {
     const p = initialDate ? getPeriodForDate(initialDate) : getCurrentPeriod();
     return p;
@@ -19,10 +19,11 @@ export const SchemeCalendar = ({ onPeriodChange, initialDate, compact = false })
   const current = getCurrentPeriod();
   const isCurrent = period.periodMonth === current.periodMonth && period.periodYear === current.periodYear;
 
-  // Don't allow navigating into the future beyond the current period
   const nextPeriod = getNextPeriod(period.periodMonth, period.periodYear);
-  const canGoNext = nextPeriod.periodYear < current.periodYear ||
-    (nextPeriod.periodYear === current.periodYear && nextPeriod.periodMonth <= current.periodMonth);
+  const canGoNext = allowFuture || (
+    nextPeriod.periodYear < current.periodYear ||
+    (nextPeriod.periodYear === current.periodYear && nextPeriod.periodMonth <= current.periodMonth)
+  );
 
   const handlePrev = () => {
     const prev = getPrevPeriod(period.periodMonth, period.periodYear);

@@ -45,7 +45,7 @@ export const IncentiveWalletPage = () => {
 
         {/* Period picker */}
         <div className="px-6 mb-5">
-          <SchemeCalendar compact onPeriodChange={(p) => { setPeriod(p); setPage(1); }} />
+          <SchemeCalendar compact allowFuture onPeriodChange={(p) => { setPeriod(p); setPage(1); }} />
         </div>
 
         <div className="px-6 space-y-5">

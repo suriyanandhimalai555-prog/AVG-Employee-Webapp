@@ -1,22 +1,19 @@
 import Redis from 'ioredis';
 import { env } from './env';
 
-// Create a new Redis client instance using the validated REDIS_URL from the env config
-const redis = new Redis(env.REDIS_URL);
-
-// Register an event listener for when the Redis client establishes a connection
-redis.on('connect', () => {
-  // Output a success message to the console on a successful connection
-  console.log('✅ Redis connected');
+const redis = new Redis(env.REDIS_URL, {
+  // Never surface "too many retries" errors — let retryStrategy control reconnection
+  maxRetriesPerRequest: null,
+  // Exponential backoff: 200ms → 400ms → … → 5s cap
+  retryStrategy: (times) => Math.min(times * 200, 5000),
+  // Don't block startup waiting for a PING confirmation
+  enableReadyCheck: false,
 });
 
-// Register an event listener for when an error occurs during a connection
-redis.on('error', (err) => {
-  // Output the error to the console with a descriptive label
-  console.error('❌ Redis connection error:', err);
-  // Terminate the application immediately with exit code 1 to ensure cache consistency
-  process.exit(1);
-});
+redis.on('connect',      () => console.log('✅ Redis connected'));
+redis.on('ready',        () => console.log('✅ Redis ready'));
+redis.on('error',        (err) => console.error('❌ Redis error (will retry):', err.message));
+redis.on('close',        () => console.warn('⚠️  Redis connection closed'));
+redis.on('reconnecting', () => console.warn('🔄 Redis reconnecting…'));
 
-// Export the redis client as the default export for use in components that need cache access
 export default redis;

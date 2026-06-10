@@ -644,8 +644,22 @@ export const apiSlice = createApi({
       invalidatesTags: ['GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
 
+    deleteGoldMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/delete`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'GoldPayments', id }, 'GoldMembers', 'GoldSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
     voidTradingMember: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/trading-academy/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    deleteTradingMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/trading-academy/${id}/delete`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['TradingMembers', 'TradingSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
@@ -744,6 +758,12 @@ export const apiSlice = createApi({
 
     voidGoldCoinSlot: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/gold-coin/slots/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    deleteGoldCoinSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/slots/${id}/delete`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
@@ -854,6 +874,12 @@ export const apiSlice = createApi({
 
     voidLssSlot: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/void`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
+    deleteLssSlot: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/delete`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
@@ -1205,6 +1231,18 @@ export const apiSlice = createApi({
       ],
     }),
 
+    deleteChitMember: builder.mutation({
+      query: ({ groupId, memberId, ...data }) => ({
+        url: `/chit/groups/${groupId}/members/${memberId}/delete`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'ChitGroup', id: groupId }, 'ChitGroups', 'ChitPayments', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
     // ─── Head-branch chit operations ───
     getChitAwaitingCombine: builder.query({
       query: () => '/chit/groups/awaiting-combine',
@@ -1457,6 +1495,32 @@ export const apiSlice = createApi({
       ],
     }),
 
+    deleteBuildersPlan: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/delete`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary', 'BuildersPayouts', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    changeBuildersReward: builder.mutation({
+      query: ({ planId, ...data }) => ({
+        url: `/builders/plans/${planId}/change-reward`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { planId }) => [
+        { type: 'BuildersPlan', id: planId },
+        'BuildersPlans', 'BuildersSummary', 'SchemeBranchEntries',
+      ],
+    }),
+
     // ─── Land Sales Management ───
 
     getLandDashboard: builder.query({
@@ -1693,6 +1757,14 @@ export const apiSlice = createApi({
       ],
     }),
 
+    deleteLandBooking: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/delete`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'LandPlots', 'LandSites', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
     getSchemeAuditLog: builder.query({
       query: (params = {}) => {
         const qs = new URLSearchParams();
@@ -1774,12 +1846,14 @@ export const {
   useCorrectGoldMemberMutation,
   useCorrectGoldPaymentMutation,
   useVoidGoldMemberMutation,
+  useDeleteGoldMemberMutation,
   useGetTradingMembersQuery,
   useGetTradingSummaryQuery,
   useGetTradingEmployeesQuery,
   useAddTradingMemberMutation,
   useCorrectTradingMemberMutation,
   useVoidTradingMemberMutation,
+  useDeleteTradingMemberMutation,
   useGetGoldCoinPackagesQuery,
   useGetGoldCoinRoomsQuery,
   useGetGoldCoinRoomQuery,
@@ -1884,20 +1958,26 @@ export const {
   useCorrectBuildersPayoutMutation,
   useUnpayBuildersPayoutMutation,
   useVoidBuildersPlanMutation,
+  useDeleteBuildersPlanMutation,
+  useChangeBuildersRewardMutation,
   useCorrectChitMemberMutation,
   useCorrectChitPaymentMutation,
   useUnpayChitPaymentMutation,
   useVoidChitMemberMutation,
+  useDeleteChitMemberMutation,
   useCorrectGoldCoinSlotMutation,
   useVoidGoldCoinSlotMutation,
+  useDeleteGoldCoinSlotMutation,
   useVoidGoldCoinRoomMutation,
   useRemoveGoldCoinSlotMutation,
   useCorrectLssSlotMutation,
   useVoidLssSlotMutation,
+  useDeleteLssSlotMutation,
   useVoidLssRoomMutation,
   useRemoveLssSlotMutation,
   useUnpayGoldPaymentMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
+  useDeleteLandBookingMutation,
   useGetSchemeAuditLogQuery,
 } = apiSlice;

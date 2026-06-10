@@ -104,11 +104,16 @@ export const AttendanceService = {
     const today = getCompanyToday();
     const dupeKey = `att:${userId}:${today}`;
 
-    const result = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
-
-    if (result === null) {
-      throw new ConflictError('Attendance already marked for today');
+    // If Redis is unavailable, allow the request through — the worker's
+    // ON CONFLICT (user_id, date) DO NOTHING guard prevents DB-level duplicates.
+    let alreadyMarked = false;
+    try {
+      const nx = await redis.set(dupeKey, '1', 'EX', 86400, 'NX');
+      alreadyMarked = (nx === null); // null = key existed = duplicate
+    } catch {
+      console.warn('⚠️  Redis dupe-check unavailable, proceeding without guard');
     }
+    if (alreadyMarked) throw new ConflictError('Attendance already marked for today');
 
     // Step 4: Build and queue job — use resolvedBranchId so the worker INSERT never hits NOT NULL
     const jobData = {
@@ -149,19 +154,29 @@ export const AttendanceService = {
 
     const today = getCompanyToday();
 
-    // If a check-in job is already queued in Redis, reject absent marking
-    const checkInQueued = await redis.exists(`att:${userId}:${today}`);
-    if (checkInQueued) {
-      throw new ConflictError('A check-in has already been submitted for today');
+    // If a check-in job is already queued in Redis, reject absent marking.
+    // If Redis is unavailable, skip the check — the DB ON CONFLICT guard handles it.
+    try {
+      const checkInQueued = await redis.exists(`att:${userId}:${today}`);
+      if (checkInQueued) {
+        throw new ConflictError('A check-in has already been submitted for today');
+      }
+    } catch (err) {
+      if (err instanceof ConflictError) throw err;
+      console.warn('⚠️  Redis check-in guard unavailable, proceeding without guard');
     }
 
     // Dedupe: use a separate Redis key so it never interferes with the check-in
     // pending-detection logic in getAttendanceSummary (which reads att:{userId}:{date})
     const absentKey = `att:absent:${userId}:${today}`;
-    const claimed = await redis.set(absentKey, '1', 'EX', 86400, 'NX');
-    if (claimed === null) {
-      throw new ConflictError('Attendance already marked for today');
+    let absentAlreadyMarked = false;
+    try {
+      const claimed = await redis.set(absentKey, '1', 'EX', 86400, 'NX');
+      absentAlreadyMarked = (claimed === null);
+    } catch {
+      console.warn('⚠️  Redis absent dupe-check unavailable, proceeding without guard');
     }
+    if (absentAlreadyMarked) throw new ConflictError('Attendance already marked for today');
 
     const resolvedBranchId = branchId ?? userRow.branch_id ?? null;
 

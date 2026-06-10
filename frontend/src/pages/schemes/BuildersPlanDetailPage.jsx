@@ -43,7 +43,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
   const [recordPayout, { isLoading }] = useRecordBuildersPayoutMutation();
 
   const nextMonth      = (plan.current_month || 0) + 1;
-  const isBonusMonth   = nextMonth > 50;
+  const isBonusMonth   = nextMonth > 50 && plan.reward_choice !== 'house';
   // M1-60: regular monthly payout every month
   // M51-60 (cash path): regular continues PLUS additional bonus on top
   const expectedAmt    = isBonusMonth
@@ -202,8 +202,7 @@ const ChooseRewardModal = ({ plan, onClose, onSuccess }) => {
         <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 flex items-start gap-2">
           <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
           <p className="text-xs font-medium text-amber-700">
-            This choice is permanent. The customer selects either a constructed house (with land) or
-            continued monthly cash payouts for months 51–60 at the same rate.
+            This choice is permanent. House: monthly payouts continue for months 51–60 at the same rate, then the house is delivered. Cash: monthly payouts continue for months 51–60 with an additional bonus.
           </p>
         </div>
 
@@ -326,10 +325,10 @@ export const BuildersPlanDetailPage = () => {
   const payouts       = plan.payouts || [];
 
   const canRecordPayout = isBranchAdmin
-    && ['cooling', 'active', 'cash'].includes(plan.status)
+    && ['cooling', 'active', 'cash', 'house'].includes(plan.status)
     && plan.current_month < 60;
   const canChooseReward = isBranchAdmin && plan.status === 'decision_pending';
-  const canComplete     = isBranchAdmin && plan.status === 'house';
+  const canComplete     = isBranchAdmin && plan.status === 'house' && plan.current_month >= 60;
 
   const handleComplete = async () => {
     setCompleteError('');
@@ -369,7 +368,7 @@ export const BuildersPlanDetailPage = () => {
             <div>
               <p className="text-sm font-bold text-amber-700">Month 50 Complete — Choose Reward</p>
               <p className="text-xs text-amber-600 mt-0.5">
-                The customer must now decide: receive a constructed house or continue monthly cash payouts for months 51–60 at the same rate.
+                The customer must now decide: receive a constructed house (monthly payouts continue for months 51–60 at the same rate, then house is delivered) or continue monthly cash payouts for months 51–60 with an additional bonus.
               </p>
             </div>
           </div>

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Users,
   UserPlus,
@@ -12,14 +11,11 @@ import {
   ChevronLeft,
   ArrowRight,
   Loader2,
-  LogOut,
   FileText,
   ExternalLink
 } from 'lucide-react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { Avatar } from '../components/Avatar';
-import { clearCredentials } from '../store/slices/authSlice';
-import { apiSlice, useLogoutMutation } from '../store/api/apiSlice';
 import {
   useGetUsersQuery,
   useGetManagerOptionsQuery,
@@ -38,7 +34,6 @@ import { selectCurrentUser } from '../store/slices/authSlice';
 
 export const UserManagement = () => {
   const user = useSelector(selectCurrentUser);
-  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -91,6 +86,7 @@ export const UserManagement = () => {
 
   // Oversight branch editor state (MD editing Director/GM assignments)
   const [editOversightUser, setEditOversightUser] = useState(null);
+
   const [editBranchIds, setEditBranchIds] = useState([]);
   const [editGmIds, setEditGmIds] = useState([]);
   const [editBranchError, setEditBranchError] = useState('');
@@ -101,15 +97,6 @@ export const UserManagement = () => {
   const { data: userDocs = [], isLoading: isDocsLoading } = useGetUserDocumentsQuery(viewDocsUserId, {
     skip: !viewDocsUserId,
   });
-
-  const dispatch = useDispatch();
-  const [logoutApi] = useLogoutMutation();
-
-  const handleLogout = async () => {
-    try { await logoutApi().unwrap(); } catch { /* ignore */ }
-    dispatch(apiSlice.util.resetApiState());
-    dispatch(clearCredentials());
-  };
 
   const isOversightRole = (role) => role === 'director' || role === 'gm';
 
@@ -314,87 +301,77 @@ export const UserManagement = () => {
   }
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-6xl mx-auto px-4 py-8">
-      {/* Back button — was provided by AttendanceHome overlay wrapper, now inline */}
-      <button
-        onClick={() => navigate(-1)}
-        className="fixed top-4 left-4 z-[200] flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-md border border-navy/5 rounded-2xl shadow-xl text-[10px] font-bold text-navy uppercase tracking-widest tactile-press"
-      >
-        <ArrowRight className="rotate-180" size={14} /> Back
-      </button>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-6xl mx-auto px-4 py-6">
 
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 pt-12">
-        <div className="flex items-center gap-5">
-          <div className="w-16 h-16 rounded-[24px] bg-white shadow-premium flex items-center justify-center text-indigo border border-navy/5">
-            <Users size={32} />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 md:w-16 md:h-16 rounded-[20px] md:rounded-[24px] bg-white shadow-premium flex items-center justify-center text-indigo border border-navy/5 shrink-0">
+            <Users size={24} className="md:hidden" />
+            <Users size={32} className="hidden md:block" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <p className="text-[10px] font-bold text-navy/20 uppercase tracking-[0.3em] font-mono truncate">
                 {user?.branchName || 'ORGANIZATION'}
               </p>
               <span className="text-navy/10 text-[8px]">•</span>
-              <p className="text-[9px] font-bold text-indigo uppercase tracking-[0.15em] font-mono truncate">
+              <p className="text-[9px] font-bold text-indigo uppercase tracking-[0.15em] font-mono">
                 {user?.role?.replace(/_/g, ' ')}
               </p>
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-navy tracking-tight">
+            <h1 className="text-2xl md:text-4xl font-bold text-navy tracking-tight">
               Personnel Directory
             </h1>
             <p className="text-navy/30 mt-1 font-bold uppercase tracking-widest text-[9px]">
-               {user?.name} · Organization hierarchy
+              {user?.name} · Organization hierarchy
             </p>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          {user?.role === 'md' && (
+        {user?.role === 'md' && (
+          <div className="flex justify-start md:justify-end">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="gradient-primary text-white shadow-xl shadow-indigo/20 px-8 py-4 rounded-2xl font-bold flex items-center gap-3 tactile-press hover:scale-[1.02] transition-transform"
+              className="gradient-primary text-white shadow-xl shadow-indigo/20 px-6 py-3.5 md:px-8 md:py-4 rounded-2xl font-bold flex items-center gap-3 tactile-press hover:scale-[1.02] transition-transform text-sm"
             >
-              <UserPlus size={20} />
+              <UserPlus size={18} />
               Add New Member
             </button>
-          )}
-          <button
-            onClick={handleLogout}
-            className="p-4 rounded-2xl bg-white text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all duration-300 card-shadow border border-navy/5 tactile-press group"
-            title="Logout Account"
-          >
-            <LogOut size={20} className="group-hover:rotate-12 transition-transform" />
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Filters Bar */}
-      <div className="flex flex-col sm:flex-row gap-4 items-center bg-white/50 backdrop-blur-md p-2 rounded-[32px] card-shadow border border-white/50">
-        <div className="relative flex-1 w-full group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-navy/20 group-focus-within:text-indigo transition-colors" size={20} />
+      <div className="bg-white/60 backdrop-blur-md rounded-[24px] card-shadow border border-white/50 overflow-hidden">
+        {/* Search row */}
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-navy/20 group-focus-within:text-indigo transition-colors" size={18} />
           <input
             type="text"
-            placeholder="Search personnel by name or email…"
-            className="w-full pl-16 pr-6 py-4 bg-transparent border-none rounded-2xl text-navy font-bold placeholder:text-navy/20 focus:outline-none focus:ring-0 text-base"
+            placeholder="Search by name or email…"
+            className="w-full pl-12 pr-5 py-4 bg-transparent border-none text-navy font-bold placeholder:text-navy/20 focus:outline-none focus:ring-0 text-sm"
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
           />
         </div>
 
-        <div className="w-[1px] h-8 bg-navy/5 hidden sm:block" />
+        {/* Divider */}
+        <div className="h-px bg-navy/[0.04] mx-4" />
 
+        {/* Role filter */}
         <select
-          className="bg-transparent px-6 py-4 text-navy font-bold text-sm cursor-pointer outline-none min-w-[180px] w-full sm:w-auto appearance-none text-center"
+          className="w-full bg-transparent px-5 py-3.5 text-navy/50 font-bold text-xs cursor-pointer outline-none appearance-none"
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(1); }}
         >
-          <option value="">Filter by Role</option>
+          <option value="">All Roles</option>
           {filterRoles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
       </div>
 
       {/* Users List */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         {users.map((u) => (
           <Card
             key={u.id}

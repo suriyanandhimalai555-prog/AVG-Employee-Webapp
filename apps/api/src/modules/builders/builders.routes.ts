@@ -9,6 +9,7 @@ import {
   CreateBuildersPlanSchema,
   RecordBuildersPayoutSchema,
   ChooseRewardSchema,
+  ChangeRewardSchema,
   GetBuildersPlansQuerySchema,
   GetBuildersSummaryQuerySchema,
   UpdateBuildersIncentiveRuleSchema,
@@ -209,6 +210,22 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
     } catch (error) { return handleError(error, reply); }
   });
 
+  // ─── PATCH /builders/plans/:id/change-reward — MD / Management: correct a wrong reward choice ───
+  fastify.patch('/plans/:id/change-reward', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const body   = ChangeRewardSchema.parse(req.body);
+        const plan   = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? (body as any).branchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, (body as any).branchId);
+        const data   = await BuildersService.changeReward(fastify.db, req.user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
   // ─── PATCH /builders/plans/:id/correct — MD / Management: correct a plan ───
   fastify.patch('/plans/:id/correct', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -268,6 +285,22 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
         const plan = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, bodyBranchId);
         const data = await BuildersService.voidPlan(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /builders/plans/:id/delete — permanently delete a plan + payouts ───
+  fastify.patch('/plans/:id/delete', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const plan = await BuildersService.getPlan(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, plan.branch_id, bodyBranchId);
+        const data = await BuildersService.deletePlan(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

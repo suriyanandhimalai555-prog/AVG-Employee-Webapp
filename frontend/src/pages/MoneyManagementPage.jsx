@@ -6,7 +6,7 @@ import {
   Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
   Loader2, Clock, AlertCircle,
   Briefcase, TrendingUp, Building2, AlertTriangle,
-  BarChart3, PenLine, MapPin, ArrowUpRight, Gem, Layers, Banknote
+  BarChart3, PenLine, MapPin, ArrowUpRight, Layers, Banknote, Sparkles
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -76,7 +76,7 @@ export const MoneyManagementPage = () => {
       <div className="pb-28">
         {/* KPI Strip */}
         <div className="px-4 mb-6">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center"><TrendingUp size={14} /></div>
@@ -594,7 +594,39 @@ export const MoneyManagementPage = () => {
             <p className="text-xs font-medium text-navy/40 mt-1">Submit &amp; track collections</p>
           </div>
 
-          <div className="px-6 grid grid-cols-1 gap-4 mb-8">
+          <div className="px-6 grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+
+            {/* ── SCHEMES (pinned to top, full-width featured) ── */}
+            <button onClick={() => navigate('/money/schemes')} className="md:col-span-2 bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+              <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
+              <div className="relative z-10 w-3/4">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
+                  <Layers size={24} />
+                </div>
+                <p className="text-xl font-bold text-white mb-1">Schemes</p>
+                <p className="text-xs font-medium text-white/70">Savings &amp; investment plans</p>
+              </div>
+              <div className="relative z-10 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mt-2 group-hover:bg-white/30 transition-colors">
+                <ArrowRight size={20} className="text-white" />
+              </div>
+            </button>
+
+            {/* ── INCENTIVE WALLET (below Schemes, full-width featured) ── */}
+            <button onClick={() => navigate('/money/incentives')} className="md:col-span-2 bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+              <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
+              <div className="relative z-10 w-3/4">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
+                  <Sparkles size={24} />
+                </div>
+                <p className="text-xl font-bold text-white mb-1">Incentive Wallet</p>
+                <p className="text-xs font-medium text-white/70">Commissions earned across all schemes</p>
+              </div>
+              <div className="relative z-10 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mt-2 group-hover:bg-white/30 transition-colors">
+                <ArrowRight size={20} className="text-white" />
+              </div>
+            </button>
+
+            {/* ── EVERYTHING ELSE below ── */}
             <button onClick={() => navigate('/money/submit')} className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
               <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
               <div className="relative z-10 w-3/4">
@@ -652,22 +684,6 @@ export const MoneyManagementPage = () => {
               </button>
             )}
 
-            {/* Schemes hub — gold scheme and future plans */}
-            <button onClick={() => navigate('/money/schemes')} className="bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
-              <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
-              <div className="relative z-10 w-3/4">
-                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
-                  <Layers size={24} />
-                </div>
-                <p className="text-xl font-bold text-white mb-1">Schemes</p>
-                <p className="text-xs font-medium text-white/70">Savings &amp; investment plans</p>
-              </div>
-              <div className="relative z-10 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mt-2 group-hover:bg-white/30 transition-colors">
-                <ArrowRight size={20} className="text-white" />
-              </div>
-            </button>
-
-            {/* Salary */}
             <button onClick={() => navigate('/money/salaries')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy mb-4 group-hover:scale-110 transition-transform">
@@ -680,6 +696,7 @@ export const MoneyManagementPage = () => {
                 <ArrowRight size={20} className="text-navy/40" />
               </div>
             </button>
+
           </div>
         </motion.div>
       </motion.div>

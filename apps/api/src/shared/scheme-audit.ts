@@ -5,7 +5,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 
-export type AuditAction = 'edit' | 'void' | 'unpay' | 'remove';
+export type AuditAction = 'edit' | 'void' | 'unpay' | 'remove' | 'delete';
 
 export interface SchemeAuditArgs {
   schemeCode:  string;
