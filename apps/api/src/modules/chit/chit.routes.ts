@@ -3,6 +3,7 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
+import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { ChitService } from './chit.service';
 import {
   CreateChitGroupSchema,
@@ -90,6 +91,8 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can create groups');
       const body     = CreateChitGroupSchema.parse(req.body);
+      // Past start dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.startDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await ChitService.createGroup(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
@@ -166,6 +169,8 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can add members');
       const { groupId } = req.params as { groupId: string };
       const body     = AddChitMemberSchema.parse(req.body);
+      // Past first-payment dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.firstPaymentDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await ChitService.addMember(fastify.db, req.user.id, groupId, branchId, body);
       return reply.code(201).send({ success: true, data });
@@ -181,6 +186,8 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payments');
       const { groupId, memberId } = req.params as { groupId: string; memberId: string };
       const body     = RecordChitPaymentSchema.parse(req.body);
+      // Past payment dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.paymentDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await ChitService.recordPayment(fastify.db, req.user.id, groupId, memberId, branchId, body);
       return reply.code(201).send({ success: true, data });

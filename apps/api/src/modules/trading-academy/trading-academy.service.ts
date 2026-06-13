@@ -83,6 +83,8 @@ export const TradingAcademyService = {
         sourceId:          member.id,
         sourceDescription: description,
         creditedBy:        enteredBy,
+        // Backdated entry: the incentive sits in the enrollment date's wallet period
+        effectiveDate:     payload.enrollmentDate,
       });
 
       await client.query('COMMIT');
@@ -439,6 +441,7 @@ export const TradingAcademyService = {
     const res = await db.query(
       `SELECT
          t.id, t.amount, t.enrollment_date, t.payment_mode, t.notes, t.created_at,
+         t.enrolled_by,
          c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
          u.name AS enrolled_by_name, u.role AS enrolled_by_role
        FROM trading_academy_members t

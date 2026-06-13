@@ -33,6 +33,7 @@ import chitRoutes from './modules/chit/chit.routes';
 import buildersRoutes from './modules/builders/builders.routes';
 import landRoutes from './modules/land/land.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
+import settingsRoutes from './modules/settings/settings.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -189,6 +190,9 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Walks the scheme registry — every scheme that implements getOverviewByBranch
   // appears here automatically; no per-scheme edits needed in this file.
   await app.register(schemesAggregateRoutes, { prefix: '/api/schemes' });
+
+  // App-level settings (backdated-entry permission flag)
+  await app.register(settingsRoutes, { prefix: '/api/settings' });
 
   return app;
 };

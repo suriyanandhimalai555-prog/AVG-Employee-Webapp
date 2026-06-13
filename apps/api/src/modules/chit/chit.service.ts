@@ -128,25 +128,50 @@ export const ChitService = {
     const pkg = CHIT_PACKAGES[payload.packageNumber];
     if (!pkg) throw new ValidationError('Invalid package number');
 
-    const result = await db.query(
-      `INSERT INTO agila_chit_groups
-         (branch_id, group_name, package_number, full_amount, half_amount,
-          start_date, current_month, status, fill_deadline, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,2,'forming', NOW() + ($9 * INTERVAL '1 day'),$7,$8)
-       RETURNING *`,
-      [
-        branchId,
-        payload.groupName.trim(),
-        payload.packageNumber,
-        pkg.fullAmount,
-        pkg.halfAmount,
-        payload.startDate,
-        payload.notes || null,
-        createdBy,
-        FILL_WINDOW_DAYS,
-      ]
+    // Prevent duplicate group names within the same branch (case-insensitive, forever)
+    // Combined groups (is_combined = true) are system-generated and excluded from this check
+    const dup = await db.query(
+      `SELECT 1 FROM agila_chit_groups
+       WHERE branch_id = $1 AND LOWER(group_name) = LOWER($2) AND is_combined = false
+       LIMIT 1`,
+      [branchId, payload.groupName.trim()]
     );
-    return result.rows[0];
+    if (dup.rows.length > 0) {
+      throw new ConflictError(
+        `A chit group named "${payload.groupName.trim()}" already exists in this branch`
+      );
+    }
+
+    try {
+      const result = await db.query(
+        `INSERT INTO agila_chit_groups
+           (branch_id, group_name, package_number, full_amount, half_amount,
+            start_date, current_month, status, fill_deadline, notes, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,2,'forming', NOW() + ($9 * INTERVAL '1 day'),$7,$8)
+         RETURNING *`,
+        [
+          branchId,
+          payload.groupName.trim(),
+          payload.packageNumber,
+          pkg.fullAmount,
+          pkg.halfAmount,
+          payload.startDate,
+          payload.notes || null,
+          createdBy,
+          FILL_WINDOW_DAYS,
+        ]
+      );
+      return result.rows[0];
+    } catch (err: any) {
+      // TS: re-throw Postgres unique-violation (23505) as a user-friendly 409;
+      // this catches the race where two requests slip past the pre-check concurrently
+      if (err.code === '23505') {
+        throw new ConflictError(
+          `A chit group named "${payload.groupName.trim()}" already exists in this branch`
+        );
+      }
+      throw err;
+    }
   },
 
   // ─── LIST GROUPS ───────────────────────────────────────────────────────────
@@ -369,6 +394,8 @@ export const ChitService = {
           sourceId:          member.id,
           sourceDescription: `Agila Chit enrollment: ${customerName} – ${group.group_name}`,
           creditedBy:        enteredBy,
+          // Backdated entry: the incentive sits in the month-1 payment date's wallet period
+          effectiveDate:     paymentDate,
         });
         commissionAmount = credited.reduce((sum: number, row: any) => sum + parseFloat(row.amount), 0);
       }
@@ -685,23 +712,27 @@ export const ChitService = {
       const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
 
-      if (referrerChanged && effectiveReferrer) {
+      if (referrerChanged) {
+        // Always claw back first — clearing the referrer (null) must also remove
+        // the old referrer's credit, so the reversal cannot depend on a new referrer.
         await IncentiveService.reverseIncentives(client, {
           schemeCode:   SCHEME_CODE,
           sourceId:     memberId,
           paymentEvent: 'enrollment',
         });
-        await IncentiveService.distributeIncentives(client, {
-          schemeCode:        SCHEME_CODE,
-          dealMakerUserId:   effectiveReferrer,
-          mode:              'percent_referrer',
-          percentRole:       'referrer_direct',
-          baseAmount:        parseFloat(old.full_amount),
-          paymentEvent:      'enrollment',
-          sourceId:          memberId,
-          sourceDescription: `Agila Chit enrollment (corrected): ${old.customer_name} – ${old.group_name}`,
-          creditedBy:        correctedBy,
-        });
+        if (effectiveReferrer) {
+          await IncentiveService.distributeIncentives(client, {
+            schemeCode:        SCHEME_CODE,
+            dealMakerUserId:   effectiveReferrer,
+            mode:              'percent_referrer',
+            percentRole:       'referrer_direct',
+            baseAmount:        parseFloat(old.full_amount),
+            paymentEvent:      'enrollment',
+            sourceId:          memberId,
+            sourceDescription: `Agila Chit enrollment (corrected): ${old.customer_name} – ${old.group_name}`,
+            creditedBy:        correctedBy,
+          });
+        }
       }
 
       await SchemeAudit.log(client, {
@@ -1155,8 +1186,9 @@ export const ChitService = {
     const params: any[] = [branchId];
     let where = 'g.branch_id = $1';
     let idx = 2;
-    if (dateFilter?.startDate) { where += ` AND g.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND g.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Filter by business date (start_date) so backdated groups count in their real period
+    if (dateFilter?.startDate) { where += ` AND g.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND g.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
 
     const groupsResult = await db.query(
       `SELECT
@@ -1223,8 +1255,9 @@ export const ChitService = {
     const memParams: any[] = [];
     let memWhere = '1=1';
     let memIdx = 1;
-    if (dateFilter?.startDate) { memWhere += ` AND g.created_at >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { memWhere += ` AND g.created_at < ($${memIdx++}::date + INTERVAL '1 day')`; memParams.push(dateFilter.endDate); }
+    // Filter by business date (start_date) so backdated groups count in their real period
+    if (dateFilter?.startDate) { memWhere += ` AND g.start_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { memWhere += ` AND g.start_date < ($${memIdx++}::date + INTERVAL '1 day')`; memParams.push(dateFilter.endDate); }
 
     const memRes = await db.query<{ branch_id: string; branch_name: string; count: string; collected: string }>(
       `SELECT
@@ -1279,8 +1312,9 @@ export const ChitService = {
     const params: any[] = [branchId];
     let where = 'g.branch_id = $1';
     let idx = 2;
-    if (dateFilter?.startDate) { where += ` AND g.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND g.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Filter by business date (start_date) so backdated groups count in their real period
+    if (dateFilter?.startDate) { where += ` AND g.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND g.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
 
     const res = await db.query(
       `SELECT

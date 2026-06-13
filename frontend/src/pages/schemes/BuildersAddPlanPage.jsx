@@ -14,6 +14,7 @@ import {
   createFormSetter,
   getTodayISO,
 } from '../../lib/schemeConstants';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -193,8 +194,7 @@ export const BuildersAddPlanPage = () => {
 
         {/* Lump sum date */}
         <FormField label="Lump Sum Date" required>
-          <input
-            type="date"
+          <BackdateDateInput
             value={form.lumpSumDate}
             onChange={set('lumpSumDate')}
             className={SCHEME_INPUT_CLASS}

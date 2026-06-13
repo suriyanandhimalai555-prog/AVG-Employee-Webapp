@@ -88,11 +88,14 @@ export const SlotsService = {
       const slots: any[] = [];
       for (let i = 0; i < quantity; i++) {
         const slotNumber = heldCount + 1 + i;
+        // Backdated entry: saleDate overrides created_at so branch summaries
+        // (which filter slots by created_at) count the sale in its real period.
         const slotRes = await client.query(
           `INSERT INTO lss_slots
              (room_id, slot_number, customer_id, branch_id, amount_paid,
-              payment_mode, referrer_id, notes, entered_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              payment_mode, referrer_id, notes, entered_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                   COALESCE($10::timestamptz, now()))
            RETURNING *`,
           [
             room.id,
@@ -104,6 +107,7 @@ export const SlotsService = {
             payload.referrerId ?? null,
             payload.notes ?? null,
             enteredBy,
+            payload.saleDate ?? null,
           ]
         );
         slots.push(slotRes.rows[0]);
@@ -131,6 +135,8 @@ export const SlotsService = {
           sourceId:          slots[0].id,
           sourceDescription,
           creditedBy:        enteredBy,
+          // Backdated entry: the incentive sits in the sale date's wallet period
+          effectiveDate:     payload.saleDate,
         });
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
@@ -209,12 +215,28 @@ export const SlotsService = {
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
 
       if (referrerChanged) {
-        await IncentiveService.reverseIncentives(client, {
-          schemeCode:   SCHEME_CODE,
-          sourceId:     slotId,
-          paymentEvent: 'enrollment',
-        });
+        // The referrer belongs to the customer's whole holding in this room, and
+        // enrollment incentives are keyed to the FIRST slot of each purchase batch —
+        // so operate on every sibling slot, not just the one being edited.
+        const siblings = await client.query(
+          `SELECT id FROM lss_slots
+           WHERE room_id = $1 AND customer_id = $2
+           ORDER BY slot_number ASC`,
+          [old.room_id, old.customer_id]
+        );
+        await client.query(
+          `UPDATE lss_slots SET referrer_id = $1 WHERE room_id = $2 AND customer_id = $3`,
+          [payload.referrerId ?? null, old.room_id, old.customer_id]
+        );
+        for (const sib of siblings.rows) {
+          await IncentiveService.reverseIncentives(client, {
+            schemeCode:   SCHEME_CODE,
+            sourceId:     sib.id,
+            paymentEvent: 'enrollment',
+          });
+        }
         if (effectiveReferrer) {
+          const anchorSlotId = siblings.rows[0]?.id ?? slotId;
           const totalAmount = parseFloat(old.total_amount ?? old.amount_paid);
           await IncentiveService.distributeIncentives(client, {
             schemeCode:        SCHEME_CODE,
@@ -223,7 +245,7 @@ export const SlotsService = {
             percentRole:       'referrer_direct',
             baseAmount:        totalAmount,
             paymentEvent:      'enrollment',
-            sourceId:          slotId,
+            sourceId:          anchorSlotId,
             sourceDescription: `LSS (corrected) — ${old.customer_name} (${old.customer_code})`,
             creditedBy:        correctedBy,
           });

@@ -21,6 +21,7 @@ import {
   SCHEME_MODE_LABELS,
   SCHEME_MODE_STYLES,
 } from '../../lib/schemeConstants';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
@@ -125,8 +126,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
           {/* Payout date */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mb-1">Payout Date</p>
-            <input
-              type="date"
+            <BackdateDateInput
               value={form.payoutDate}
               onChange={e => setForm(f => ({ ...f, payoutDate: e.target.value }))}
               className={SCHEME_INPUT_CLASS}

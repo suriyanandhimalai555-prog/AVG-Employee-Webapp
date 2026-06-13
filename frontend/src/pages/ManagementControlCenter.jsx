@@ -37,6 +37,8 @@ import {
   useGetLandLayoutCommissionRulesQuery,
   useUpdateLandLayoutCommissionRuleMutation,
   useUpdateLandLayoutMutation,
+  useGetBackdatedEntrySettingQuery,
+  useUpdateBackdatedEntrySettingMutation,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
@@ -691,6 +693,52 @@ const LandTab = ({ navigate }) => {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ─── Backdated-entry toggle (Management only) ─────────────────────────────────
+// While ON, branch admins may enter scheme data dated in the past (the
+// incentive lands in that date's wallet period). Management itself is always
+// allowed to backdate regardless of this switch.
+const BackdatedEntryToggle = () => {
+  const { data, isLoading }   = useGetBackdatedEntrySettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateBackdatedEntrySettingMutation();
+  const enabled = data?.enabled === true;
+
+  const toggle = async () => {
+    try {
+      await updateSetting({ enabled: !enabled }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch simply stays put.
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-6">
+      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-navy">Backdated entry by branch admins</p>
+          <p className="text-xs text-navy/40 mt-0.5">
+            {enabled
+              ? 'ON — admins can enter past-dated scheme data; incentives credit to that period.'
+              : 'OFF — admins can only enter data dated today. Management can always backdate.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={isLoading || saving}
+          aria-label={enabled ? 'Disable backdated entry' : 'Enable backdated entry'}
+          className="flex-shrink-0 tactile-press disabled:opacity-50"
+        >
+          {saving
+            ? <Loader2 size={34} className="animate-spin text-navy/30" />
+            : enabled
+              ? <ToggleRight size={34} className="text-emerald-600" />
+              : <ToggleLeft size={34} className="text-navy/30" />}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const ManagementControlCenter = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -723,6 +771,9 @@ export const ManagementControlCenter = () => {
           </p>
         </div>
       </div>
+
+      {/* Backdated-entry permission — only the management account can flip it */}
+      {user?.role === 'management' && <BackdatedEntryToggle />}
 
       {/* Tab bar */}
       <div className="px-4 md:px-0 mb-6">

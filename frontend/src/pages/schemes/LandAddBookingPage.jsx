@@ -15,6 +15,7 @@ import { FormField } from './components/FormField';
 import { FormError } from './components/FormError';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { PlotSelect } from './components/PlotSelect';
 import { BranchPicker } from '../../components/BranchPicker';
 
@@ -196,7 +197,7 @@ export const LandAddBookingPage = () => {
         </FormField>
 
         <FormField label="Booking Date" required>
-          <input type="date" value={form.bookingDate} onChange={set('bookingDate')}
+          <BackdateDateInput value={form.bookingDate} onChange={set('bookingDate')}
             className={SCHEME_INPUT_CLASS} required />
         </FormField>
 

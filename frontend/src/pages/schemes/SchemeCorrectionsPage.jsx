@@ -60,6 +60,10 @@ import {
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
+  useGetLandBuybackQuery,
+  useUnpayLandPayoutMutation,
+  useUndoLandFullPaymentMutation,
+  useUndoLandAdvanceMutation,
   useGetSchemeAuditLogQuery,
   useGetGoldEmployeesQuery,
 } from '../../store/api/apiSlice';
@@ -85,14 +89,14 @@ const SCHEMES = [
 ];
 
 // Scheme codes that have per-entry recorded payments the admin can manage
-const PAYMENT_SCHEMES = new Set(['gold_scheme', 'builders_scheme', 'agila_chit_scheme']);
+const PAYMENT_SCHEMES = new Set(['gold_scheme', 'builders_scheme', 'agila_chit_scheme', 'land_scheme']);
 
 // ─── Shared field configs per scheme ─────────────────────────────────────────
 const SCHEME_FIELDS = {
   gold_scheme: [
     { key: 'chitNumber',    label: 'Chit Number',   type: 'text',       entryKey: 'chit_number' },
     { key: 'customerId',    label: 'Customer',       type: 'customer',   entryKey: null },
-    { key: 'referrerId',    label: 'Referred by',    type: 'referrer',   entryKey: 'referrer_name' },
+    { key: 'referrerId',    label: 'Referred by',    type: 'referrer',   entryKey: 'referrer_id' },
     { key: 'monthlyAmount', label: 'Monthly Amount', type: 'number',     entryKey: 'monthly_amount' },
     { key: 'startDate',     label: 'Start Date',     type: 'date',       entryKey: 'start_date' },
     { key: 'totalMonths',   label: 'Total Months',   type: 'number',     entryKey: 'total_months' },
@@ -100,7 +104,7 @@ const SCHEME_FIELDS = {
   ],
   trading_academy: [
     { key: 'customerId',      label: 'Customer',       type: 'customer', entryKey: null },
-    { key: 'enrolledBy',      label: 'Enrolled by',    type: 'referrer', entryKey: 'referrer_name' },
+    { key: 'enrolledBy',      label: 'Enrolled by',    type: 'referrer', entryKey: 'enrolled_by' },
     { key: 'amount',          label: 'Amount',         type: 'number',   entryKey: 'amount' },
     { key: 'enrollmentDate',  label: 'Enrollment Date',type: 'date',     entryKey: 'enrollment_date' },
     { key: 'paymentMode',     label: 'Payment Mode',   type: 'mode',     entryKey: 'payment_mode' },
@@ -108,38 +112,49 @@ const SCHEME_FIELDS = {
   ],
   builders_scheme: [
     { key: 'customerId',   label: 'Customer',    type: 'customer', entryKey: null },
-    { key: 'referrerId',   label: 'Referred by', type: 'referrer', entryKey: 'referrer_name' },
+    { key: 'referrerId',   label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'lumpSumDate',  label: 'Lump Sum Date',type: 'date',    entryKey: 'lump_sum_date' },
     { key: 'lumpSumMode',  label: 'Payment Mode',type: 'mode',     entryKey: 'lump_sum_mode' },
     { key: 'notes',        label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   agila_chit_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
-    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_name' },
+    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   gold_coin_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
-    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: null },
+    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   lss_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
-    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: null },
+    { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   land_scheme: [
-    { key: 'bookingRef',  label: 'Booking Ref', type: 'text',     entryKey: 'booking_ref' },
-    { key: 'bookingDate', label: 'Booking Date',type: 'date',     entryKey: 'booking_date' },
-    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode' },
-    { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
+    { key: 'bookingRef',      label: 'Booking Ref',       type: 'text',     entryKey: 'booking_ref' },
+    { key: 'bookingDate',     label: 'Booking Date',      type: 'date',     entryKey: 'booking_date' },
+    { key: 'customerId',      label: 'Customer',          type: 'customer', entryKey: null },
+    { key: 'referrerId',      label: 'Referred by',       type: 'referrer', entryKey: 'referrer_id' },
+    // Land bookings use their own payment-mode enum, not cash/gpay/bank_receipt
+    { key: 'paymentMode',     label: 'Payment Mode',      type: 'landMode', entryKey: 'payment_mode' },
+    { key: 'advanceAmount',   label: 'Advance Amount',    type: 'number',   entryKey: 'advance_amount' },
+    { key: 'advanceDate',     label: 'Advance Date',      type: 'date',     entryKey: 'advance_date' },
+    { key: 'fullAmount',      label: 'Full Amount',       type: 'number',   entryKey: 'full_amount' },
+    { key: 'fullPaymentDate', label: 'Full Payment Date', type: 'date',     entryKey: 'full_payment_date' },
+    { key: 'loanTaken',       label: 'Loan Taken',        type: 'boolean',  entryKey: 'loan_taken' },
+    { key: 'loanAmount',      label: 'Loan Amount',       type: 'number',   entryKey: 'loan_amount' },
+    { key: 'notes',           label: 'Notes',             type: 'textarea', entryKey: 'notes' },
   ],
 };
 
 const SCHEME_PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt'];
 const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt' };
+const LAND_PAYMENT_MODES = ['full_payment', 'advance_full_payment'];
+const LAND_MODE_LABEL = { full_payment: 'Full Payment', advance_full_payment: 'Advance + Full Payment' };
 
 // ─── Scheme mutation hooks ────────────────────────────────────────────────────
 
@@ -458,6 +473,130 @@ const ChitPaymentsPanel = ({ entry, branchId }) => {
   );
 };
 
+// ─── Land payments panel — advance / full-payment undo + per-month payout unpay ─
+// Land doesn't fit the generic PaymentsPanel: advance and full payment are
+// columns on the booking (not payment rows), and buyback payouts carry no
+// payment mode and no per-row correct — only mark-paid / unpay.
+
+const LandUndoRow = ({ label, detail, canUndo, confirmText, onUndo }) => {
+  const [open,  setOpen]  = useState(false);
+  const [busy,  setBusy]  = useState(false);
+  const [error, setError] = useState('');
+
+  const handleUndo = async () => {
+    setBusy(true); setError('');
+    try {
+      await onUndo().unwrap();
+      setOpen(false);
+    } catch (err) { setError(err?.data?.error?.message || 'Failed to undo.'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-navy/3 rounded-xl px-3 py-2.5 space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-xs font-bold text-navy">{label}</span>
+          <span className="ml-2 text-[10px] text-navy/50">{detail}</span>
+        </div>
+        {canUndo && (
+          <button type="button" onClick={() => setOpen((v) => !v)}
+            className="w-6 h-6 rounded-lg bg-white flex items-center justify-center text-navy/40 hover:text-red-600 tactile-press"
+            aria-label={`Undo ${label}`}>
+            <Undo2 size={10} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="border-t border-red-100 pt-2 space-y-2">
+          <p className="text-[10px] text-red-700 font-semibold">{confirmText}</p>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleUndo} disabled={busy}
+              className="flex-1 py-2 rounded-xl bg-red-600 text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {busy ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />} Confirm Undo
+            </button>
+            <button type="button" onClick={() => setOpen(false)}
+              className="px-3 py-2 rounded-xl bg-navy/5 text-navy/60 text-[10px] font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const LandPaymentsPanel = ({ entry, branchId }) => {
+  const [open, setOpen] = useState(false);
+  const { data: payouts = [], isLoading } = useGetLandBuybackQuery(entry.id, { skip: !open });
+  const [unpayPayout]     = useUnpayLandPayoutMutation();
+  const [undoFullPayment] = useUndoLandFullPaymentMutation();
+  const [undoAdvance]     = useUndoLandAdvanceMutation();
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-[10px] font-bold text-navy/50 hover:text-indigo tactile-press mt-1">
+        <CreditCard size={11} /> Manage Payments
+      </button>
+    );
+  }
+
+  const paidPayouts  = payouts.filter((p) => p.status === 'paid');
+  const pendingCount = payouts.length - paidPayouts.length;
+
+  return (
+    <div className="border-t border-navy/5 pt-3 mt-1 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Payments</span>
+        <button type="button" onClick={() => setOpen(false)} className="text-navy/30 hover:text-navy/60">
+          <X size={12} />
+        </button>
+      </div>
+
+      {entry.advance_amount != null && (
+        <LandUndoRow
+          label="Advance"
+          detail={`${formatCurrency(entry.advance_amount)} · ${formatDate(entry.advance_date)}`}
+          canUndo={entry.status === 'advance_paid'}
+          confirmText="Remove the advance payment? The booking reverts to 'booked'."
+          onUndo={() => undoAdvance({ id: entry.id, branchId })}
+        />
+      )}
+
+      {entry.full_amount != null && (
+        <LandUndoRow
+          label="Full Payment"
+          detail={`${formatCurrency(entry.full_amount)} · ${formatDate(entry.full_payment_date)}`}
+          canUndo={entry.status === 'full_paid'}
+          confirmText="Remove the full payment? The buyback payout schedule is deleted. Unpay all paid buyback months first."
+          onUndo={() => undoFullPayment({ id: entry.id, branchId })}
+        />
+      )}
+
+      {entry.advance_amount == null && entry.full_amount == null && (
+        <p className="text-xs text-navy/40 text-center py-2">No payments recorded yet.</p>
+      )}
+
+      {isLoading && <div className="flex justify-center py-2"><Loader2 size={16} className="animate-spin text-navy/30" /></div>}
+      {paidPayouts.map((p) => (
+        <LandUndoRow
+          key={p.id}
+          label={`Buyback M${p.month_number}`}
+          detail={`${formatCurrency(p.amount)} · ${formatDate(p.paid_date)}${p.paid_by_name ? ` · ${p.paid_by_name}` : ''}`}
+          canUndo
+          confirmText="Unpay this buyback month? Its commission credits will be clawed back."
+          onUndo={() => unpayPayout({ id: entry.id, month: p.month_number, branchId })}
+        />
+      ))}
+      {!isLoading && payouts.length > 0 && (
+        <p className="text-[10px] text-navy/40 text-center">
+          {paidPayouts.length} paid · {pendingCount} pending buyback months
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ─── Generic payments list: Manage Payments button → list + Add + Edit / Remove ─
 
 const PaymentsPanel = ({
@@ -645,13 +784,18 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
 // ─── Rich entry edit form ─────────────────────────────────────────────────────
 
 const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }) => {
-  const { data: employees = [] } = useGetGoldEmployeesQuery();
+  const { data: employees = [] } = useGetGoldEmployeesQuery(branchId, { skip: !branchId });
 
   const initForm = () => {
     const f = {};
     fields.forEach((field) => {
       if (field.type === 'customer') {
         f[field.key] = null;
+      } else if (field.type === 'boolean') {
+        // '' = leave unchanged — sending the current value would trip server
+        // guards on entries where the field doesn't apply yet (e.g. land loan
+        // fields before a full payment is recorded).
+        f[field.key] = '';
       } else if (field.entryKey && entry[field.entryKey] != null) {
         f[field.key] = field.type === 'date'
           ? String(entry[field.entryKey]).slice(0, 10)
@@ -679,9 +823,12 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
         if (field.type === 'customer') {
           if (val?.id) payload.customerId = val.id;
         } else if (field.type === 'referrer') {
-          if (val !== '' && val != null) payload[field.key] = val || null;
+          // Always send: null clears an existing referrer (triggers incentive claw-back)
+          payload[field.key] = (val === '' || val == null) ? null : val;
         } else if (field.type === 'number') {
           if (val !== '') payload[field.key] = parseFloat(val);
+        } else if (field.type === 'boolean') {
+          if (val !== '') payload[field.key] = val === 'yes';
         } else if (val !== '') {
           payload[field.key] = val || null;
         }
@@ -696,7 +843,19 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   return (
     <form onSubmit={handleSubmit} className="border-t border-navy/5 pt-3 space-y-3">
       <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Correct Entry</p>
-      {fields.map((field) => (
+      {fields.map((field) => {
+        // For referrer fields: always include the entry's current referrer as an option even
+        // if they're inactive or from a different branch — so the pre-selected UUID always matches.
+        let empOptions = employees;
+        if (field.type === 'referrer' && field.entryKey) {
+          const currentId = entry[field.entryKey];
+          const nameKey = field.entryKey === 'enrolled_by' ? 'enrolled_by_name' : 'referrer_name';
+          const inList = employees.some((e) => e.id === currentId);
+          if (currentId && !inList) {
+            empOptions = [{ id: currentId, name: entry[nameKey] || 'Current referrer', role: '' }, ...employees];
+          }
+        }
+        return (
         <div key={field.key}>
           <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1">{field.label}</label>
           {field.type === 'customer' && (
@@ -711,8 +870,8 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
             <select value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
               className={`${IC} appearance-none`}>
               <option value="">— No referrer —</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+              {empOptions.map((emp) => (
+                <option key={emp.id} value={emp.id}>{emp.name}{emp.role ? ` (${emp.role})` : ''}</option>
               ))}
             </select>
           )}
@@ -734,12 +893,27 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
           )}
+          {field.type === 'landMode' && (
+            <select value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+              className={`${IC} appearance-none`}>
+              {LAND_PAYMENT_MODES.map((m) => <option key={m} value={m}>{LAND_MODE_LABEL[m]}</option>)}
+            </select>
+          )}
+          {field.type === 'boolean' && (
+            <select value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+              className={`${IC} appearance-none`}>
+              <option value="">— unchanged —</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          )}
           {field.type === 'textarea' && (
             <textarea value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
               rows={2} className={`${IC} resize-none`} placeholder="Correction note…" />
           )}
         </div>
-      ))}
+        );
+      })}
       {error && <FormError error={error} />}
       <div className="flex gap-2">
         <button type="submit" disabled={busy}
@@ -1089,7 +1263,9 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
           ? <GoldPaymentsPanel entry={entry} branchId={branchId} />
           : schemeCode === 'builders_scheme'
             ? <BuildersPayoutsPanel entry={entry} branchId={branchId} />
-            : null // chit payments are handled inside ChitGroupCard → ChitMemberCard
+            : schemeCode === 'land_scheme'
+              ? <LandPaymentsPanel entry={entry} branchId={branchId} />
+              : null // chit payments are handled inside ChitGroupCard → ChitMemberCard
       )}
 
       {rewardOpen && (

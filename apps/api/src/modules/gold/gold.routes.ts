@@ -3,6 +3,7 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, hasRole, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
+import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { GoldService } from './gold.service';
 import {
   AddGoldMemberSchema,
@@ -25,6 +26,7 @@ const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 export default async function goldRoutes(fastify: FastifyInstance): Promise<void> {
 
   // ─── GET /gold/employees — branch employees list for referrer picker ───
+  // MD/Management pass ?branchId to scope to the branch being corrected.
   fastify.get('/employees', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -33,7 +35,12 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       if (!READER_ROLES.has(req.user.role)) {
         throw new ForbiddenError('Access denied');
       }
-      const data = await GoldService.getBranchEmployees(fastify.db, req.user.branchId);
+      const { branchId: queryBranchId } = req.query as { branchId?: string };
+      // Query param takes priority over JWT branchId so the corrections center can always
+      // override to the branch being edited — even when the management account has its own branchId.
+      const effectiveBranchId = queryBranchId || req.user.branchId;
+      if (!effectiveBranchId) return reply.send({ success: true, data: [] });
+      const data = await GoldService.getBranchEmployees(fastify.db, effectiveBranchId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -83,6 +90,8 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
         throw new ForbiddenError('Only Branch Admin or Management can add gold scheme members');
       }
       const body     = AddGoldMemberSchema.parse(req.body);
+      // Past start dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.startDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await GoldService.addMember(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
@@ -129,6 +138,8 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payments');
       const { id } = req.params as { id: string };
       const body     = AddGoldPaymentSchema.parse(req.body);
+      // Past paid dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.paidDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await GoldService.addPayment(fastify.db, id, branchId, req.user.id, body);
       return reply.code(201).send({ success: true, data });

@@ -19,8 +19,9 @@ import {
 } from '../../store/api/apiSlice';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { BranchPicker } from '../../components/BranchPicker';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { formatCurrency } from '../../lib/formatters';
-import { SCHEME_INPUT_CLASS, createFormSetter } from '../../lib/schemeConstants';
+import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -50,6 +51,7 @@ export const GoldCoinAddSlotPage = () => {
     paymentMode: 'cash',
     referrerId:  '',
     notes:       '',
+    saleDate:    getTodayISO(),
   });
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -94,6 +96,7 @@ export const GoldCoinAddSlotPage = () => {
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
+        saleDate:    form.saleDate || undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -265,6 +268,16 @@ export const GoldCoinAddSlotPage = () => {
             )}
           </div>
         )}
+
+        <FormField label="Sale date" required>
+          <BackdateDateInput
+            value={form.saleDate}
+            onChange={set('saleDate')}
+            max={getTodayISO()}
+            className={SCHEME_INPUT_CLASS}
+            required
+          />
+        </FormField>
 
         <FormField label="Payment mode" required>
           <PaymentModeSelect

@@ -9,6 +9,7 @@ import {
   useGetGoldEmployeesQuery,
 } from '../../store/api/apiSlice';
 import { CustomerPicker } from '../../components/CustomerPicker';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, getTodayISO } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -207,8 +208,7 @@ export const ChitAddMemberPage = () => {
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Month 1 Date" required>
-            <input
-              type="date"
+            <BackdateDateInput
               value={paymentDate}
               onChange={e => setPaymentDate(e.target.value)}
               className={SCHEME_INPUT_CLASS}

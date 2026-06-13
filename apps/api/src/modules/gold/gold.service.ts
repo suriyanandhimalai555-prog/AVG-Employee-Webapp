@@ -110,6 +110,8 @@ export const GoldService = {
           sourceId:          member.id,
           sourceDescription: `Gold enrollment: ${customerName} – Chit ${payload.chitNumber}`,
           creditedBy:        enteredBy,
+          // Backdated entry: the incentive sits in the start date's wallet period
+          effectiveDate:     payload.startDate,
         });
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
@@ -151,11 +153,12 @@ export const GoldService = {
     }
 
     if (query.startDate) {
-      where += ` AND g.created_at >= $${idx++}::date`;
+      // Filter by business date (start_date), not insertion time, so backdated entries land in their real period
+      where += ` AND g.start_date >= $${idx++}::date`;
       params.push(query.startDate);
     }
     if (query.endDate) {
-      where += ` AND g.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      where += ` AND g.start_date < ($${idx++}::date + INTERVAL '1 day')`;
       params.push(query.endDate);
     }
 
@@ -287,6 +290,8 @@ export const GoldService = {
           sourceId:          memberId,
           sourceDescription: `Gold M${payload.monthNumber} payment: ${memberRow.customer_name} – Chit ${memberRow.chit_number}`,
           creditedBy:        enteredBy,
+          // Backdated entry: the incentive sits in the paid date's wallet period
+          effectiveDate:     payload.paidDate,
         });
       }
 
@@ -330,11 +335,12 @@ export const GoldService = {
     let idx = params.length + 1;
 
     if (dateFilter?.startDate) {
-      extra += ` AND created_at >= $${idx++}::date`;
+      // Filter by business date (start_date) so backdated members count in their real period
+      extra += ` AND start_date >= $${idx++}::date`;
       params.push(dateFilter.startDate);
     }
     if (dateFilter?.endDate) {
-      extra += ` AND created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      extra += ` AND start_date < ($${idx++}::date + INTERVAL '1 day')`;
       params.push(dateFilter.endDate);
     }
 
@@ -522,27 +528,60 @@ export const GoldService = {
       const effectiveDate = payload.startDate ?? old.start_date;
       const effectiveAmount = payload.monthlyAmount ?? parseFloat(old.monthly_amount);
 
-      if ((amountChanged || referrerChanged) && effectiveReferrerId) {
-        // Reverse only enrollment incentives for this member; renewal rows stay
+      if (amountChanged || referrerChanged) {
+        // Always claw back first — clearing the referrer (null) must also remove
+        // the old referrer's credit, so the reversal cannot depend on a new referrer.
         await IncentiveService.reverseIncentives(client, {
           schemeCode: GOLD_PROJECT_CODE,
           sourceId:   id,
           paymentEvent: 'enrollment',
         });
-        // Re-issue with corrected amount and business date
-        const customerName = payload.customerId ? '' : old.customer_name;
-        await IncentiveService.distributeIncentives(client, {
-          schemeCode:        GOLD_PROJECT_CODE,
-          dealMakerUserId:   effectiveReferrerId,
-          mode:              'percent_referrer',
-          percentRole:       'referrer_new',
-          baseAmount:        parseFloat(effectiveAmount.toString()),
-          paymentEvent:      'enrollment',
-          sourceId:          id,
-          sourceDescription: `Gold enrollment (corrected): Chit ${old.chit_number}`,
-          creditedBy:        correctedBy,
-          effectiveDate,
+        if (effectiveReferrerId) {
+          // Re-issue with corrected amount and business date
+          await IncentiveService.distributeIncentives(client, {
+            schemeCode:        GOLD_PROJECT_CODE,
+            dealMakerUserId:   effectiveReferrerId,
+            mode:              'percent_referrer',
+            percentRole:       'referrer_new',
+            baseAmount:        parseFloat(effectiveAmount.toString()),
+            paymentEvent:      'enrollment',
+            sourceId:          id,
+            sourceDescription: `Gold enrollment (corrected): Chit ${old.chit_number}`,
+            creditedBy:        correctedBy,
+            effectiveDate,
+          });
+        }
+      }
+
+      // A referrer change moves the renewal credits too: claw back every renewal
+      // row and re-credit each recorded month>1 payment to the new referrer
+      // (no re-credit when the referrer was cleared). Same pattern as unpayPayment.
+      if (referrerChanged) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   GOLD_PROJECT_CODE,
+          sourceId:     id,
+          paymentEvent: 'renewal',
         });
+        if (effectiveReferrerId) {
+          const renewals = await client.query(
+            `SELECT * FROM gold_scheme_payments WHERE member_id = $1 AND month_number > 1 ORDER BY month_number`,
+            [id]
+          );
+          for (const pay of renewals.rows) {
+            await IncentiveService.distributeIncentives(client, {
+              schemeCode:        GOLD_PROJECT_CODE,
+              dealMakerUserId:   effectiveReferrerId,
+              mode:              'percent_referrer',
+              percentRole:       'referrer_renewal',
+              baseAmount:        parseFloat(pay.amount),
+              paymentEvent:      'renewal',
+              sourceId:          id,
+              sourceDescription: `Gold M${pay.month_number} (referrer corrected): ${old.customer_name} – Chit ${old.chit_number}`,
+              creditedBy:        correctedBy,
+              effectiveDate:     pay.paid_date,
+            });
+          }
+        }
       }
 
       await SchemeAudit.log(client, {
@@ -822,14 +861,15 @@ export const GoldService = {
     const params: any[] = [branchId];
     let where = 'm.branch_id = $1';
     let idx = 2;
-    if (dateFilter?.startDate) { where += ` AND m.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND m.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Filter by business date (start_date) so backdated members count in their real period
+    if (dateFilter?.startDate) { where += ` AND m.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND m.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
 
     const res = await db.query(
       `SELECT
          m.id, m.chit_number, m.monthly_amount,
          m.total_months, m.status, m.start_date, m.created_at,
-         m.referrer_name,
+         m.referrer_id, m.referrer_name,
          c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
          (SELECT COUNT(*)::int FROM gold_scheme_payments p WHERE p.member_id = m.id) AS months_paid,
          (SELECT COALESCE(SUM(p.amount),0) FROM gold_scheme_payments p WHERE p.member_id = m.id) AS paid_so_far

@@ -142,6 +142,8 @@ export const BuildersService = {
         plan:         { id: plan.id, referrer_id: plan.referrer_id, package_number: plan.package_number },
         creditedBy:   enteredBy,
         customerName: custResult.rows[0].name,
+        // Backdated entry: the incentive sits in the lump-sum date's wallet period
+        effectiveDate: payload.lumpSumDate,
       });
 
       return { plan, customer: custResult.rows[0] };
@@ -352,6 +354,8 @@ export const BuildersService = {
         plan:        { id: plan.id, referrer_id: plan.referrer_id, package_number: plan.package_number },
         monthNumber: payload.monthNumber,
         creditedBy:  enteredBy,
+        // Backdated entry: the incentive sits in the payout date's wallet period
+        effectiveDate: payload.payoutDate,
       });
 
       return {
@@ -513,8 +517,9 @@ export const BuildersService = {
     const params: any[] = [branchId];
     let where = 'p.branch_id = $1';
     let idx = 2;
-    if (dateFilter?.startDate) { where += ` AND p.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND p.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Filter by business date (lump_sum_date) so backdated plans count in their real period
+    if (dateFilter?.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND p.lump_sum_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
 
     const plansResult = await db.query(
       `SELECT
@@ -582,8 +587,9 @@ export const BuildersService = {
     const memParams: any[] = [];
     let memWhere = '1=1';
     let memIdx = 1;
-    if (dateFilter?.startDate) { memWhere += ` AND p.created_at >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { memWhere += ` AND p.created_at < ($${memIdx++}::date + INTERVAL '1 day')`; memParams.push(dateFilter.endDate); }
+    // Filter by business date (lump_sum_date) so backdated plans count in their real period
+    if (dateFilter?.startDate) { memWhere += ` AND p.lump_sum_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { memWhere += ` AND p.lump_sum_date < ($${memIdx++}::date + INTERVAL '1 day')`; memParams.push(dateFilter.endDate); }
 
     const plansRes = await db.query<{ branch_id: string; branch_name: string; count: string; collected: string }>(
       `SELECT
@@ -683,18 +689,41 @@ export const BuildersService = {
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
       const effectiveDate     = payload.lumpSumDate ?? old.lump_sum_date;
 
-      if (referrerChanged && effectiveReferrer) {
+      if (referrerChanged) {
+        // Always claw back first — clearing the referrer (null) must also remove
+        // the old chain's credit, so the reversal cannot depend on a new referrer.
         await IncentiveService.reverseIncentives(client, {
           schemeCode:   SCHEME_CODE,
           sourceId:     planId,
           paymentEvent: 'enrollment',
         });
-        await BuildersIncentivesService.distributeOneTime(client, {
-          plan:          { id: planId, referrer_id: effectiveReferrer, package_number: old.package_number },
-          creditedBy:    correctedBy,
-          customerName:  old.customer_name,
-          effectiveDate,
+        // Monthly payout credits belong to the referrer too — move them as a unit.
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     planId,
+          paymentEvent: 'monthly',
         });
+        if (effectiveReferrer) {
+          await BuildersIncentivesService.distributeOneTime(client, {
+            plan:          { id: planId, referrer_id: effectiveReferrer, package_number: old.package_number },
+            creditedBy:    correctedBy,
+            customerName:  old.customer_name,
+            effectiveDate,
+          });
+          // Re-credit each recorded payout to the new referrer on its original date
+          const payouts = await client.query(
+            `SELECT month_number, payout_date FROM builders_payouts WHERE plan_id = $1 ORDER BY month_number`,
+            [planId]
+          );
+          for (const payout of payouts.rows) {
+            await BuildersIncentivesService.creditMonthly(client, {
+              plan:          { id: planId, referrer_id: effectiveReferrer, package_number: old.package_number },
+              monthNumber:   payout.month_number,
+              creditedBy:    correctedBy,
+              effectiveDate: payout.payout_date,
+            });
+          }
+        }
       }
 
       await SchemeAudit.log(client, {
@@ -950,13 +979,15 @@ export const BuildersService = {
     const params: any[] = [branchId];
     let where = 'p.branch_id = $1';
     let idx = 2;
-    if (dateFilter?.startDate) { where += ` AND p.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND p.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Filter by business date (lump_sum_date) so backdated plans count in their real period
+    if (dateFilter?.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { where += ` AND p.lump_sum_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
 
     const res = await db.query(
       `SELECT
          p.id, p.package_number, p.investment_amount, p.monthly_payout,
          p.status, p.current_month, p.reward_choice, p.lump_sum_date, p.created_at,
+         p.referrer_id, p.referrer_name,
          c.name AS customer_name, c.customer_code,
          (SELECT COALESCE(SUM(bp.amount), 0) FROM builders_payouts bp WHERE bp.plan_id = p.id) AS total_paid_out
        FROM builders_plans p

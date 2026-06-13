@@ -5,6 +5,7 @@ import { Save, Loader2, AlertCircle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useCreateChitGroupMutation } from '../../store/api/apiSlice';
 import { BranchPicker } from '../../components/BranchPicker';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -139,8 +140,7 @@ export const ChitAddGroupPage = () => {
         )}
 
         <FormField label="Start Date" required>
-          <input
-            type="date"
+          <BackdateDateInput
             value={form.startDate}
             onChange={set('startDate')}
             className={SCHEME_INPUT_CLASS}

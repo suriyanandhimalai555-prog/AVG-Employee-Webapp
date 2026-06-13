@@ -3,6 +3,7 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
+import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { BuildersService } from './builders.service';
 import { BuildersIncentivesService } from './builders-incentives.service';
 import {
@@ -98,6 +99,8 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       const req  = request as AuthRequest;
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can create plans');
       const body     = CreateBuildersPlanSchema.parse(req.body);
+      // Past lump-sum dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.lumpSumDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data = await BuildersService.createPlan(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
@@ -142,6 +145,8 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       if (!WRITER_ROLES.has(req.user.role)) throw new ForbiddenError('Only Branch Admin or Management can record payouts');
       const { id }   = req.params as { id: string };
       const body     = RecordBuildersPayoutSchema.parse(req.body);
+      // Past payout dates require the backdated-entry flag (management exempt)
+      await assertBackdateAllowed(fastify.db, req.user.role, [body.payoutDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
       const data   = await BuildersService.recordPayout(fastify.db, req.user.id, id, branchId, body);
       return reply.code(201).send({ success: true, data });

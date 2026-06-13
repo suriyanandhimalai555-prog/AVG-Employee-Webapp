@@ -85,7 +85,7 @@ export const LandSitesService = {
                     'site_number',           lp.site_number,
                     'area_sqft',             lp.area_sqft,
                     'land_cost',             lp.land_cost,
-                    'buyback_bonus_monthly', lp.buyback_bonus_monthly,
+                    'buyback_bonus_monthly', ll.buyback_bonus_monthly,
                     'status',                lp.status,
                     'created_at',            lp.created_at
                   ) ORDER BY lp.site_number ASC
@@ -176,9 +176,12 @@ export const LandSitesService = {
     );
     if (layoutResult.rows.length === 0) throw new NotFoundError('Layout not found');
 
+    // ll.buyback_bonus_monthly is listed after p.* so node-pg's duplicate-column
+    // resolution serves the layout's authoritative value, not the legacy plot column.
     const plotsResult = await db.query(
-      `SELECT p.*, u.name AS created_by_name
+      `SELECT p.*, ll.buyback_bonus_monthly AS buyback_bonus_monthly, u.name AS created_by_name
        FROM land_plots p
+       JOIN land_layouts ll ON ll.id = p.layout_id
        JOIN users u ON u.id = p.created_by
        WHERE p.layout_id = $1
        ORDER BY p.created_at ASC`,
@@ -304,6 +307,7 @@ export const LandSitesService = {
     const dataResult = await db.query(
       `SELECT p.*,
               ll.layout_name,
+              ll.buyback_bonus_monthly AS buyback_bonus_monthly,
               ll.buyback_bonus_monthly AS layout_buyback,
               ll.site_id,
               s.name        AS site_name,
@@ -330,13 +334,15 @@ export const LandSitesService = {
 
     let result: any;
     try {
+      // buyback_bonus_monthly is intentionally absent — it lives on the layout;
+      // the plot column keeps its DEFAULT 0 and is never read again.
       result = await db.query(
         `INSERT INTO land_plots
-           (layout_id, site_id, site_number, area_sqft, land_cost, buyback_bonus_monthly, created_by)
-         SELECT $1, ll.site_id, $2, $3, $4, $5, $6
+           (layout_id, site_id, site_number, area_sqft, land_cost, created_by)
+         SELECT $1, ll.site_id, $2, $3, $4, $5
          FROM land_layouts ll WHERE ll.id = $1
          RETURNING *`,
-        [layoutId, payload.siteNumber.trim(), payload.areaSqft, payload.landCost, payload.buybackBonusMonthly, userId]
+        [layoutId, payload.siteNumber.trim(), payload.areaSqft, payload.landCost, userId]
       );
     } catch (err: any) {
       if (err.code === '23505') throw new ConflictError(`Plot "${payload.siteNumber}" already exists in this layout`);
@@ -361,7 +367,6 @@ export const LandSitesService = {
     let idx = 1;
     if (payload.areaSqft            !== undefined) { fields.push(`area_sqft = $${idx++}`);             values.push(payload.areaSqft); }
     if (payload.landCost            !== undefined) { fields.push(`land_cost = $${idx++}`);              values.push(payload.landCost); }
-    if (payload.buybackBonusMonthly !== undefined) { fields.push(`buyback_bonus_monthly = $${idx++}`);  values.push(payload.buybackBonusMonthly); }
     if (payload.status              !== undefined) { fields.push(`status = $${idx++}`);                 values.push(payload.status); }
     if (fields.length === 0) return old;
 

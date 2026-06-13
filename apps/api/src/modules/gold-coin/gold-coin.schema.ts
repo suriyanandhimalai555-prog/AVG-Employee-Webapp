@@ -16,6 +16,10 @@ export const CreateSlotSchema = z.object({
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
   branchId:    z.string().uuid().optional(),
+  // Business date of the sale — defaults to today on the server. Past dates
+  // require the backdated-entry flag; the slot and its incentive land in
+  // this date's period.
+  saleDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
 });
 
 // ─── Room activation ──────────────────────────────────────────────────────

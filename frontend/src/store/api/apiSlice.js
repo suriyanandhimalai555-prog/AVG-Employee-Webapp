@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -465,9 +465,9 @@ export const apiSlice = createApi({
     }),
 
     getGoldEmployees: builder.query({
-      query: () => '/gold/employees',
+      query: (branchId) => `/gold/employees${branchId ? `?branchId=${branchId}` : ''}`,
       transformResponse: (response) => response.data,
-      providesTags: ['GoldEmployees'],
+      providesTags: (_r, _e, branchId) => [{ type: 'GoldEmployees', id: branchId ?? 'own' }],
     }),
 
     getGoldSummary: builder.query({
@@ -1585,11 +1585,13 @@ export const apiSlice = createApi({
     }),
 
     updateLandLayout: builder.mutation({
-      query: ({ layoutId, ...data }) => ({ url: `/land/layouts/${layoutId}`, method: 'PATCH', body: data }),
+      query: ({ layoutId, siteId, ...data }) => ({ url: `/land/layouts/${layoutId}`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: (result, error, { layoutId, siteId }) => [
         { type: 'LandLayout', id: layoutId },
         siteId ? { type: 'LandLayouts', id: siteId } : 'LandSites',
+        // Site detail page (getLandSite) embeds layout pricing/buyback — refresh it too
+        siteId ? { type: 'LandSite', id: siteId } : 'LandSite',
         'LandSites', 'LandDashboard',
       ],
     }),
@@ -1654,7 +1656,7 @@ export const apiSlice = createApi({
     }),
 
     updateLandPlot: builder.mutation({
-      query: ({ plotId, ...data }) => ({ url: `/land/plots/${plotId}`, method: 'PATCH', body: data }),
+      query: ({ plotId, siteId, ...data }) => ({ url: `/land/plots/${plotId}`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: (result, error, { siteId }) => [
         'LandPlots', 'LandSites', siteId ? { type: 'LandSite', id: siteId } : 'LandSite', 'LandDashboard',
@@ -1744,6 +1746,40 @@ export const apiSlice = createApi({
     correctLandBooking: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/correct`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
+      // LandBuyback: a fullPaymentDate correction shifts pending payout due dates;
+      // Incentives/IncentiveWallet: a referrer change claws back + re-credits.
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBooking', id }, { type: 'LandBuyback', id },
+        'LandBookings', 'LandDashboard', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    unpayLandPayout: builder.mutation({
+      query: ({ id, month, ...data }) => ({
+        url: `/land/bookings/${id}/buyback/${month}/unpay`,
+        method: 'PATCH',
+        body: data,
+      }),
+      transformResponse: (response) => response.data,
+      // LandPlots: unpaying the last month of a completed booking flips the plot back to 'booked'
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBuyback', id }, { type: 'LandBooking', id },
+        'LandBookings', 'LandPlots', 'LandDashboard', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    undoLandFullPayment: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/undo-full-payment`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'LandBuyback', id }, { type: 'LandBooking', id },
+        'LandBookings', 'LandPlots', 'LandDashboard', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
+      ],
+    }),
+
+    undoLandAdvance: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/undo-advance`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
       invalidatesTags: (result, error, { id }) => [
         { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'SchemeBranchEntries',
       ],
@@ -1774,6 +1810,19 @@ export const apiSlice = createApi({
       },
       transformResponse: (response) => response.data,
       providesTags: ['SchemeBranchEntries'],
+    }),
+
+    // ─── App Settings (backdated-entry permission) ───
+    getBackdatedEntrySetting: builder.query({
+      query: () => '/settings/backdated-entry',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateBackdatedEntrySetting: builder.mutation({
+      query: (data) => ({ url: '/settings/backdated-entry', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
     }),
   }),
 });
@@ -1979,5 +2028,10 @@ export const {
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
+  useUnpayLandPayoutMutation,
+  useUndoLandFullPaymentMutation,
+  useUndoLandAdvanceMutation,
   useGetSchemeAuditLogQuery,
+  useGetBackdatedEntrySettingQuery,
+  useUpdateBackdatedEntrySettingMutation,
 } = apiSlice;

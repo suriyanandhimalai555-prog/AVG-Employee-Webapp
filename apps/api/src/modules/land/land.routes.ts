@@ -3,6 +3,7 @@ import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
+import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import {
   LandSitesService,
   LandBookingsService,
@@ -361,6 +362,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         // resolveWriterBranch: branch_admin uses own JWT branch; management passes branchId in body
         const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const body     = CreateLandBookingSchema.parse(req.body);
+        // Past booking dates require the backdated-entry flag (management exempt)
+        await assertBackdateAllowed(fastify.db, req.user.role, [body.bookingDate]);
         const data     = await LandBookingsService.createBooking(fastify.db, req.user.id, branchId, body);
         return reply.code(201).send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -388,6 +391,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const body     = RecordAdvanceSchema.parse(req.body);
+        // Past advance dates require the backdated-entry flag (management exempt)
+        await assertBackdateAllowed(fastify.db, req.user.role, [body.advanceDate]);
         const data     = await LandBookingsService.recordAdvance(fastify.db, req.user.id, id, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -402,6 +407,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const branchId = assertSchemeWriter(req, (req.body as any)?.branchId);
         const { id }   = req.params as { id: string };
         const body     = RecordFullPaymentSchema.parse(req.body);
+        // Past full-payment dates require the backdated-entry flag (management exempt)
+        await assertBackdateAllowed(fastify.db, req.user.role, [body.fullPaymentDate]);
         const data     = await LandBookingsService.recordFullPayment(fastify.db, req.user.id, id, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -460,6 +467,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
           return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Month must be between 1 and 60' } });
         }
         const body = MarkPayoutPaidSchema.parse(req.body);
+        // Past paid dates require the backdated-entry flag (management exempt)
+        await assertBackdateAllowed(fastify.db, req.user.role, [body.paidDate]);
         const data = await LandBookingsService.markPayoutPaid(fastify.db, req.user.id, id, monthNum, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -480,6 +489,70 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         if (rows.rows.length === 0) throw new Error('Booking not found');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
         const data = await LandBookingsService.correctBooking(fastify.db, req.user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/bookings/:id/buyback/:month/unpay — Management correction:
+  // revert a paid buyback month to pending and claw back its commission.
+  fastify.patch('/bookings/:id/buyback/:month/unpay', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id, month } = req.params as { id: string; month: string };
+        const monthNum = parseInt(month, 10);
+        if (isNaN(monthNum) || monthNum < 1 || monthNum > 60) {
+          return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Month must be between 1 and 60' } });
+        }
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await LandBookingsService.unpayBuybackPayout(fastify.db, req.user.id, id, monthNum, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/bookings/:id/undo-full-payment — Management correction:
+  // delete the buyback schedule and revert the booking to its pre-full-payment state.
+  fastify.patch('/bookings/:id/undo-full-payment', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await LandBookingsService.undoFullPayment(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // PATCH /land/bookings/:id/undo-advance — Management correction:
+  // clear the recorded advance and revert the booking to 'booked'.
+  fastify.patch('/bookings/:id/undo-advance', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { id } = req.params as { id: string };
+        const bodyBranchId = (req.body as any)?.branchId;
+        const rows = await fastify.db.query(
+          'SELECT branch_id FROM land_bookings WHERE id = $1', [id]
+        );
+        if (rows.rows.length === 0) throw new Error('Booking not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
+        const data = await LandBookingsService.undoAdvance(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

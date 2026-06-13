@@ -23,12 +23,17 @@ BEGIN
    WHERE email = 'test1@gmail.com'
    LIMIT 1;
 
+  -- Skip gracefully on databases where this environment-specific user does not
+  -- exist (fresh/local bootstraps). Raising an exception here used to abort the
+  -- whole migration run, making the schema impossible to build from scratch.
   IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'User test1@gmail.com not found — run this migration after the user exists';
+    RAISE NOTICE 'User test1@gmail.com not found — skipping head-branch admin setup';
+    RETURN;
   END IF;
 
   IF v_branch_id IS NULL THEN
-    RAISE EXCEPTION 'User test1@gmail.com has no branch assigned — assign a branch first';
+    RAISE NOTICE 'User test1@gmail.com has no branch assigned — skipping head-branch admin setup';
+    RETURN;
   END IF;
 
   -- Ensure branch_admin role

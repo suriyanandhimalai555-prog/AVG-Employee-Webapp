@@ -26,7 +26,7 @@ const PLOT_STATUS_STYLES = {
 };
 
 const AddPlotForm = ({ layoutId, onSuccess }) => {
-  const [form, setForm] = useState({ siteNumber: '', areaSqft: '', landCost: '', buybackBonusMonthly: '' });
+  const [form, setForm] = useState({ siteNumber: '', areaSqft: '', landCost: '' });
   const [error, setError] = useState('');
   const set = createFormSetter(setForm);
   const [createPlot, { isLoading }] = useCreateLandLayoutPlotMutation();
@@ -37,12 +37,11 @@ const AddPlotForm = ({ layoutId, onSuccess }) => {
     try {
       await createPlot({
         layoutId,
-        siteNumber:          form.siteNumber.trim(),
-        areaSqft:            Number(form.areaSqft),
-        landCost:            Number(form.landCost),
-        buybackBonusMonthly: Number(form.buybackBonusMonthly),
+        siteNumber: form.siteNumber.trim(),
+        areaSqft:   Number(form.areaSqft),
+        landCost:   Number(form.landCost),
       }).unwrap();
-      setForm({ siteNumber: '', areaSqft: '', landCost: '', buybackBonusMonthly: '' });
+      setForm({ siteNumber: '', areaSqft: '', landCost: '' });
       onSuccess?.();
     } catch (err) {
       setError(err?.data?.error?.message || err?.data?.message || 'Failed to add plot.');
@@ -67,11 +66,6 @@ const AddPlotForm = ({ layoutId, onSuccess }) => {
           <p className="text-[10px] font-bold text-navy/40 mb-1">Land Cost (₹) *</p>
           <input type="number" value={form.landCost} onChange={set('landCost')}
             placeholder="e.g. 500000" min="1" className={SCHEME_INPUT_CLASS} required />
-        </div>
-        <div>
-          <p className="text-[10px] font-bold text-navy/40 mb-1">Buyback/month (₹)</p>
-          <input type="number" value={form.buybackBonusMonthly} onChange={set('buybackBonusMonthly')}
-            placeholder="e.g. 5000" min="0" className={SCHEME_INPUT_CLASS} />
         </div>
       </div>
       <FormError error={error} />
@@ -299,6 +293,7 @@ export const LandSiteDetailPage = () => {
               <LayoutCard
                 key={layout.id}
                 layout={layout}
+                siteId={siteId}
                 isSiteAdmin={isSiteAdmin}
                 updatePlot={updatePlot}
               />
@@ -312,7 +307,7 @@ export const LandSiteDetailPage = () => {
 
 // ─── Layout card with plots + optional commission panel ───────────────────────
 
-const LayoutCard = ({ layout, isSiteAdmin, updatePlot }) => {
+const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
   const [addingPlot, setAddingPlot] = useState(false);
   const [editingPlotId, setEditingPlotId] = useState(null);
   const [plotEditForm, setPlotEditForm]   = useState({});
@@ -321,12 +316,15 @@ const LayoutCard = ({ layout, isSiteAdmin, updatePlot }) => {
   const [updatingPlot, setUpdatingPlot] = useState(false);
   const [updateLayoutMutation] = useUpdateLandLayoutMutation();
   const [editLayout, setEditLayout] = useState(false);
+  const [layoutForm, setLayoutForm] = useState({});
+  const [layoutError, setLayoutError] = useState('');
+  const [savingLayout, setSavingLayout] = useState(false);
 
   const plots = layout.plots || [];
 
   const startEditPlot = (plot) => {
     setEditingPlotId(plot.id);
-    setPlotEditForm({ landCost: plot.land_cost, buybackBonusMonthly: plot.buyback_bonus_monthly, status: plot.status });
+    setPlotEditForm({ landCost: plot.land_cost, status: plot.status });
     setPlotEditError('');
   };
 
@@ -335,13 +333,42 @@ const LayoutCard = ({ layout, isSiteAdmin, updatePlot }) => {
     try {
       await updatePlot({
         plotId,
-        landCost:            Number(plotEditForm.landCost),
-        buybackBonusMonthly: Number(plotEditForm.buybackBonusMonthly),
-        status:              plotEditForm.status,
+        siteId,
+        landCost: Number(plotEditForm.landCost),
+        status:   plotEditForm.status,
       }).unwrap();
       setEditingPlotId(null);
     } catch (err) { setPlotEditError(err?.data?.error?.message || 'Failed to update plot.'); }
     finally { setUpdatingPlot(false); }
+  };
+
+  const startEditLayout = () => {
+    setLayoutForm({
+      plotPrice:           layout.plot_price ?? '',
+      buybackBonusMonthly: layout.buyback_bonus_monthly ?? '',
+      buybackMonths:       layout.buyback_months ?? '',
+      status:              layout.status || 'active',
+    });
+    setLayoutError('');
+    setEditLayout(true);
+  };
+
+  const saveLayout = async () => {
+    setLayoutError(''); setSavingLayout(true);
+    try {
+      await updateLayoutMutation({
+        layoutId: layout.id,
+        siteId,
+        ...(layoutForm.plotPrice !== '' && layoutForm.plotPrice != null
+          ? { plotPrice: Number(layoutForm.plotPrice) } : {}),
+        buybackBonusMonthly: Number(layoutForm.buybackBonusMonthly || 0),
+        ...(layoutForm.buybackMonths !== '' && layoutForm.buybackMonths != null
+          ? { buybackMonths: Number(layoutForm.buybackMonths) } : {}),
+        status: layoutForm.status,
+      }).unwrap();
+      setEditLayout(false);
+    } catch (err) { setLayoutError(err?.data?.error?.message || 'Failed to update layout.'); }
+    finally { setSavingLayout(false); }
   };
 
   return (
@@ -371,15 +398,74 @@ const LayoutCard = ({ layout, isSiteAdmin, updatePlot }) => {
           </div>
         </div>
         <div className="flex-shrink-0 flex flex-col items-end gap-1">
-          <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase ${layout.status === 'active' ? 'text-emerald-600 bg-emerald-50' : 'text-navy/30 bg-navy/5'}`}>
-            {layout.status}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {isSiteAdmin && !editLayout && (
+              <button type="button" onClick={startEditLayout}
+                className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press"
+                aria-label="Edit layout pricing">
+                <Edit2 size={10} />
+              </button>
+            )}
+            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase ${layout.status === 'active' ? 'text-emerald-600 bg-emerald-50' : 'text-navy/30 bg-navy/5'}`}>
+              {layout.status}
+            </span>
+          </div>
           {/* Plot count badge — shows Management how many plots are ready to book */}
           <span className="text-[9px] font-semibold text-navy/50">
             {layout.available_plots ?? 0} avail / {layout.total_plots ?? 0} plots
           </span>
         </div>
       </div>
+
+      {/* Layout pricing edit (Management/MD) — buyback values here drive the payout
+          schedule generated at full payment; plot-level buyback is display-only legacy. */}
+      {editLayout && isSiteAdmin && (
+        <div className="border-t border-navy/5 px-4 py-3 bg-stone-50 space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Edit Layout Pricing</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[9px] font-bold text-navy/30 mb-0.5">Plot Price (₹)</p>
+              <input type="number" value={layoutForm.plotPrice}
+                onChange={e => setLayoutForm(f => ({ ...f, plotPrice: e.target.value }))}
+                className={SCHEME_INPUT_CLASS} min="1" />
+            </div>
+            <div>
+              <p className="text-[9px] font-bold text-navy/30 mb-0.5">Buyback/mo (₹)</p>
+              <input type="number" value={layoutForm.buybackBonusMonthly}
+                onChange={e => setLayoutForm(f => ({ ...f, buybackBonusMonthly: e.target.value }))}
+                className={SCHEME_INPUT_CLASS} min="0" />
+            </div>
+            <div>
+              <p className="text-[9px] font-bold text-navy/30 mb-0.5">Buyback Months</p>
+              <input type="number" value={layoutForm.buybackMonths}
+                onChange={e => setLayoutForm(f => ({ ...f, buybackMonths: e.target.value }))}
+                className={SCHEME_INPUT_CLASS} min="1" max="120" />
+            </div>
+            <div>
+              <p className="text-[9px] font-bold text-navy/30 mb-0.5">Status</p>
+              <select value={layoutForm.status}
+                onChange={e => setLayoutForm(f => ({ ...f, status: e.target.value }))}
+                className={SCHEME_INPUT_CLASS}>
+                {['active', 'inactive'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="text-[9px] text-navy/40">
+            Applies to bookings whose full payment is recorded after this change — existing payout schedules are not regenerated.
+          </p>
+          {layoutError && <p className="text-xs text-red-600">{layoutError}</p>}
+          <div className="flex gap-2">
+            <button onClick={saveLayout} disabled={savingLayout}
+              className="flex-1 py-2 rounded-xl bg-stone-700 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              <Check size={12} /> Save
+            </button>
+            <button onClick={() => setEditLayout(false)}
+              className="px-4 py-2 rounded-xl bg-navy/5 text-navy/60 text-xs font-bold tactile-press">
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Plots */}
       {plots.length > 0 && (
@@ -388,18 +474,14 @@ const LayoutCard = ({ layout, isSiteAdmin, updatePlot }) => {
             <div key={plot.id} className="px-4 py-2.5">
               {editingPlotId === plot.id && isSiteAdmin ? (
                 <div className="space-y-2">
+                  {/* Buyback is NOT editable here — it lives on the layout (edit via the
+                      pencil on the layout header); the per-plot column is legacy. */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <p className="text-[9px] font-bold text-navy/30 mb-0.5">Land Cost (₹)</p>
                       <input type="number" value={plotEditForm.landCost}
                         onChange={e => setPlotEditForm(f => ({ ...f, landCost: e.target.value }))}
                         className={SCHEME_INPUT_CLASS} min="1" />
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold text-navy/30 mb-0.5">Buyback/mo (₹)</p>
-                      <input type="number" value={plotEditForm.buybackBonusMonthly}
-                        onChange={e => setPlotEditForm(f => ({ ...f, buybackBonusMonthly: e.target.value }))}
-                        className={SCHEME_INPUT_CLASS} min="0" />
                     </div>
                   </div>
                   <select value={plotEditForm.status}

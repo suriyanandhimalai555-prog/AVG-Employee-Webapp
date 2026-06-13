@@ -27,7 +27,7 @@ export const GetTradingSummaryQuerySchema = z.object({
 // Correction schema — only scheme-admin roles call PATCH /trading-academy/:id/correct
 export const CorrectTradingMemberSchema = z.object({
   customerId:     z.string().uuid().optional(),
-  enrolledBy:     z.string().uuid().optional(),   // the selling-chain dealMaker
+  enrolledBy:     z.string().uuid().optional().nullable(),   // the selling-chain dealMaker; null is a no-op (kept for payload consistency)
   amount:         z.number().positive().max(100_000_000).optional(),
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).optional(),

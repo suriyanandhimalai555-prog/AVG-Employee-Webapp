@@ -50,7 +50,7 @@ export const AddGoldPaymentSchema = z.object({
 export const CorrectGoldMemberSchema = z.object({
   chitNumber:    z.string().min(1).max(20).optional(),
   customerId:    z.string().uuid().optional(),
-  referrerId:    z.string().uuid().optional(),
+  referrerId:    z.string().uuid().optional().nullable(),  // null clears the referrer
   monthlyAmount: z.number().positive().max(10_000_000).optional(),
   startDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   totalMonths:   z.number().int().min(1).max(60).optional(),

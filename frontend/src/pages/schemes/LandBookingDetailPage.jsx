@@ -17,6 +17,7 @@ import {
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, getTodayISO, SCHEME_MODE_LABELS } from '../../lib/schemeConstants';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
@@ -65,7 +66,7 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
           </div>
           <div>
             <p className="text-[10px] font-bold text-navy/40 mb-1">Payment Date *</p>
-            <input type="date" value={form.advanceDate}
+            <BackdateDateInput value={form.advanceDate}
               onChange={e => setForm(f => ({ ...f, advanceDate: e.target.value }))}
               className={SCHEME_INPUT_CLASS} required />
           </div>
@@ -120,7 +121,7 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
           </div>
           <div>
             <p className="text-[10px] font-bold text-navy/40 mb-1">Payment Date *</p>
-            <input type="date" value={form.fullPaymentDate}
+            <BackdateDateInput value={form.fullPaymentDate}
               onChange={e => setForm(f => ({ ...f, fullPaymentDate: e.target.value }))}
               className={SCHEME_INPUT_CLASS} required />
           </div>

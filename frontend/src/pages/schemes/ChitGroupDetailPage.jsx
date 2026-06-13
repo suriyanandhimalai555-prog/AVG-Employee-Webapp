@@ -20,6 +20,7 @@ import {
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../../lib/schemeConstants';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -154,7 +155,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
 
             <div className="grid grid-cols-2 gap-3">
               <FormField label="Date" required>
-                <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className={SCHEME_INPUT_CLASS} />
+                <BackdateDateInput value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className={SCHEME_INPUT_CLASS} />
               </FormField>
               <FormField label="Notes">
                 <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" className={SCHEME_INPUT_CLASS} />

@@ -133,6 +133,9 @@ export const LandService: SchemeService = {
       `SELECT
          bk.id, bk.booking_ref, bk.booking_date, bk.payment_mode,
          bk.full_amount, bk.status, bk.created_at, bk.notes,
+         bk.advance_amount, bk.advance_date, bk.full_payment_date,
+         bk.buyback_start_date, bk.loan_taken, bk.loan_amount,
+         bk.referrer_id, u.name AS referrer_name,
          c.name AS customer_name, c.customer_code,
          p.site_number,
          s.name AS site_name
@@ -140,6 +143,7 @@ export const LandService: SchemeService = {
        JOIN customers c   ON c.id = bk.customer_id
        JOIN land_plots p  ON p.id = bk.plot_id
        JOIN land_sites s  ON s.id = p.site_id
+       LEFT JOIN users u  ON u.id = bk.referrer_id
        WHERE ${where}
        ORDER BY bk.created_at DESC
        LIMIT 500`,

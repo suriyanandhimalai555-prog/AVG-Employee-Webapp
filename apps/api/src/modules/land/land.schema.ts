@@ -54,17 +54,17 @@ export const ListSitesQuerySchema = z.object({
 
 // ─── Plots ────────────────────────────────────────────────────────────────────
 
+// Buyback is NOT accepted per plot — it lives on the layout and is common to
+// every plot inside it (land_plots.buyback_bonus_monthly is a write-dead legacy column).
 export const CreateLandPlotSchema = z.object({
   siteNumber:           z.string().min(1).max(50),
   areaSqft:             z.number().positive(),
   landCost:             z.number().positive(),
-  buybackBonusMonthly:  z.number().min(0),
 });
 
 export const UpdateLandPlotSchema = z.object({
   areaSqft:             z.number().positive().optional(),
   landCost:             z.number().positive().optional(),
-  buybackBonusMonthly:  z.number().min(0).optional(),
   status:               z.enum(['available', 'booked', 'cancelled', 'completed']).optional(),
 });
 
@@ -141,11 +141,19 @@ export const ListAuditQuerySchema = z.object({
 
 // ─── Booking correction (MD / Management only) ───────────────────────────────
 export const CorrectLandBookingSchema = z.object({
-  bookingRef:  z.string().min(1).max(50).optional(),
-  bookingDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  paymentMode: z.enum(['full_payment', 'advance_full_payment']).optional(),
-  notes:       z.string().max(1000).optional().nullable(),
-  branchId:    z.string().uuid().optional(),
+  bookingRef:      z.string().min(1).max(50).optional(),
+  bookingDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  paymentMode:     z.enum(['full_payment', 'advance_full_payment']).optional(),
+  referrerId:      z.string().uuid().optional().nullable(),  // null clears the referrer
+  customerId:      z.string().uuid().optional(),
+  advanceAmount:   z.number().positive().optional(),
+  advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  fullAmount:      z.number().positive().optional(),
+  fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  loanTaken:       z.boolean().optional(),
+  loanAmount:      z.number().positive().optional().nullable(),
+  notes:           z.string().max(1000).optional().nullable(),
+  branchId:        z.string().uuid().optional(),
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
