@@ -26,6 +26,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { isSchemeAdmin } from '../../lib/schemeAuth';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 const STATUS_STYLES = {
   filling:         { label: 'Filling',         className: 'bg-blue-50 text-blue-600',       Icon: Clock },
@@ -466,6 +467,7 @@ export const GoldCoinRoomDetailPage = () => {
                   {isAdmin && isHeld && (
                     <SlotAdminActions slot={s} branchId={room.branch_id} />
                   )}
+                  <PhotoProof photoKey={s.proof_key} />
                 </div>
               );
             })

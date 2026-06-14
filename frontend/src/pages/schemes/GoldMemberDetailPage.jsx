@@ -19,6 +19,7 @@ import { GOLD_STATUS_STYLES, SCHEME_MODE_LABELS, SCHEME_MODE_STYLES } from '../.
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { AddPaymentModal } from './components/AddPaymentModal';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 export const GoldMemberDetailPage = () => {
   const { id }   = useParams();
@@ -225,16 +226,25 @@ export const GoldMemberDetailPage = () => {
               </thead>
               <tbody>
                 {periodPayments.map((p, idx) => (
-                  <tr key={p.id} className={`border-b border-navy/5 ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}>
-                    <td className="px-4 py-3 text-sm font-bold text-navy">Month {p.month_number}</td>
-                    <td className="px-4 py-3 text-xs font-medium text-navy/60">{formatDate(p.paid_date)}</td>
-                    <td className="px-4 py-3 text-sm font-bold text-navy text-right">{formatCurrency(p.amount)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${SCHEME_MODE_STYLES[p.payment_mode]}`}>
-                        {SCHEME_MODE_LABELS[p.payment_mode]}
-                      </span>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={p.id} className={`border-b border-navy/5 ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}>
+                      <td className="px-4 py-3 text-sm font-bold text-navy">Month {p.month_number}</td>
+                      <td className="px-4 py-3 text-xs font-medium text-navy/60">{formatDate(p.paid_date)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-navy text-right">{formatCurrency(p.amount)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${SCHEME_MODE_STYLES[p.payment_mode]}`}>
+                          {SCHEME_MODE_LABELS[p.payment_mode]}
+                        </span>
+                      </td>
+                    </tr>
+                    {p.proof_key && (
+                      <tr key={`${p.id}-proof`} className="border-b border-navy/5">
+                        <td colSpan={4} className="px-4 pb-3">
+                          <PhotoProof photoKey={p.proof_key} />
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

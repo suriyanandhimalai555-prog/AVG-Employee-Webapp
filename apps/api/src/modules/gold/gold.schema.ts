@@ -2,16 +2,25 @@ import { z } from 'zod';
 
 // Schema for adding a new gold scheme member (chit slot)
 export const AddGoldMemberSchema = z.object({
-  chitNumber:       z.string().min(1).max(20),
-  customerId:       z.string().uuid(),             // must exist in customers table
-  referrerId:       z.string().uuid(),
-  monthlyAmount:    z.number().positive().max(10_000_000),
-  startDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
-  totalMonths:      z.number().int().min(1).max(60).default(12),
-  firstPaymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  notes:            z.string().max(1000).optional(),
+  chitNumber:            z.string().min(1).max(20),
+  customerId:            z.string().uuid(),             // must exist in customers table
+  referrerId:            z.string().uuid(),
+  monthlyAmount:         z.number().positive().max(10_000_000),
+  startDate:             z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  totalMonths:           z.number().int().min(1).max(60).default(12),
+  firstPaymentMode:      z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  firstPaymentProofKey:  z.string().optional(),
+  notes:                 z.string().max(1000).optional(),
   // Passed by management role only — ignored for branch_admin (branchId from JWT)
-  branchId:         z.string().uuid().optional(),
+  branchId:              z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'firstPaymentProofKey is required for gpay and bank_receipt payments',
+      path: ['firstPaymentProofKey'],
+    });
+  }
 });
 
 // Schema for listing members — optional filters
@@ -41,8 +50,17 @@ export const AddGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   amount:       z.number().positive(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  proofKey:     z.string().optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required for gpay and bank_receipt payments',
+      path: ['proofKey'],
+    });
+  }
 });
 
 // Schema for correcting an existing gold member — all fields optional except branchId guard.
@@ -65,12 +83,22 @@ export const CorrectGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   amount:       z.number().positive().optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  proofKey:     z.string().optional(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
+      path: ['proofKey'],
+    });
+  }
 });
 
 export type AddGoldMemberInput      = z.infer<typeof AddGoldMemberSchema>;
 export type GetGoldMembersQuery     = z.infer<typeof GetGoldMembersQuerySchema>;
+export type GetGoldSummaryQuery     = z.infer<typeof GetGoldSummaryQuerySchema>;
 export type UpdateGoldMemberStatus  = z.infer<typeof UpdateGoldMemberStatusSchema>;
 export type AddGoldPaymentInput     = z.infer<typeof AddGoldPaymentSchema>;
 export type CorrectGoldMemberInput  = z.infer<typeof CorrectGoldMemberSchema>;

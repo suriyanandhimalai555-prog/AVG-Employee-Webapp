@@ -18,6 +18,7 @@ import { FormField } from './components/FormField';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
 
 export const ChitAddMemberPage = () => {
   const user     = useSelector(selectCurrentUser);
@@ -32,6 +33,8 @@ export const ChitAddMemberPage = () => {
   const [referrerId,   setReferrerId]   = useState('');
   const [paymentDate,  setPaymentDate]  = useState(getTodayISO());
   const [paymentMode,  setPaymentMode]  = useState('cash');
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState(null);
   const [result,       setResult]       = useState(null);
 
@@ -46,6 +49,8 @@ export const ChitAddMemberPage = () => {
     setReferrerId('');
     setPaymentDate(getTodayISO());
     setPaymentMode('cash');
+    setProofKey(null);
+    setShowProofErr(false);
     setError(null);
     setResult(null);
   };
@@ -54,13 +59,19 @@ export const ChitAddMemberPage = () => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer.'); return; }
+    if (paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       const res = await addMember({
         groupId,
-        customerId:       customer.id,
-        referrerId:       referrerId || undefined,
-        firstPaymentDate: paymentDate,
-        firstPaymentMode: paymentMode,
+        customerId:            customer.id,
+        referrerId:            referrerId || undefined,
+        firstPaymentDate:      paymentDate,
+        firstPaymentMode:      paymentMode,
+        firstPaymentProofKey:  proofKey || undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -219,13 +230,20 @@ export const ChitAddMemberPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
-            onChange={setPaymentMode}
+            onChange={(val) => { setPaymentMode(val); setProofKey(null); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
             Month 1 ({formatCurrency(fullAmount)}) is recorded automatically on save.
           </p>
         </FormField>
+
+        <ProofUploadField
+          mode={paymentMode}
+          proofKey={proofKey}
+          onChange={setProofKey}
+          showError={showProofErr}
+        />
 
         <FormError error={error} />
 

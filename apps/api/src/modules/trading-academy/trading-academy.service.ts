@@ -56,8 +56,8 @@ export const TradingAcademyService = {
       const insertResult = await client.query(
         `INSERT INTO trading_academy_members
            (branch_id, project_id, customer_id, amount, enrolled_by,
-            enrollment_date, payment_mode, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            enrollment_date, payment_mode, proof_key, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
         [
           branchId,
@@ -67,6 +67,7 @@ export const TradingAcademyService = {
           payload.enrolledBy,
           payload.enrollmentDate,
           payload.paymentMode,
+          payload.proofKey ?? null,
           payload.notes ?? null,
           enteredBy,
         ]
@@ -241,6 +242,7 @@ export const TradingAcademyService = {
       if (payload.amount         != null) { fields.push(`amount = $${idx++}`);           vals.push(payload.amount); }
       if (payload.enrollmentDate != null) { fields.push(`enrollment_date = $${idx++}`);  vals.push(payload.enrollmentDate); }
       if (payload.paymentMode    != null) { fields.push(`payment_mode = $${idx++}`);     vals.push(payload.paymentMode); }
+      if (payload.proofKey       != null) { fields.push(`proof_key = $${idx++}`);        vals.push(payload.proofKey); }
       if (payload.notes !== undefined)    { fields.push(`notes = $${idx++}`);            vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

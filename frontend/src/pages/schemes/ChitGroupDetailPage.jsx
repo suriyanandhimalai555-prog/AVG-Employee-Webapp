@@ -20,6 +20,7 @@ import {
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../../lib/schemeConstants';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -81,6 +82,8 @@ function PaymentModal({ member, group, onClose, groupId }) {
   const [amount,        setAmount]        = useState('');
   const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().split('T')[0]);
   const [paymentMode,   setPaymentMode]   = useState('cash');
+  const [proofKey,      setProofKey]      = useState(null);
+  const [showProofErr,  setShowProofErr]  = useState(false);
   const [notes,         setNotes]         = useState('');
   const [error,         setError]         = useState(null);
   const [recordPayment, { isLoading }]    = useRecordChitPaymentMutation();
@@ -99,8 +102,13 @@ function PaymentModal({ member, group, onClose, groupId }) {
     setError(null);
     if (!selectedMonth) { setError('Select a month.'); return; }
     if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount.'); return; }
+    if (paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
-      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, notes: notes.trim() || undefined }).unwrap();
+      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey || undefined, notes: notes.trim() || undefined }).unwrap();
       onClose();
     } catch (err) { setError(err?.data?.error?.message || 'Failed to record payment.'); }
   };
@@ -163,8 +171,19 @@ function PaymentModal({ member, group, onClose, groupId }) {
             </div>
 
             <FormField label="Mode" required>
-              <PaymentModeSelect value={paymentMode} onChange={setPaymentMode} variant="buttons" />
+              <PaymentModeSelect
+                value={paymentMode}
+                onChange={(val) => { setPaymentMode(val); setProofKey(null); setShowProofErr(false); }}
+                variant="buttons"
+              />
             </FormField>
+
+            <ProofUploadField
+              mode={paymentMode}
+              proofKey={proofKey}
+              onChange={setProofKey}
+              showError={showProofErr}
+            />
 
             <FormError error={error} />
             <button type="submit" disabled={isLoading || !selectedMonth}

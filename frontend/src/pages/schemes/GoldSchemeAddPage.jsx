@@ -14,6 +14,7 @@ import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 export const GoldSchemeAddPage = () => {
@@ -35,6 +36,8 @@ export const GoldSchemeAddPage = () => {
     firstPaymentMode: 'cash',
     notes:            '',
   });
+  const [proofKey,    setProofKey]    = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
 
@@ -50,17 +53,23 @@ export const GoldSchemeAddPage = () => {
       return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+    if (form.firstPaymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       const res = await addMember({
-        chitNumber:       form.chitNumber.trim(),
-        customerId:       customer.id,
-        referrerId:       form.referrerId,
-        monthlyAmount:    parseFloat(form.monthlyAmount),
-        startDate:        form.startDate,
-        totalMonths:      parseInt(form.totalMonths, 10),
-        firstPaymentMode: form.firstPaymentMode,
-        notes:            form.notes.trim() || undefined,
-        branchId:         isManagement ? branchId : undefined,
+        chitNumber:            form.chitNumber.trim(),
+        customerId:            customer.id,
+        referrerId:            form.referrerId,
+        monthlyAmount:         parseFloat(form.monthlyAmount),
+        startDate:             form.startDate,
+        totalMonths:           parseInt(form.totalMonths, 10),
+        firstPaymentMode:      form.firstPaymentMode,
+        firstPaymentProofKey:  proofKey || undefined,
+        notes:                 form.notes.trim() || undefined,
+        branchId:              isManagement ? branchId : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -199,13 +208,20 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => setForm(f => ({ ...f, firstPaymentMode: val }))}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey(null); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
             Month 1 will be recorded automatically when you save.
           </p>
         </FormField>
+
+        <ProofUploadField
+          mode={form.firstPaymentMode}
+          proofKey={proofKey}
+          onChange={setProofKey}
+          showError={showProofErr}
+        />
 
         <FormField label="Notes">
           <textarea

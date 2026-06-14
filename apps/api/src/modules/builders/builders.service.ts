@@ -109,13 +109,13 @@ export const BuildersService = {
         `INSERT INTO builders_plans
            (branch_id, customer_id, package_number,
             investment_amount, monthly_payout, cash_final_monthly, house_worth,
-            lump_sum_date, lump_sum_mode,
+            lump_sum_date, lump_sum_mode, lump_sum_proof_key,
             cooling_end_date, payout_start_date,
             referrer_id, referrer_name, notes, entered_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                 ($8::date + $10 * INTERVAL '1 day'),
-                 ($8::date + $10 * INTERVAL '1 day'),
-                 $11, $12, $13, $14)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 ($8::date + $11 * INTERVAL '1 day'),
+                 ($8::date + $11 * INTERVAL '1 day'),
+                 $12, $13, $14, $15)
          RETURNING *`,
         [
           branchId,
@@ -127,6 +127,7 @@ export const BuildersService = {
           pkg.houseWorth,
           payload.lumpSumDate,
           payload.lumpSumMode,
+          payload.lumpSumProofKey || null,
           COOLING_DAYS,
           payload.referrerId || null,
           referrerName,
@@ -316,8 +317,8 @@ export const BuildersService = {
       try {
         const insertResult = await client.query(
           `INSERT INTO builders_payouts
-             (plan_id, month_number, amount, payout_date, payment_mode, notes, entered_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+             (plan_id, month_number, amount, payout_date, payment_mode, proof_key, notes, entered_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *`,
           [
             planId,
@@ -325,6 +326,7 @@ export const BuildersService = {
             payload.amount,
             payload.payoutDate,
             payload.paymentMode,
+            payload.proofKey || null,
             payload.notes || null,
             enteredBy,
           ]
@@ -658,10 +660,11 @@ export const BuildersService = {
       const vals: any[] = [];
       let idx = 1;
 
-      if (payload.customerId  != null) { fields.push(`customer_id = $${idx++}`);   vals.push(payload.customerId); }
-      if (payload.lumpSumDate != null) { fields.push(`lump_sum_date = $${idx++}`); vals.push(payload.lumpSumDate); }
-      if (payload.lumpSumMode != null) { fields.push(`lump_sum_mode = $${idx++}`); vals.push(payload.lumpSumMode); }
-      if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
+      if (payload.customerId      != null) { fields.push(`customer_id = $${idx++}`);        vals.push(payload.customerId); }
+      if (payload.lumpSumDate     != null) { fields.push(`lump_sum_date = $${idx++}`);      vals.push(payload.lumpSumDate); }
+      if (payload.lumpSumMode     != null) { fields.push(`lump_sum_mode = $${idx++}`);      vals.push(payload.lumpSumMode); }
+      if (payload.lumpSumProofKey != null) { fields.push(`lump_sum_proof_key = $${idx++}`); vals.push(payload.lumpSumProofKey); }
+      if (payload.notes !== undefined)     { fields.push(`notes = $${idx++}`);               vals.push(payload.notes); }
 
       // Handle referrerId + denormalised name together
       if (payload.referrerId !== undefined) {
@@ -772,6 +775,7 @@ export const BuildersService = {
       if (payload.amount      != null) { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
       if (payload.payoutDate  != null) { fields.push(`payout_date = $${idx++}`);   vals.push(payload.payoutDate); }
       if (payload.paymentMode != null) { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
+      if (payload.proofKey    != null) { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
       if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

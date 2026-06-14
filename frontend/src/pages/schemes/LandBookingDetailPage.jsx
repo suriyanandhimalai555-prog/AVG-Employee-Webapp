@@ -21,6 +21,8 @@ import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 const STATUS_STYLES = {
   booked:       'text-blue-600 bg-blue-50',
@@ -37,14 +39,27 @@ const STATUS_LABELS = {
 // ─── Record Advance Modal ─────────────────────────────────────────────────────
 const AdvanceModal = ({ booking, onClose, onSuccess }) => {
   const [recordAdvance, { isLoading }] = useRecordLandAdvanceMutation();
-  const [form,  setForm]  = useState({ advanceAmount: '', advanceDate: getTodayISO() });
+  const [form,  setForm]  = useState({ advanceAmount: '', advanceDate: getTodayISO(), advanceChannel: 'cash' });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (form.advanceChannel !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
-      await recordAdvance({ id: booking.id, advanceAmount: Number(form.advanceAmount), advanceDate: form.advanceDate }).unwrap();
+      await recordAdvance({
+        id: booking.id,
+        advanceAmount:   Number(form.advanceAmount),
+        advanceDate:     form.advanceDate,
+        advanceChannel:  form.advanceChannel,
+        advanceProofKey: proofKey || undefined,
+      }).unwrap();
       onSuccess();
     } catch (err) {
       setError(err?.data?.error?.message || 'Failed to record advance.');
@@ -70,6 +85,15 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
               onChange={e => setForm(f => ({ ...f, advanceDate: e.target.value }))}
               className={SCHEME_INPUT_CLASS} required />
           </div>
+          <div>
+            <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
+            <PaymentModeSelect
+              value={form.advanceChannel}
+              onChange={(val) => { setForm(f => ({ ...f, advanceChannel: val })); setProofKey(null); setShowProofErr(false); }}
+              variant="buttons"
+            />
+          </div>
+          <ProofUploadField mode={form.advanceChannel} proofKey={proofKey} onChange={setProofKey} showError={showProofErr} />
           <FormError error={error} />
           <button type="submit" disabled={isLoading}
             className="w-full py-4 rounded-2xl bg-amber-600 text-white text-sm font-bold disabled:opacity-50 tactile-press">
@@ -85,13 +109,20 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
 const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
   const [recordFull, { isLoading }] = useRecordLandFullPaymentMutation();
   const [form,  setForm]  = useState({
-    fullAmount: '', fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '',
+    fullAmount: '', fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '', fullChannel: 'cash',
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (form.fullChannel !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       await recordFull({
         id: booking.id,
@@ -99,6 +130,8 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
         fullPaymentDate: form.fullPaymentDate,
         loanTaken:       form.loanTaken,
         loanAmount:      form.loanTaken ? Number(form.loanAmount) : undefined,
+        fullChannel:     form.fullChannel,
+        fullProofKey:    proofKey || undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -143,6 +176,15 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
               )}
             </>
           )}
+          <div>
+            <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
+            <PaymentModeSelect
+              value={form.fullChannel}
+              onChange={(val) => { setForm(f => ({ ...f, fullChannel: val })); setProofKey(null); setShowProofErr(false); }}
+              variant="buttons"
+            />
+          </div>
+          <ProofUploadField mode={form.fullChannel} proofKey={proofKey} onChange={setProofKey} showError={showProofErr} />
           <div className="bg-stone-50 border border-stone-100 rounded-2xl p-3 text-xs text-stone-600">
             ℹ️ Buyback schedule of 60 monthly payouts will be auto-created, starting 60 days after this payment date.
           </div>
@@ -150,6 +192,63 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
           <button type="submit" disabled={isLoading}
             className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 tactile-press">
             {isLoading ? 'Saving…' : 'Record Full Payment'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ─── Buyback Payout Modal ─────────────────────────────────────────────────────
+const BuybackPayoutModal = ({ booking, month, onClose, onSuccess }) => {
+  const [markPayoutPaid, { isLoading }] = useMarkLandPayoutPaidMutation();
+  const [paidChannel,  setPaidChannel]  = useState('cash');
+  const [paidDate,     setPaidDate]     = useState(new Date().toISOString().split('T')[0]);
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
+  const [error,        setError]        = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (paidChannel !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
+    try {
+      await markPayoutPaid({ id: booking.id, month, paidDate, paidChannel, paidProofKey: proofKey || undefined }).unwrap();
+      onSuccess();
+    } catch (err) {
+      setError(err?.data?.error?.message || 'Failed to mark payout paid.');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end bg-navy/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full bg-white rounded-t-3xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-base font-bold text-navy">Mark Buyback Month {month} Paid</p>
+          <button type="button" onClick={onClose} className="text-navy/40 text-xl font-bold">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <p className="text-[10px] font-bold text-navy/40 mb-1">Date Paid *</p>
+            <BackdateDateInput value={paidDate} onChange={e => setPaidDate(e.target.value)} className={SCHEME_INPUT_CLASS} required />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Channel *</p>
+            <PaymentModeSelect
+              value={paidChannel}
+              onChange={(val) => { setPaidChannel(val); setProofKey(null); setShowProofErr(false); }}
+              variant="buttons"
+            />
+          </div>
+          <ProofUploadField mode={paidChannel} proofKey={proofKey} onChange={setProofKey} showError={showProofErr} />
+          <FormError error={error} />
+          <button type="submit" disabled={isLoading}
+            className="w-full py-4 rounded-2xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 tactile-press">
+            {isLoading ? 'Saving…' : 'Confirm Payout'}
           </button>
         </form>
       </div>
@@ -212,9 +311,9 @@ export const LandBookingDetailPage = () => {
   const [showAdvanceModal,  setShowAdvanceModal]  = useState(false);
   const [showFullModal,     setShowFullModal]      = useState(false);
   const [showCancelModal,   setShowCancelModal]    = useState(false);
+  const [payoutMonth,       setPayoutMonth]        = useState(null);
 
-  const [extendDeadline, { isLoading: extending }]   = useExtendLandDeadlineMutation();
-  const [markPayoutPaid, { isLoading: payingOut }]   = useMarkLandPayoutPaidMutation();
+  const [extendDeadline, { isLoading: extending }] = useExtendLandDeadlineMutation();
   const [extendError, setExtendError] = useState('');
 
   const { data: booking, isLoading, error: bookingError } = useGetLandBookingQuery(id);
@@ -267,11 +366,7 @@ export const LandBookingDetailPage = () => {
     }
   };
 
-  const handleMarkPaid = async (month) => {
-    try {
-      await markPayoutPaid({ id: booking.id, month, paidDate: today }).unwrap();
-    } catch (err) { /* error shown inline */ }
-  };
+  const handleMarkPaid = (month) => { setPayoutMonth(month); };
 
   return (
     <SchemePageWrapper>
@@ -335,6 +430,22 @@ export const LandBookingDetailPage = () => {
               </div>
             ))}
           </div>
+          {(booking.advance_proof_key || booking.full_proof_key) && (
+            <div className="mt-4 space-y-3">
+              {booking.advance_proof_key && (
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Advance Receipt</p>
+                  <PhotoProof photoKey={booking.advance_proof_key} />
+                </div>
+              )}
+              {booking.full_proof_key && (
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Full Payment Receipt</p>
+                  <PhotoProof photoKey={booking.full_proof_key} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -397,33 +508,35 @@ export const LandBookingDetailPage = () => {
               {payouts.map(p => {
                 const isOverduePayment = p.status === 'pending' && p.due_date < today;
                 return (
-                  <div key={p.id} className={`grid grid-cols-4 px-4 py-2.5 items-center ${isOverduePayment ? 'bg-red-50/30' : ''}`}>
-                    <span className="text-xs font-bold text-navy">M{p.month_number}</span>
-                    <span className="text-[10px] text-navy/50 text-right">{formatDate(p.due_date)}</span>
-                    <span className="text-xs font-bold text-emerald-600 text-right">
-                      {formatCurrency(parseFloat(p.amount))}
-                    </span>
-                    <div className="flex justify-end">
-                      {p.status === 'paid' ? (
-                        <span className="text-[9px] font-bold text-indigo bg-indigo/10 px-2 py-0.5 rounded-full uppercase">
-                          Paid
-                        </span>
-                      ) : isBranchAdmin ? (
-                        <button type="button" onClick={() => handleMarkPaid(p.month_number)}
-                          disabled={payingOut}
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tactile-press disabled:opacity-50 ${
-                            isOverduePayment
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}>
-                          {isOverduePayment ? 'Overdue' : 'Pay'}
-                        </button>
-                      ) : (
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${isOverduePayment ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50'}`}>
-                          {isOverduePayment ? 'Overdue' : 'Pending'}
-                        </span>
-                      )}
+                  <div key={p.id} className={`px-4 py-2.5 ${isOverduePayment ? 'bg-red-50/30' : ''}`}>
+                    <div className="grid grid-cols-4 items-center">
+                      <span className="text-xs font-bold text-navy">M{p.month_number}</span>
+                      <span className="text-[10px] text-navy/50 text-right">{formatDate(p.due_date)}</span>
+                      <span className="text-xs font-bold text-emerald-600 text-right">
+                        {formatCurrency(parseFloat(p.amount))}
+                      </span>
+                      <div className="flex justify-end">
+                        {p.status === 'paid' ? (
+                          <span className="text-[9px] font-bold text-indigo bg-indigo/10 px-2 py-0.5 rounded-full uppercase">
+                            Paid
+                          </span>
+                        ) : isBranchAdmin ? (
+                          <button type="button" onClick={() => handleMarkPaid(p.month_number)}
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tactile-press ${
+                              isOverduePayment
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                            }`}>
+                            {isOverduePayment ? 'Overdue' : 'Pay'}
+                          </button>
+                        ) : (
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${isOverduePayment ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50'}`}>
+                            {isOverduePayment ? 'Overdue' : 'Pending'}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    {p.status === 'paid' && <PhotoProof photoKey={p.paid_proof_key} />}
                   </div>
                 );
               })}
@@ -433,9 +546,10 @@ export const LandBookingDetailPage = () => {
       )}
 
       {/* Modals */}
-      {showAdvanceModal  && <AdvanceModal     booking={booking} onClose={() => setShowAdvanceModal(false)}  onSuccess={() => setShowAdvanceModal(false)} />}
-      {showFullModal     && <FullPaymentModal  booking={booking} onClose={() => setShowFullModal(false)}     onSuccess={() => setShowFullModal(false)} />}
-      {showCancelModal   && <CancelModal       booking={booking} onClose={() => setShowCancelModal(false)}   onSuccess={() => navigate('/money/schemes/land/bookings')} />}
+      {showAdvanceModal  && <AdvanceModal       booking={booking} onClose={() => setShowAdvanceModal(false)}  onSuccess={() => setShowAdvanceModal(false)} />}
+      {showFullModal     && <FullPaymentModal   booking={booking} onClose={() => setShowFullModal(false)}     onSuccess={() => setShowFullModal(false)} />}
+      {showCancelModal   && <CancelModal        booking={booking} onClose={() => setShowCancelModal(false)}   onSuccess={() => navigate('/money/schemes/land/bookings')} />}
+      {payoutMonth       && <BuybackPayoutModal booking={booking} month={payoutMonth} onClose={() => setPayoutMonth(null)} onSuccess={() => setPayoutMonth(null)} />}
     </SchemePageWrapper>
   );
 };

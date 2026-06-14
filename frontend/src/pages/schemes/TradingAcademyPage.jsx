@@ -15,6 +15,7 @@ import { formatCurrency, formatDate } from '../../lib/formatters';
 import { TRADING_ROLE_LABELS } from '../../lib/schemeConstants';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { AddMemberSheet } from './components/AddMemberSheet';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 export const TradingAcademyPage = () => {
   const navigate = useNavigate();
@@ -141,6 +142,7 @@ export const TradingAcademyPage = () => {
                   </span>
                 </div>
               </div>
+              <PhotoProof photoKey={m.proof_key} />
             </div>
           ))}
 

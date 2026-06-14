@@ -11,6 +11,7 @@ import { needsBranchSelection } from '../../../lib/schemeAuth';
 import { BranchPicker } from '../../../components/BranchPicker';
 import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { SCHEME_MODE_LABELS, SCHEME_MODE_STYLES, getTodayISO } from '../../../lib/schemeConstants';
+import { ProofUploadField } from '../../../components/money/ProofUploadField';
 import { FormError } from './FormError';
 
 const MODAL_INPUT_CLASS =
@@ -35,6 +36,8 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
     paymentMode: 'cash',
     notes:       '',
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [branchId, setBranchId]             = useState('');
   const [error, setError]                   = useState(null);
   const [addPayment, { isLoading }]         = useAddGoldPaymentMutation();
@@ -45,6 +48,11 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
     e.preventDefault();
     setError(null);
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+    if (form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       await addPayment({
         memberId:    member.id,
@@ -52,6 +60,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         paidDate:    form.paidDate,
         amount:      parseFloat(form.amount),
         paymentMode: form.paymentMode,
+        proofKey:    proofKey || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
       }).unwrap();
@@ -147,7 +156,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
               <div className="relative">
                 <select
                   value={form.paymentMode}
-                  onChange={set('paymentMode')}
+                  onChange={(e) => { set('paymentMode')(e); setProofKey(null); setShowProofErr(false); }}
                   className={`${MODAL_INPUT_CLASS} appearance-none pr-8`}
                 >
                   {Object.entries(SCHEME_MODE_LABELS).map(([val, lbl]) => (
@@ -157,6 +166,13 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
               </div>
             </div>
           </div>
+
+          <ProofUploadField
+            mode={form.paymentMode}
+            proofKey={proofKey}
+            onChange={setProofKey}
+            showError={showProofErr}
+          />
 
           {/* Notes */}
           <div>

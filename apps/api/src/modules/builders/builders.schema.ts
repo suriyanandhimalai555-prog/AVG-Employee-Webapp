@@ -28,13 +28,22 @@ export const BUILDERS_PACKAGES: Record<number, {
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 export const CreateBuildersPlanSchema = z.object({
-  customerId:    z.string().uuid(),
-  packageNumber: z.number().int().min(1).max(6),
-  lumpSumDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
-  lumpSumMode:   z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  referrerId:    z.string().uuid().optional(),
-  notes:         z.string().max(1000).optional(),
-  branchId:      z.string().uuid().optional(),
+  customerId:      z.string().uuid(),
+  packageNumber:   z.number().int().min(1).max(6),
+  lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
+  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  lumpSumProofKey: z.string().optional(),
+  referrerId:      z.string().uuid().optional(),
+  notes:           z.string().max(1000).optional(),
+  branchId:        z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.lumpSumMode !== 'cash' && !data.lumpSumProofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumProofKey is required for gpay and bank_receipt payments',
+      path: ['lumpSumProofKey'],
+    });
+  }
 });
 
 export const RecordBuildersPayoutSchema = z.object({
@@ -42,8 +51,17 @@ export const RecordBuildersPayoutSchema = z.object({
   amount:       z.number().positive(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  proofKey:     z.string().optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required for gpay and bank_receipt payments',
+      path: ['proofKey'],
+    });
+  }
 });
 
 export const ChooseRewardSchema = z.object({
@@ -90,12 +108,21 @@ export const UpdateBuildersIncentiveRuleSchema = z.object({
 // Correct an existing builders plan — editable fields only; packageNumber and
 // amounts are derived from the package and cannot be patched directly here.
 export const CorrectBuildersPlanSchema = z.object({
-  customerId:   z.string().uuid().optional(),
-  referrerId:   z.string().uuid().optional().nullable(),
-  lumpSumDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  lumpSumMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  notes:        z.string().max(1000).optional().nullable(),
-  branchId:     z.string().uuid().optional(),  // management must supply; MD optional
+  customerId:      z.string().uuid().optional(),
+  referrerId:      z.string().uuid().optional().nullable(),
+  lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
+  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  lumpSumProofKey: z.string().optional(),
+  notes:           z.string().max(1000).optional().nullable(),
+  branchId:        z.string().uuid().optional(),  // management must supply; MD optional
+}).superRefine((data, ctx) => {
+  if (data.lumpSumMode && data.lumpSumMode !== 'cash' && !data.lumpSumProofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumProofKey is required when setting lumpSumMode to gpay or bank_receipt',
+      path: ['lumpSumProofKey'],
+    });
+  }
 });
 
 // Correct an existing payout row.
@@ -103,8 +130,17 @@ export const CorrectBuildersPayoutSchema = z.object({
   amount:       z.number().positive().optional(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  proofKey:     z.string().optional(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
+      path: ['proofKey'],
+    });
+  }
 });
 
 // ─── Change reward (MD / Management correction — allowed after choice is made) ─

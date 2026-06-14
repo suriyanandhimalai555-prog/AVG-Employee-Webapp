@@ -27,6 +27,7 @@ import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 const WRITER_ROLES = new Set(['branch_admin', 'management', 'md', 'director']);
@@ -53,6 +54,8 @@ export const GoldCoinAddSlotPage = () => {
     notes:       '',
     saleDate:    getTodayISO(),
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
 
@@ -86,6 +89,11 @@ export const GoldCoinAddSlotPage = () => {
       setError('Quantity must be between 1 and 16.'); return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+    if (form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       const res = await addSlot({
         packageId:   form.packageId,
@@ -93,6 +101,7 @@ export const GoldCoinAddSlotPage = () => {
         amountPaid:  perSlot,
         quantity:    effectiveQuantity,
         paymentMode: form.paymentMode,
+        proofKey:    proofKey || undefined,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
@@ -282,10 +291,17 @@ export const GoldCoinAddSlotPage = () => {
         <FormField label="Payment mode" required>
           <PaymentModeSelect
             value={form.paymentMode}
-            onChange={(val) => setForm(f => ({ ...f, paymentMode: val }))}
+            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey(null); setShowProofErr(false); }}
             variant="buttons"
           />
         </FormField>
+
+        <ProofUploadField
+          mode={form.paymentMode}
+          proofKey={proofKey}
+          onChange={setProofKey}
+          showError={showProofErr}
+        />
 
         <FormField label="Referred by (optional)">
           <select

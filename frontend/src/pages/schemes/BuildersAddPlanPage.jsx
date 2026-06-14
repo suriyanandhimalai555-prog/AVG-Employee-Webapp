@@ -23,6 +23,7 @@ import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { BranchPicker } from '../../components/BranchPicker';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
 
 const INITIAL_FORM = {
   packageNumber: '',
@@ -36,10 +37,12 @@ export const BuildersAddPlanPage = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
-  const [customer,   setCustomer]   = useState(null);
-  const [form,       setForm]       = useState(INITIAL_FORM);
-  const [error,      setError]      = useState('');
-  const [done,       setDone]       = useState(null);  // { plan, customer }
+  const [customer,     setCustomer]   = useState(null);
+  const [form,         setForm]       = useState(INITIAL_FORM);
+  const [proofKey,     setProofKey]   = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
+  const [error,        setError]      = useState('');
+  const [done,         setDone]       = useState(null);  // { plan, customer }
 
   const set = createFormSetter(setForm);
 
@@ -83,16 +86,22 @@ export const BuildersAddPlanPage = () => {
     if (!form.packageNumber) { setError('Please select a package.'); return; }
     if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+    if (form.lumpSumMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
 
     try {
       const res = await createPlan({
-        customerId:    customer.id,
-        packageNumber: Number(form.packageNumber),
-        lumpSumDate:   form.lumpSumDate,
-        lumpSumMode:   form.lumpSumMode,
-        referrerId:    form.referrerId || undefined,
-        notes:         form.notes || undefined,
-        branchId:      isManagement ? branchId : undefined,
+        customerId:      customer.id,
+        packageNumber:   Number(form.packageNumber),
+        lumpSumDate:     form.lumpSumDate,
+        lumpSumMode:     form.lumpSumMode,
+        lumpSumProofKey: proofKey || undefined,
+        referrerId:      form.referrerId || undefined,
+        notes:           form.notes || undefined,
+        branchId:        isManagement ? branchId : undefined,
       }).unwrap();
       setDone(res);
     } catch (err) {
@@ -206,10 +215,17 @@ export const BuildersAddPlanPage = () => {
         <FormField label="Payment Mode">
           <PaymentModeSelect
             value={form.lumpSumMode}
-            onChange={(val) => setForm(f => ({ ...f, lumpSumMode: val }))}
+            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey(null); setShowProofErr(false); }}
             variant="buttons"
           />
         </FormField>
+
+        <ProofUploadField
+          mode={form.lumpSumMode}
+          proofKey={proofKey}
+          onChange={setProofKey}
+          showError={showProofErr}
+        />
 
         {/* Referrer (required — drives one-time + monthly incentives) */}
         <FormField label="Referred By" required>

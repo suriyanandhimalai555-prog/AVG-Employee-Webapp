@@ -75,6 +75,8 @@ import { GOLD_STATUS_STYLES } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormError } from './components/FormError';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 // ─── Scheme list ──────────────────────────────────────────────────────────────
 
@@ -107,14 +109,14 @@ const SCHEME_FIELDS = {
     { key: 'enrolledBy',      label: 'Enrolled by',    type: 'referrer', entryKey: 'enrolled_by' },
     { key: 'amount',          label: 'Amount',         type: 'number',   entryKey: 'amount' },
     { key: 'enrollmentDate',  label: 'Enrollment Date',type: 'date',     entryKey: 'enrollment_date' },
-    { key: 'paymentMode',     label: 'Payment Mode',   type: 'mode',     entryKey: 'payment_mode' },
+    { key: 'paymentMode',     label: 'Payment Mode',   type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey' },
     { key: 'notes',           label: 'Notes',          type: 'textarea', entryKey: 'notes' },
   ],
   builders_scheme: [
     { key: 'customerId',   label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',   label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'lumpSumDate',  label: 'Lump Sum Date',type: 'date',    entryKey: 'lump_sum_date' },
-    { key: 'lumpSumMode',  label: 'Payment Mode',type: 'mode',     entryKey: 'lump_sum_mode' },
+    { key: 'lumpSumMode',  label: 'Payment Mode',type: 'mode',     entryKey: 'lump_sum_mode', proofField: 'lumpSumProofKey' },
     { key: 'notes',        label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   agila_chit_scheme: [
@@ -125,13 +127,13 @@ const SCHEME_FIELDS = {
   gold_coin_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
-    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode' },
+    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   lss_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
-    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode' },
+    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   land_scheme: [
@@ -285,10 +287,17 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
   });
   const [busy,  setBusy]  = useState(false);
   const [error, setError] = useState('');
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.amount || !form.date) { setError('Amount and date are required.'); return; }
+    if (form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       await onAdd({
@@ -296,6 +305,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         amount:      parseFloat(form.amount),
         date:        form.date,
         paymentMode: form.paymentMode,
+        proofKey:    proofKey || undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onClose();
@@ -345,13 +355,19 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
           <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
           <select
             value={form.paymentMode}
-            onChange={(e) => setForm((f) => ({ ...f, paymentMode: e.target.value }))}
+            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey(null); setShowProofErr(false); }}
             className={`${IC} appearance-none`}
           >
             {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
           </select>
         </div>
       </div>
+      <ProofUploadField
+        mode={form.paymentMode}
+        proofKey={proofKey}
+        onChange={(key) => { setProofKey(key); if (key) setShowProofErr(false); }}
+        showError={showProofErr}
+      />
       <div>
         <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Notes (optional)</label>
         <input
@@ -394,6 +410,7 @@ const GoldPaymentsPanel = ({ entry, branchId }) => {
         paidDate:    data.date,
         amount:      data.amount,
         paymentMode: data.paymentMode,
+        proofKey:    data.proofKey,
         notes:       data.notes,
         branchId,
       })}
@@ -680,15 +697,23 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
     paymentMode: payment[modeField]   || 'cash',
     notes:       payment.notes        || '',
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
 
   const handleCorrect = async (e) => {
     e.preventDefault();
+    if (form.paymentMode && form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for non-cash payment corrections.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       await onCorrect({
         amount:      form.amount      ? parseFloat(form.amount) : undefined,
         [dateField]: form.date        || undefined,
         paymentMode: form.paymentMode || undefined,
+        proofKey:    proofKey || undefined,
         notes:       form.notes       ?? undefined,
         branchId,
       }).unwrap();
@@ -726,6 +751,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </button>
         </div>
       </div>
+      <PhotoProof photoKey={payment.proof_key} />
 
       {editOpen && (
         <form onSubmit={handleCorrect} className="border-t border-navy/10 pt-2 space-y-2">
@@ -743,11 +769,17 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </div>
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
-            <select value={form.paymentMode} onChange={(e) => setForm((f) => ({ ...f, paymentMode: e.target.value }))}
+            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey(null); setShowProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
           </div>
+          <ProofUploadField
+            mode={form.paymentMode}
+            proofKey={proofKey}
+            onChange={(key) => { setProofKey(key); if (key) setShowProofErr(false); }}
+            showError={showProofErr}
+          />
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Notes</label>
             <input type="text" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -810,11 +842,19 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   const [form, setForm] = useState(initForm);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const modeField = fields.find(f => f.type === 'mode');
+  const [entryProofKey,     setEntryProofKey]     = useState(null);
+  const [showEntryProofErr, setShowEntryProofErr] = useState(false);
 
   const entityArgs = actions.entityKey(entry);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (modeField && form[modeField.key] && form[modeField.key] !== 'cash' && !entryProofKey) {
+      setShowEntryProofErr(true);
+      setError('Please upload payment proof when changing mode to GPay/Bank.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       const payload = { branchId };
@@ -833,6 +873,9 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
           payload[field.key] = val || null;
         }
       });
+      if (modeField && entryProofKey) {
+        payload[modeField.proofField] = entryProofKey;
+      }
       await actions.correct({ ...entityArgs, ...payload }).unwrap();
       onClose();
     } catch (err) {
@@ -888,10 +931,18 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
               className={IC} />
           )}
           {field.type === 'mode' && (
-            <select value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+            <select value={form[field.key]} onChange={(e) => { setForm((f) => ({ ...f, [field.key]: e.target.value })); setEntryProofKey(null); setShowEntryProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
+          )}
+          {field.type === 'mode' && form[field.key] && form[field.key] !== 'cash' && (
+            <ProofUploadField
+              mode={form[field.key]}
+              proofKey={entryProofKey}
+              onChange={(key) => { setEntryProofKey(key); if (key) setShowEntryProofErr(false); }}
+              showError={showEntryProofErr}
+            />
           )}
           {field.type === 'landMode' && (
             <select value={form[field.key]} onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}

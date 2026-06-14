@@ -89,9 +89,9 @@ export const GoldService = {
       // Auto-record month 1 — member pays on enrollment day
       await client.query(
         `INSERT INTO gold_scheme_payments
-           (member_id, month_number, paid_date, amount, payment_mode, entered_by)
-         VALUES ($1, 1, $2, $3, $4, $5)`,
-        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', enteredBy]
+           (member_id, month_number, paid_date, amount, payment_mode, proof_key, entered_by)
+         VALUES ($1, 1, $2, $3, $4, $5, $6)`,
+        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', payload.firstPaymentProofKey || null, enteredBy]
       );
 
       // Credit referrer the configured % of monthly_amount as enrollment incentive.
@@ -271,10 +271,10 @@ export const GoldService = {
 
       const result = await client.query(
         `INSERT INTO gold_scheme_payments
-           (member_id, month_number, paid_date, amount, payment_mode, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+           (member_id, month_number, paid_date, amount, payment_mode, proof_key, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING *`,
-        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.notes || null, enteredBy]
+        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.proofKey || null, payload.notes || null, enteredBy]
       );
 
       // Credit referrer the configured renewal % for month 2 onwards.
@@ -636,6 +636,7 @@ export const GoldService = {
       if (payload.paidDate    != null)  { fields.push(`paid_date = $${idx++}`);     vals.push(payload.paidDate); }
       if (payload.amount      != null)  { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
       if (payload.paymentMode != null)  { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
+      if (payload.proofKey    != null)  { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
       if (payload.notes !== undefined)  { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

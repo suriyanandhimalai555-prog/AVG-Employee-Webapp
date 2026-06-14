@@ -28,6 +28,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { isSchemeAdmin } from '../../lib/schemeAuth';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 const SLOTS_PER_ROOM = 20;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -481,6 +482,7 @@ export const LssRoomDetailPage = () => {
                     {isAdmin && isHeld && (
                       <SlotAdminActions slot={s} branchId={room.branch_id} />
                     )}
+                    <PhotoProof photoKey={s.proof_key} />
                   </div>
                 );
               })

@@ -25,6 +25,8 @@ import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
+import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { PhotoProof } from '../../components/money/PhotoProof';
 
 // ─── Status presentation ──────────────────────────────────────────────────────
 
@@ -58,11 +60,18 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
     paymentMode:  'cash',
     notes:        '',
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       const res = await recordPayout({
         planId:      plan.id,
@@ -70,6 +79,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
         amount:      Number(form.amount),
         payoutDate:  form.payoutDate,
         paymentMode: form.paymentMode,
+        proofKey:    proofKey || undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onSuccess(res);
@@ -139,10 +149,17 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mb-2">Mode</p>
             <PaymentModeSelect
               value={form.paymentMode}
-              onChange={(val) => setForm(f => ({ ...f, paymentMode: val }))}
+              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey(null); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
+
+          <ProofUploadField
+            mode={form.paymentMode}
+            proofKey={proofKey}
+            onChange={setProofKey}
+            showError={showProofErr}
+          />
 
           <FormError error={error} />
 
@@ -482,15 +499,18 @@ export const BuildersPlanDetailPage = () => {
             </div>
             <div className="divide-y divide-navy/5 max-h-72 overflow-y-auto">
               {[...payouts].reverse().map(p => (
-                <div key={p.id} className="grid grid-cols-4 px-4 py-2.5">
-                  <span className="text-xs font-bold text-navy">M{p.month_number}</span>
-                  <span className="text-xs font-bold text-emerald-600 text-right">
-                    {formatCurrency(parseFloat(p.amount))}
-                  </span>
-                  <span className="text-[10px] text-navy/50 text-right">{formatDate(p.payout_date)}</span>
-                  <span className={`text-[9px] font-bold text-right ${SCHEME_MODE_STYLES[p.payment_mode] || ''}`}>
-                    {SCHEME_MODE_LABELS[p.payment_mode] || p.payment_mode}
-                  </span>
+                <div key={p.id} className="px-4 py-2.5">
+                  <div className="grid grid-cols-4">
+                    <span className="text-xs font-bold text-navy">M{p.month_number}</span>
+                    <span className="text-xs font-bold text-emerald-600 text-right">
+                      {formatCurrency(parseFloat(p.amount))}
+                    </span>
+                    <span className="text-[10px] text-navy/50 text-right">{formatDate(p.payout_date)}</span>
+                    <span className={`text-[9px] font-bold text-right ${SCHEME_MODE_STYLES[p.payment_mode] || ''}`}>
+                      {SCHEME_MODE_LABELS[p.payment_mode] || p.payment_mode}
+                    </span>
+                  </div>
+                  <PhotoProof photoKey={p.proof_key} />
                 </div>
               ))}
             </div>

@@ -9,6 +9,7 @@ export const CreateSlotSchema = z.object({
   amountPaid:  z.number().positive().max(10_000_000),
   quantity:    z.number().int().min(1).max(20).default(1),
   paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  proofKey:    z.string().optional(),
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
   branchId:    z.string().uuid().optional(),
@@ -16,6 +17,14 @@ export const CreateSlotSchema = z.object({
   // require the backdated-entry flag; the slot and its incentive land in
   // this date's period.
   saleDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required for gpay and bank_receipt payments',
+      path: ['proofKey'],
+    });
+  }
 });
 
 // ─── Room activation ──────────────────────────────────────────────────────
@@ -56,7 +65,16 @@ export const CorrectLssSlotSchema = z.object({
   referrerId:  z.string().uuid().optional().nullable(),
   notes:       z.string().max(500).optional().nullable(),
   paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  proofKey:    z.string().optional(),
   branchId:    z.string().uuid().optional(),
+}).superRefine((data, ctx) => {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
+      path: ['proofKey'],
+    });
+  }
 });
 export type CorrectLssSlotInput = z.infer<typeof CorrectLssSlotSchema>;
 

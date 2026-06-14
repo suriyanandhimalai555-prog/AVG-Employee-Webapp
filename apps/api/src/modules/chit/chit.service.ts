@@ -376,9 +376,9 @@ export const ChitService = {
       // Auto-record Month-1 full payment
       await client.query(
         `INSERT INTO agila_chit_payments
-           (group_id, member_id, month_number, amount, payment_date, payment_mode, entered_by)
-         VALUES ($1,$2,1,$3,$4,$5,$6)`,
-        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, enteredBy]
+           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, entered_by)
+         VALUES ($1,$2,1,$3,$4,$5,$6,$7)`,
+        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, payload.firstPaymentProofKey || null, enteredBy]
       );
 
       // Credit referrer 20% of Month-1 full amount
@@ -453,11 +453,11 @@ export const ChitService = {
 
       const result = await client.query(
         `INSERT INTO agila_chit_payments
-           (group_id, member_id, month_number, amount, payment_date, payment_mode, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING *`,
         [groupId, memberId, payload.monthNumber, payload.amount,
-         payload.paymentDate, payload.paymentMode, payload.notes || null, enteredBy]
+         payload.paymentDate, payload.paymentMode, payload.proofKey || null, payload.notes || null, enteredBy]
       );
 
       await client.query('COMMIT');
@@ -879,6 +879,7 @@ export const ChitService = {
       if (payload.amount       != null)  { fields.push(`amount = $${idx++}`);         vals.push(payload.amount); }
       if (payload.paymentDate  != null)  { fields.push(`payment_date = $${idx++}`);   vals.push(payload.paymentDate); }
       if (payload.paymentMode  != null)  { fields.push(`payment_mode = $${idx++}`);   vals.push(payload.paymentMode); }
+      if (payload.proofKey     != null)  { fields.push(`proof_key = $${idx++}`);      vals.push(payload.proofKey); }
       if (payload.notes !== undefined)   { fields.push(`notes = $${idx++}`);          vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

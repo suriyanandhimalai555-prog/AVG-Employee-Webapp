@@ -9,6 +9,7 @@ import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { TRADING_ROLE_LABELS, createFormSetter, getTodayISO } from '../../../lib/schemeConstants';
 import { FormError } from './FormError';
 import { SuccessConfirmation } from './SuccessConfirmation';
+import { ProofUploadField } from '../../../components/money/ProofUploadField';
 
 // Trading Academy forms use focus:border-indigo (not ring-indigo/20) — kept local
 const SHEET_INPUT_CLASS =
@@ -25,6 +26,8 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     paymentMode:    'cash',
     notes:          '',
   });
+  const [proofKey,     setProofKey]     = useState(null);
+  const [showProofErr, setShowProofErr] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
   const [addMember, { isLoading }] = useAddTradingMemberMutation();
@@ -35,6 +38,11 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer'); return; }
+    if (form.paymentMode !== 'cash' && !proofKey) {
+      setShowProofErr(true);
+      setError('Please upload payment proof for GPay/bank payments.');
+      return;
+    }
     try {
       const res = await addMember({
         customerId:     customer.id,
@@ -42,6 +50,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         enrolledBy:     form.enrolledBy,
         enrollmentDate: form.enrollmentDate,
         paymentMode:    form.paymentMode,
+        proofKey:       proofKey || undefined,
         notes:          form.notes || undefined,
         branchId:       branchId || undefined,
       }).unwrap();
@@ -148,7 +157,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <div className="relative">
             <select
               value={form.paymentMode}
-              onChange={set('paymentMode')}
+              onChange={(e) => { set('paymentMode')(e); setProofKey(null); setShowProofErr(false); }}
               className={`${SHEET_INPUT_CLASS} appearance-none pr-8`}
             >
               <option value="cash">Cash</option>
@@ -159,6 +168,13 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           </div>
         </div>
       </div>
+
+      <ProofUploadField
+        mode={form.paymentMode}
+        proofKey={proofKey}
+        onChange={setProofKey}
+        showError={showProofErr}
+      />
 
       {/* Notes */}
       <div>
