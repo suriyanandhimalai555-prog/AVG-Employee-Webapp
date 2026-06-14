@@ -82,7 +82,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
   const [amount,        setAmount]        = useState('');
   const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().split('T')[0]);
   const [paymentMode,   setPaymentMode]   = useState('cash');
-  const [proofKey,      setProofKey]      = useState(null);
+  const [proofKey,      setProofKey]      = useState([]);
   const [showProofErr,  setShowProofErr]  = useState(false);
   const [notes,         setNotes]         = useState('');
   const [error,         setError]         = useState(null);
@@ -102,13 +102,13 @@ function PaymentModal({ member, group, onClose, groupId }) {
     setError(null);
     if (!selectedMonth) { setError('Select a month.'); return; }
     if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount.'); return; }
-    if (paymentMode !== 'cash' && !proofKey) {
+    if (paymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
     }
     try {
-      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey || undefined, notes: notes.trim() || undefined }).unwrap();
+      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, notes: notes.trim() || undefined }).unwrap();
       onClose();
     } catch (err) { setError(err?.data?.error?.message || 'Failed to record payment.'); }
   };
@@ -173,7 +173,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
             <FormField label="Mode" required>
               <PaymentModeSelect
                 value={paymentMode}
-                onChange={(val) => { setPaymentMode(val); setProofKey(null); setShowProofErr(false); }}
+                onChange={(val) => { setPaymentMode(val); setProofKey([]); setShowProofErr(false); }}
                 variant="buttons"
               />
             </FormField>

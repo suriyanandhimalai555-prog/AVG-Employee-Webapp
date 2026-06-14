@@ -40,14 +40,14 @@ const STATUS_LABELS = {
 const AdvanceModal = ({ booking, onClose, onSuccess }) => {
   const [recordAdvance, { isLoading }] = useRecordLandAdvanceMutation();
   const [form,  setForm]  = useState({ advanceAmount: '', advanceDate: getTodayISO(), advanceChannel: 'cash' });
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.advanceChannel !== 'cash' && !proofKey) {
+    if (form.advanceChannel !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -58,7 +58,7 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
         advanceAmount:   Number(form.advanceAmount),
         advanceDate:     form.advanceDate,
         advanceChannel:  form.advanceChannel,
-        advanceProofKey: proofKey || undefined,
+        advanceProofKey: proofKey.length ? proofKey : undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -89,7 +89,7 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
             <PaymentModeSelect
               value={form.advanceChannel}
-              onChange={(val) => { setForm(f => ({ ...f, advanceChannel: val })); setProofKey(null); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, advanceChannel: val })); setProofKey([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -111,14 +111,14 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
   const [form,  setForm]  = useState({
     fullAmount: '', fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '', fullChannel: 'cash',
   });
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.fullChannel !== 'cash' && !proofKey) {
+    if (form.fullChannel !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -131,7 +131,7 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
         loanTaken:       form.loanTaken,
         loanAmount:      form.loanTaken ? Number(form.loanAmount) : undefined,
         fullChannel:     form.fullChannel,
-        fullProofKey:    proofKey || undefined,
+        fullProofKey: proofKey.length ? proofKey : undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -180,7 +180,7 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
             <PaymentModeSelect
               value={form.fullChannel}
-              onChange={(val) => { setForm(f => ({ ...f, fullChannel: val })); setProofKey(null); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, fullChannel: val })); setProofKey([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -204,20 +204,20 @@ const BuybackPayoutModal = ({ booking, month, onClose, onSuccess }) => {
   const [markPayoutPaid, { isLoading }] = useMarkLandPayoutPaidMutation();
   const [paidChannel,  setPaidChannel]  = useState('cash');
   const [paidDate,     setPaidDate]     = useState(new Date().toISOString().split('T')[0]);
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (paidChannel !== 'cash' && !proofKey) {
+    if (paidChannel !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
     }
     try {
-      await markPayoutPaid({ id: booking.id, month, paidDate, paidChannel, paidProofKey: proofKey || undefined }).unwrap();
+      await markPayoutPaid({ id: booking.id, month, paidDate, paidChannel, paidProofKey: proofKey.length ? proofKey : undefined }).unwrap();
       onSuccess();
     } catch (err) {
       setError(err?.data?.error?.message || 'Failed to mark payout paid.');
@@ -240,7 +240,7 @@ const BuybackPayoutModal = ({ booking, month, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Channel *</p>
             <PaymentModeSelect
               value={paidChannel}
-              onChange={(val) => { setPaidChannel(val); setProofKey(null); setShowProofErr(false); }}
+              onChange={(val) => { setPaidChannel(val); setProofKey([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>

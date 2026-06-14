@@ -36,7 +36,7 @@ export const GoldSchemeAddPage = () => {
     firstPaymentMode: 'cash',
     notes:            '',
   });
-  const [proofKey,    setProofKey]    = useState(null);
+  const [proofKey,    setProofKey]    = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -53,7 +53,7 @@ export const GoldSchemeAddPage = () => {
       return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.firstPaymentMode !== 'cash' && !proofKey) {
+    if (form.firstPaymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -67,7 +67,7 @@ export const GoldSchemeAddPage = () => {
         startDate:             form.startDate,
         totalMonths:           parseInt(form.totalMonths, 10),
         firstPaymentMode:      form.firstPaymentMode,
-        firstPaymentProofKey:  proofKey || undefined,
+        firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
         notes:                 form.notes.trim() || undefined,
         branchId:              isManagement ? branchId : undefined,
       }).unwrap();
@@ -208,7 +208,7 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey(null); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">

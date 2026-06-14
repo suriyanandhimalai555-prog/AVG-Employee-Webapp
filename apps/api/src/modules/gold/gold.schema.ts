@@ -9,12 +9,12 @@ export const AddGoldMemberSchema = z.object({
   startDate:             z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   totalMonths:           z.number().int().min(1).max(60).default(12),
   firstPaymentMode:      z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  firstPaymentProofKey:  z.string().optional(),
+  firstPaymentProofKey:  z.array(z.string()).optional(),
   notes:                 z.string().max(1000).optional(),
   // Passed by management role only — ignored for branch_admin (branchId from JWT)
   branchId:              z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey) {
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'firstPaymentProofKey is required for gpay and bank_receipt payments',
@@ -50,11 +50,11 @@ export const AddGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   amount:       z.number().positive(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:     z.string().optional(),
+  proofKey:     z.array(z.string()).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.paymentMode !== 'cash' && !data.proofKey) {
+  if (data.paymentMode !== 'cash' && !data.proofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
@@ -83,11 +83,11 @@ export const CorrectGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   amount:       z.number().positive().optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:     z.string().optional(),
+  proofKey:     z.array(z.string()).optional(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',

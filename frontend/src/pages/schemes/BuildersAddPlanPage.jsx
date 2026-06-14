@@ -39,7 +39,7 @@ export const BuildersAddPlanPage = () => {
 
   const [customer,     setCustomer]   = useState(null);
   const [form,         setForm]       = useState(INITIAL_FORM);
-  const [proofKey,     setProofKey]   = useState(null);
+  const [proofKey,     setProofKey]   = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]      = useState('');
   const [done,         setDone]       = useState(null);  // { plan, customer }
@@ -86,7 +86,7 @@ export const BuildersAddPlanPage = () => {
     if (!form.packageNumber) { setError('Please select a package.'); return; }
     if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.lumpSumMode !== 'cash' && !proofKey) {
+    if (form.lumpSumMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -98,7 +98,7 @@ export const BuildersAddPlanPage = () => {
         packageNumber:   Number(form.packageNumber),
         lumpSumDate:     form.lumpSumDate,
         lumpSumMode:     form.lumpSumMode,
-        lumpSumProofKey: proofKey || undefined,
+        lumpSumProofKey: proofKey.length ? proofKey : undefined,
         referrerId:      form.referrerId || undefined,
         notes:           form.notes || undefined,
         branchId:        isManagement ? branchId : undefined,
@@ -215,7 +215,7 @@ export const BuildersAddPlanPage = () => {
         <FormField label="Payment Mode">
           <PaymentModeSelect
             value={form.lumpSumMode}
-            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey(null); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setShowProofErr(false); }}
             variant="buttons"
           />
         </FormField>

@@ -287,13 +287,13 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
   });
   const [busy,  setBusy]  = useState(false);
   const [error, setError] = useState('');
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.amount || !form.date) { setError('Amount and date are required.'); return; }
-    if (form.paymentMode !== 'cash' && !proofKey) {
+    if (form.paymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -305,7 +305,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         amount:      parseFloat(form.amount),
         date:        form.date,
         paymentMode: form.paymentMode,
-        proofKey:    proofKey || undefined,
+        proofKey: proofKey.length ? proofKey : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onClose();
@@ -355,7 +355,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
           <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
           <select
             value={form.paymentMode}
-            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey(null); setShowProofErr(false); }}
+            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setShowProofErr(false); }}
             className={`${IC} appearance-none`}
           >
             {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
@@ -365,7 +365,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
       <ProofUploadField
         mode={form.paymentMode}
         proofKey={proofKey}
-        onChange={(key) => { setProofKey(key); if (key) setShowProofErr(false); }}
+        onChange={(keys) => { setProofKey(keys); if (keys?.length) setShowProofErr(false); }}
         showError={showProofErr}
       />
       <div>
@@ -697,12 +697,12 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
     paymentMode: payment[modeField]   || 'cash',
     notes:       payment.notes        || '',
   });
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleCorrect = async (e) => {
     e.preventDefault();
-    if (form.paymentMode && form.paymentMode !== 'cash' && !proofKey) {
+    if (form.paymentMode && form.paymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for non-cash payment corrections.');
       return;
@@ -713,7 +713,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
         amount:      form.amount      ? parseFloat(form.amount) : undefined,
         [dateField]: form.date        || undefined,
         paymentMode: form.paymentMode || undefined,
-        proofKey:    proofKey || undefined,
+        proofKey: proofKey.length ? proofKey : undefined,
         notes:       form.notes       ?? undefined,
         branchId,
       }).unwrap();
@@ -769,7 +769,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </div>
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
-            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey(null); setShowProofErr(false); }}
+            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setShowProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
@@ -777,7 +777,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           <ProofUploadField
             mode={form.paymentMode}
             proofKey={proofKey}
-            onChange={(key) => { setProofKey(key); if (key) setShowProofErr(false); }}
+            onChange={(keys) => { setProofKey(keys); if (keys?.length) setShowProofErr(false); }}
             showError={showProofErr}
           />
           <div>
@@ -843,14 +843,14 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const modeField = fields.find(f => f.type === 'mode');
-  const [entryProofKey,     setEntryProofKey]     = useState(null);
+  const [entryProofKey,     setEntryProofKey]     = useState([]);
   const [showEntryProofErr, setShowEntryProofErr] = useState(false);
 
   const entityArgs = actions.entityKey(entry);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (modeField && form[modeField.key] && form[modeField.key] !== 'cash' && !entryProofKey) {
+    if (modeField && form[modeField.key] && form[modeField.key] !== 'cash' && !entryProofKey.length) {
       setShowEntryProofErr(true);
       setError('Please upload payment proof when changing mode to GPay/Bank.');
       return;
@@ -873,7 +873,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
           payload[field.key] = val || null;
         }
       });
-      if (modeField && entryProofKey) {
+      if (modeField && entryProofKey.length) {
         payload[modeField.proofField] = entryProofKey;
       }
       await actions.correct({ ...entityArgs, ...payload }).unwrap();
@@ -931,7 +931,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
               className={IC} />
           )}
           {field.type === 'mode' && (
-            <select value={form[field.key]} onChange={(e) => { setForm((f) => ({ ...f, [field.key]: e.target.value })); setEntryProofKey(null); setShowEntryProofErr(false); }}
+            <select value={form[field.key]} onChange={(e) => { setForm((f) => ({ ...f, [field.key]: e.target.value })); setEntryProofKey([]); setShowEntryProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
@@ -940,7 +940,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
             <ProofUploadField
               mode={form[field.key]}
               proofKey={entryProofKey}
-              onChange={(key) => { setEntryProofKey(key); if (key) setShowEntryProofErr(false); }}
+              onChange={(keys) => { setEntryProofKey(keys); if (keys?.length) setShowEntryProofErr(false); }}
               showError={showEntryProofErr}
             />
           )}

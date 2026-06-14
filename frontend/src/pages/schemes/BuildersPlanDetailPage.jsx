@@ -60,14 +60,14 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
     paymentMode:  'cash',
     notes:        '',
   });
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.paymentMode !== 'cash' && !proofKey) {
+    if (form.paymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -79,7 +79,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
         amount:      Number(form.amount),
         payoutDate:  form.payoutDate,
         paymentMode: form.paymentMode,
-        proofKey:    proofKey || undefined,
+        proofKey: proofKey.length ? proofKey : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onSuccess(res);
@@ -149,7 +149,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mb-2">Mode</p>
             <PaymentModeSelect
               value={form.paymentMode}
-              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey(null); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>

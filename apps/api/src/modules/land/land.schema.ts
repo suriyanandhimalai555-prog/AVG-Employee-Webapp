@@ -101,9 +101,9 @@ export const RecordAdvanceSchema = z.object({
   advanceAmount:   z.number().positive(),
   advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   advanceChannel:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  advanceProofKey: z.string().optional(),
+  advanceProofKey: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
-  if (data.advanceChannel !== 'cash' && !data.advanceProofKey) {
+  if (data.advanceChannel !== 'cash' && !data.advanceProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'advanceProofKey is required for gpay and bank_receipt payments',
@@ -116,11 +116,11 @@ export const RecordFullPaymentSchema = z.object({
   fullAmount:      z.number().positive(),
   fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   fullChannel:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  fullProofKey:    z.string().optional(),
+  fullProofKey:    z.array(z.string()).optional(),
   loanTaken:       z.boolean().default(false),
   loanAmount:      z.number().positive().optional(),
 }).superRefine((data, ctx) => {
-  if (data.fullChannel !== 'cash' && !data.fullProofKey) {
+  if (data.fullChannel !== 'cash' && !data.fullProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'fullProofKey is required for gpay and bank_receipt payments',
@@ -147,9 +147,9 @@ export const ListBookingsQuerySchema = z.object({
 export const MarkPayoutPaidSchema = z.object({
   paidDate:    z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paidChannel: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  paidProofKey: z.string().optional(),
+  paidProofKey: z.array(z.string()).optional(),
 }).superRefine((data, ctx) => {
-  if (data.paidChannel !== 'cash' && !data.paidProofKey) {
+  if (data.paidChannel !== 'cash' && !data.paidProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'paidProofKey is required for gpay and bank_receipt payments',
@@ -179,24 +179,24 @@ export const CorrectLandBookingSchema = z.object({
   advanceAmount:   z.number().positive().optional(),
   advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   advanceChannel:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  advanceProofKey: z.string().optional(),
+  advanceProofKey: z.array(z.string()).optional(),
   fullAmount:      z.number().positive().optional(),
   fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   fullChannel:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  fullProofKey:    z.string().optional(),
+  fullProofKey:    z.array(z.string()).optional(),
   loanTaken:       z.boolean().optional(),
   loanAmount:      z.number().positive().optional().nullable(),
   notes:           z.string().max(1000).optional().nullable(),
   branchId:        z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.advanceChannel && data.advanceChannel !== 'cash' && !data.advanceProofKey) {
+  if (data.advanceChannel && data.advanceChannel !== 'cash' && !data.advanceProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'advanceProofKey is required when setting advanceChannel to gpay or bank_receipt',
       path: ['advanceProofKey'],
     });
   }
-  if (data.fullChannel && data.fullChannel !== 'cash' && !data.fullProofKey) {
+  if (data.fullChannel && data.fullChannel !== 'cash' && !data.fullProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'fullProofKey is required when setting fullChannel to gpay or bank_receipt',

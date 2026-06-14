@@ -2,15 +2,14 @@ import { useState } from 'react';
 import { Image as ImageIcon, Loader2, ExternalLink } from 'lucide-react';
 import { useGetMoneyPhotoUrlQuery } from '../../store/api/apiSlice';
 
-// Lazy-loads the S3 presigned download URL only when the user taps "View Proof".
-// Avoids firing N API calls for a list of cards on mount.
-export const PhotoProof = ({ photoKey }) => {
+// Renders one lazy "View Proof" viewer per key.
+// Accepts a single key (string) or multiple keys (string[]).
+// Passing null/undefined/[] renders nothing — keeps existing call sites working.
+const SingleProof = ({ photoKey }) => {
   const [requested, setRequested] = useState(false);
   const { data, isLoading } = useGetMoneyPhotoUrlQuery(photoKey, {
     skip: !requested || !photoKey,
   });
-
-  if (!photoKey) return null;
 
   if (!requested) {
     return (
@@ -51,5 +50,34 @@ export const PhotoProof = ({ photoKey }) => {
         </div>
       </div>
     </a>
+  );
+};
+
+export const PhotoProof = ({ photoKey }) => {
+  // Normalise: string → [string], null/undefined/[] → []
+  const keys = Array.isArray(photoKey)
+    ? photoKey.filter(Boolean)
+    : photoKey
+    ? [photoKey]
+    : [];
+
+  if (keys.length === 0) return null;
+
+  if (keys.length === 1) {
+    return <SingleProof photoKey={keys[0]} />;
+  }
+
+  // Multiple images — stack viewers with a counter label
+  return (
+    <div className="space-y-2">
+      {keys.map((k, i) => (
+        <div key={k}>
+          <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">
+            Image {i + 1} of {keys.length}
+          </p>
+          <SingleProof photoKey={k} />
+        </div>
+      ))}
+    </div>
   );
 };

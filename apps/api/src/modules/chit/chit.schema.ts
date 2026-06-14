@@ -32,11 +32,11 @@ export const AddChitMemberSchema = z.object({
   referrerId:           z.string().uuid().optional(),
   firstPaymentDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   firstPaymentMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  firstPaymentProofKey: z.string().optional(),
+  firstPaymentProofKey: z.array(z.string()).optional(),
   notes:                z.string().max(500).optional(),
   branchId:             z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey) {
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'firstPaymentProofKey is required for gpay and bank_receipt payments',
@@ -50,11 +50,11 @@ export const RecordChitPaymentSchema = z.object({
   amount:       z.number().positive(),
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:     z.string().optional(),
+  proofKey:     z.array(z.string()).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.paymentMode !== 'cash' && !data.proofKey) {
+  if (data.paymentMode !== 'cash' && !data.proofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
@@ -112,11 +112,11 @@ export const CorrectChitPaymentSchema = z.object({
   amount:       z.number().positive().optional(),
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:     z.string().optional(),
+  proofKey:     z.array(z.string()).optional(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',

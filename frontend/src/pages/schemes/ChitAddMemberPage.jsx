@@ -33,7 +33,7 @@ export const ChitAddMemberPage = () => {
   const [referrerId,   setReferrerId]   = useState('');
   const [paymentDate,  setPaymentDate]  = useState(getTodayISO());
   const [paymentMode,  setPaymentMode]  = useState('cash');
-  const [proofKey,     setProofKey]     = useState(null);
+  const [proofKey,     setProofKey]     = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState(null);
   const [result,       setResult]       = useState(null);
@@ -49,7 +49,7 @@ export const ChitAddMemberPage = () => {
     setReferrerId('');
     setPaymentDate(getTodayISO());
     setPaymentMode('cash');
-    setProofKey(null);
+    setProofKey([]);
     setShowProofErr(false);
     setError(null);
     setResult(null);
@@ -59,7 +59,7 @@ export const ChitAddMemberPage = () => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer.'); return; }
-    if (paymentMode !== 'cash' && !proofKey) {
+    if (paymentMode !== 'cash' && !proofKey.length) {
       setShowProofErr(true);
       setError('Please upload payment proof for GPay/bank payments.');
       return;
@@ -71,7 +71,7 @@ export const ChitAddMemberPage = () => {
         referrerId:            referrerId || undefined,
         firstPaymentDate:      paymentDate,
         firstPaymentMode:      paymentMode,
-        firstPaymentProofKey:  proofKey || undefined,
+        firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -230,7 +230,7 @@ export const ChitAddMemberPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
-            onChange={(val) => { setPaymentMode(val); setProofKey(null); setShowProofErr(false); }}
+            onChange={(val) => { setPaymentMode(val); setProofKey([]); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
