@@ -14,6 +14,7 @@ import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetEmployeesQuery, useGetSummaryQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
 import { StatsGrid } from '../../components/attendance/StatsGrid';
+import { useGeolocation } from '../../hooks/useGeolocation';
 
 
 const FILTERS = [
@@ -72,6 +73,11 @@ export const BranchAdminPanel = () => {
   // Admin sign-off mutation — for signing off no-smartphone employees
   const [adminSignOff] = useAdminSignOffMutation();
   const [adminSignOffLoading, setAdminSignOffLoading] = useState(null); // holds targetUserId while loading
+  // GPS error message for admin sign-off — shown as a dismissable banner near the action list.
+  // A non-null value means the last sign-off attempt failed due to GPS or API error.
+  const [adminSignOffGpsError, setAdminSignOffGpsError] = useState(null);
+  // Shared GPS hook for admin sign-off location capture
+  const geo = useGeolocation();
 
   const {
     staffFilter, setStaffFilter,
@@ -92,12 +98,23 @@ export const BranchAdminPanel = () => {
   );
 
   const handleAdminSignOff = async (emp) => {
+    setAdminSignOffGpsError(null);
     setAdminSignOffLoading(emp.id);
     try {
-      // Use a placeholder GPS (0,0) since branch admin is signing off for someone else
-      // The GPS coordinates for admin sign-off come from the admin's own location
+      // Capture the admin's own location — required for the sign-off audit record.
+      // Never fall back to (0,0); a bogus location is worse than a failed submit.
       const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+        if (!navigator.geolocation) {
+          const e = new Error('Geolocation not supported by this browser');
+          e.code = 2; // POSITION_UNAVAILABLE
+          reject(e);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
       });
       await adminSignOff({
         targetUserId: emp.id,
@@ -105,15 +122,20 @@ export const BranchAdminPanel = () => {
         checkOutLng: pos.coords.longitude,
       }).unwrap();
     } catch (err) {
-      // Fallback: if GPS fails, use 0,0 — admin is responsible for the sign-off
-      try {
-        await adminSignOff({
-          targetUserId: emp.id,
-          checkOutLat: 0,
-          checkOutLng: 0,
-        }).unwrap();
-      } catch (innerErr) {
-        console.error('Admin sign-off failed:', innerErr?.data?.error?.message || innerErr?.message);
+      // GeolocationPositionError carries a numeric .code (1/2/3); API errors carry .data
+      if (err?.code === 1) {
+        setAdminSignOffGpsError(
+          'Location access is blocked — enable it in your browser settings, then try again.'
+        );
+      } else if (err?.code === 2 || err?.code === 3) {
+        setAdminSignOffGpsError(
+          'Could not get your location — please try again. If the problem persists, check your device GPS settings.'
+        );
+      } else {
+        // API / network error
+        setAdminSignOffGpsError(
+          err?.data?.error?.message || err?.message || 'Sign-off failed. Please try again.'
+        );
       }
     } finally {
       setAdminSignOffLoading(null);
@@ -266,6 +288,27 @@ export const BranchAdminPanel = () => {
         <StatsGrid summary={summary?.myMonth} isLoading={summaryLoading} />
 
         <div className="px-6 pb-32 space-y-8">
+
+          {/* ── Admin sign-off GPS error ── */}
+          <AnimatePresence>
+            {adminSignOffGpsError && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3"
+              >
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="flex-1 text-xs font-bold text-amber-800">{adminSignOffGpsError}</p>
+                <button
+                  onClick={() => setAdminSignOffGpsError(null)}
+                  className="text-amber-500 hover:text-amber-700 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── Needs Action ── */}
           {(needsMark.length > 0 || needsSignOff.length > 0) && (

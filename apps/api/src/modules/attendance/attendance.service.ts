@@ -16,6 +16,8 @@ import {
 } from '../../shared/permissions';
 // Import custom error classes for structured HTTP error responses
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../shared/errors';
+// Geofence helper — pure Haversine distance computation, no I/O
+import { haversineMeters } from '../../shared/geo';
 import {
   resolveBranchAdminBranchId,
 } from '../../shared/attendance-scope';
@@ -100,7 +102,48 @@ export const AttendanceService = {
       resolvedBranchId = oversightResult.rows[0]?.branch_id ?? null;
     }
 
-    // Step 3: Duplicate check using Redis atomic SET with NX — use IST date, not UTC
+    // Step 3: Geofence check — office mode only.
+    // Skip when: no branch resolved (Directors/GMs on global scope), or the branch
+    // has no coordinates configured yet (null lat/lon = geofence not set up = allow).
+    // Client-supplied checkInAccuracy widens the allowed radius by up to 100 m so that
+    // a device with coarse GPS (e.g. 80 m accuracy) is not unfairly rejected.
+    // This check runs BEFORE the Redis dupe key is set so a rejected attempt does not
+    // consume the day's check-in slot.
+    if (payload.mode === 'office' && resolvedBranchId) {
+      try {
+        const branchGeo = await db.query(
+          `SELECT latitude, longitude, geofence_radius_m FROM branches WHERE id = $1`,
+          [resolvedBranchId]
+        );
+        if (branchGeo.rows.length > 0) {
+          const { latitude, longitude, geofence_radius_m } = branchGeo.rows[0];
+          // TS: only enforce when both coordinates are configured (non-null)
+          if (latitude !== null && longitude !== null && payload.checkInLat !== undefined && payload.checkInLng !== undefined) {
+            const distMeters = haversineMeters(
+              parseFloat(latitude),
+              parseFloat(longitude),
+              payload.checkInLat,
+              payload.checkInLng,
+            );
+            // TS: cap the client-supplied accuracy at 100 m to prevent spoofing the tolerance
+            const accuranceTolerance = Math.min(payload.checkInAccuracy ?? 0, 100);
+            const allowedMeters = (geofence_radius_m ?? 150) + accuranceTolerance;
+            if (distMeters > allowedMeters) {
+              throw new ForbiddenError(
+                `You must be at your branch to check in. You appear to be ~${Math.round(distMeters)} m away (limit: ${Math.round(allowedMeters)} m).`
+              );
+            }
+          }
+        }
+      } catch (err) {
+        // Re-throw ForbiddenError as-is; swallow unexpected DB errors so a geofence
+        // table/query failure never silently blocks all check-ins for a branch.
+        if (err instanceof ForbiddenError) throw err;
+        console.error('⚠️  Geofence DB query failed — skipping enforcement:', err);
+      }
+    }
+
+    // Step 4: Duplicate check using Redis atomic SET with NX — use IST date, not UTC
     const today = getCompanyToday();
     const dupeKey = `att:${userId}:${today}`;
 
@@ -115,7 +158,7 @@ export const AttendanceService = {
     }
     if (alreadyMarked) throw new ConflictError('Attendance already marked for today');
 
-    // Step 4: Build and queue job — use resolvedBranchId so the worker INSERT never hits NOT NULL
+    // Step 5: Build and queue job — use resolvedBranchId so the worker INSERT never hits NOT NULL
     const jobData = {
       userId,
       branchId: resolvedBranchId,

@@ -24,7 +24,7 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   const [fieldPhoto, setFieldPhoto] = useState(null); // { file, previewUrl }
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  const [gpsStatus, setGpsStatus] = useState(null); // null | 'fetching' | { lat, lng } | 'error'
+  const [gpsStatus, setGpsStatus] = useState(null); // null | 'fetching' | { lat, lng, accuracy } | 'error'
 
   // Inline error message — replaces browser alert() for production
   const [checkInError, setCheckInError] = useState(null);
@@ -66,7 +66,8 @@ export const useCheckIn = ({ onSuccess } = {}) => {
     setGpsPermissionDenied(false); // reset on every attempt
     if (!navigator.geolocation) { setGpsStatus('error'); return; }
     navigator.geolocation.getCurrentPosition(
-      (pos) => setGpsStatus({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      // accuracy: metres radius that the browser reports for this fix (used server-side to widen geofence tolerance)
+      (pos) => setGpsStatus({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
       (err) => {
         setGpsStatus('error');
         // code 1 = PERMISSION_DENIED — user blocked location; must go to browser settings
@@ -116,6 +117,9 @@ export const useCheckIn = ({ onSuccess } = {}) => {
           mode: 'office',
           checkInLat: gpsStatus.lat,
           checkInLng: gpsStatus.lng,
+          // Send the device accuracy so the server can widen the geofence tolerance.
+          // The server caps this at 100 m regardless of what we send.
+          checkInAccuracy: gpsStatus.accuracy ?? undefined,
         }).unwrap();
       } else {
         if (!fieldPhoto) {

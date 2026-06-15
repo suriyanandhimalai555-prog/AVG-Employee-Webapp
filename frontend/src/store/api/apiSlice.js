@@ -283,6 +283,14 @@ export const apiSlice = createApi({
       invalidatesTags: ['Branches'],
     }),
 
+    // Sets (or clears) the geofence coordinates for a branch. Management only.
+    // Pass latitude:null / longitude:null to clear the geofence.
+    setBranchLocation: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/branches/${id}/location`, method: 'PUT', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Branches'],
+    }),
+
     // ─── Transactions (Expenses, Reimbursements, etc.) ───
     getTransactions: builder.query({
       query: (params = {}) => {
@@ -1824,6 +1832,15 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       invalidatesTags: ['AppSettings'],
     }),
+
+    // ─── Head branch (Management only) ───
+    // Moves the global is_head_branch flag to the chosen branch.
+    // Invalidates Branches so BranchPicker and HeadBranchSetting refetch.
+    setHeadBranch: builder.mutation({
+      query: (data) => ({ url: '/branches/head-branch', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Branches'],
+    }),
   }),
 });
 
@@ -2034,4 +2051,6 @@ export const {
   useGetSchemeAuditLogQuery,
   useGetBackdatedEntrySettingQuery,
   useUpdateBackdatedEntrySettingMutation,
+  useSetHeadBranchMutation,
+  useSetBranchLocationMutation,
 } = apiSlice;

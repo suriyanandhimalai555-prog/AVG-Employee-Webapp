@@ -2,7 +2,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { BranchService } from './branch.service';
 import { handleError } from '../../shared/route-error-handler';
-import { CreateBranchSchema, UpdateBranchSchema } from './branch.schema';
+import { CreateBranchSchema, UpdateBranchSchema, SetHeadBranchSchema, UpdateBranchLocationSchema } from './branch.schema';
+import { ForbiddenError } from '../../shared/errors';
+import { Role } from '../../shared/role-constants';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
@@ -15,10 +17,52 @@ export default async function branchRoutes(fastify: FastifyInstance) {
   // Aggressively cached in Redis to handle 1500 concurrent users on login
   fastify.get('/', {
     onRequest: [fastify.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const branches = await BranchService.listBranches(fastify.db, fastify.redis);
       return reply.send({ success: true, data: branches });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── PUT /api/branches/head-branch ─── (Management only)
+  // Moves the global is_head_branch flag to the chosen branch. Must be registered
+  // BEFORE /:id so Fastify does not capture "head-branch" as an id param.
+  fastify.put('/head-branch', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // Only the management account can designate the head branch
+      if (req.user.role !== Role.MANAGEMENT) {
+        throw new ForbiddenError('Only Management can set the head branch');
+      }
+      const body = SetHeadBranchSchema.parse(request.body);
+      const branch = await BranchService.setHeadBranch(fastify.db, fastify.redis, body.branchId);
+      return reply.send({ success: true, data: branch });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── PUT /api/branches/:id/location ─── (Management only)
+  // Sets (or clears) the geofence coordinates for a branch. Gated to Management role
+  // only — identical authorization pattern to PUT /head-branch. Registered before
+  // /:id so Fastify does not misparse "head-branch" or "location" as an id param.
+  fastify.put('/:id/location', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: only the Management account may configure branch geofences
+      if (req.user.role !== Role.MANAGEMENT) {
+        throw new ForbiddenError('Only Management can set branch location');
+      }
+      const { id } = request.params as { id: string };
+      const body = UpdateBranchLocationSchema.parse(request.body);
+      const branch = await BranchService.setBranchLocation(fastify.db, fastify.redis, id, body);
+      return reply.send({ success: true, data: branch });
     } catch (error) {
       return handleError(error, reply);
     }

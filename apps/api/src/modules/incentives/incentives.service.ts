@@ -3,6 +3,13 @@ import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { getSubtreeIds } from '../../shared/hierarchy';
 import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissionRuleInput } from './incentives.schema';
 
+// TS: round a money value to 2 decimal places (paise precision) to eliminate
+// IEEE-754 float drift before writing to the NUMERIC(12,2) ledger column.
+// e.g. 3333.33 * 3 / 100 = 99.99989... → roundMoney → 100.00
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 // Roles that can earn incentives. MD and Director never earn.
 const EARNER_ROLES = new Set(['sales_officer', 'abm', 'branch_manager', 'gm', 'branch_admin']);
 
@@ -141,10 +148,19 @@ export const IncentiveService = {
     args: DistributeArgs
   ): Promise<any[]> {
     const projectId = await IncentiveService.resolveProjectIdByCode(db, args.schemeCode);
-    if (!projectId) return [];
+    if (!projectId) {
+      // MISCONFIG: scheme code is not registered in the projects table — no incentive paid.
+      console.warn('[IncentiveService] distributeIncentives: no project found for scheme_code=%s — zero incentive paid. Register it in the projects table.', args.schemeCode);
+      return [];
+    }
 
     const ratesMap = await IncentiveService.loadProjectRates(db, projectId);
-    if (Object.keys(ratesMap).length === 0) return [];
+    if (Object.keys(ratesMap).length === 0) {
+      // MISCONFIG: project exists but has no commission rules seeded. Every payout will be ₹0
+      // until rows are added to scheme_commission_rules for project_id=%s.
+      console.warn('[IncentiveService] distributeIncentives: no commission rules found for scheme_code=%s (project_id=%s) — zero incentive paid. Seed scheme_commission_rules for this project.', args.schemeCode, projectId);
+      return [];
+    }
 
     const recipients: Array<{ userId: string; amount: number }> = [];
 
@@ -153,8 +169,13 @@ export const IncentiveService = {
         return [];
       }
       const rate = ratesMap[args.percentRole];
-      if (!rate || rate.rateType !== 'percent' || rate.amount <= 0) return [];
-      const amount = args.baseAmount * (rate.amount / 100);
+      if (!rate || rate.rateType !== 'percent' || rate.amount <= 0) {
+        // MISCONFIG: the expected percent rule for this role is missing or zero.
+        console.warn('[IncentiveService] distributeIncentives: percent_referrer rule missing or zero for scheme_code=%s percentRole=%s — zero incentive paid. Add a percent-type rule in scheme_commission_rules.', args.schemeCode, args.percentRole);
+        return [];
+      }
+      // TS: roundMoney eliminates IEEE-754 drift before writing to the NUMERIC(12,2) column
+      const amount = roundMoney(args.baseAmount * (rate.amount / 100));
       if (amount > 0) {
         recipients.push({ userId: args.dealMakerUserId, amount });
       }
@@ -205,8 +226,14 @@ export const IncentiveService = {
         for (let i = 0; i <= dealMakerChainPos; i++) {
           const r = ratesMap[CHAIN_ORDER[i] as ChainRole];
           if (r && r.rateType === 'fixed' && r.amount > 0) {
-            dealMakerAccumulated += r.amount;
+            // TS: roundMoney after each addition prevents float accumulation drift
+            dealMakerAccumulated = roundMoney(dealMakerAccumulated + r.amount);
           }
+        }
+        if (dealMakerAccumulated === 0) {
+          // MISCONFIG: dealMaker role is in the chain but all fixed rules up to their
+          // level are missing or zero — zero incentive will be paid.
+          console.warn('[IncentiveService] distributeIncentives: fixed_chain accumulated ₹0 for dealMaker role=%s scheme=%s. Check scheme_commission_rules for this project.', dealMaker.role, args.schemeCode);
         }
       }
 

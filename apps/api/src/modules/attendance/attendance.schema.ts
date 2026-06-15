@@ -8,6 +8,10 @@ export const SubmitAttendanceSchema = z.object({
   checkInLat: z.number().min(-90).max(90).optional(),
   // Longitude coordinate for office-based verification
   checkInLng: z.number().min(-180).max(180).optional(),
+  // Device-reported GPS accuracy in metres (from pos.coords.accuracy).
+  // Used server-side to widen the geofence tolerance proportionally — not to bypass it.
+  // Capped at 100 m on the server regardless of what the client sends.
+  checkInAccuracy: z.number().min(0).optional(),
   // The identifier for the uploaded photo stored in AWS S3
   photoKey: z.string().min(1).optional(),
   // A descriptive note required for field visits

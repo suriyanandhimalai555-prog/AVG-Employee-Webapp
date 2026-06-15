@@ -4,6 +4,10 @@
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
+import type { UpdateBranchLocationInput } from './branch.schema';
+// runInTransaction ensures setHeadBranch is atomic: clearing the old flag and
+// setting the new one never leave the DB with zero or two head branches.
+import { runInTransaction } from '../../shared/transaction-helper';
 
 const BRANCHES_CACHE_KEY = 'cache:branches:all';
 const BRANCHES_CACHE_TTL = 600; // 10 minutes — branches change rarely
@@ -21,6 +25,8 @@ export const BranchService = {
 
     const result = await db.query(
       `SELECT b.id, b.name, b.shift_start, b.shift_end, b.timezone, b.is_active,
+              b.is_head_branch,
+              b.latitude, b.longitude, b.geofence_radius_m,
               u_gm.name AS gm_name,
               u_admin.name AS admin_name
        FROM branches b
@@ -182,5 +188,72 @@ export const BranchService = {
     ]);
 
     return result.rows[0];
+  },
+
+  // ─── SET BRANCH LOCATION (Management only) ───
+  // Stores the geofence coordinates and radius for a branch.
+  // Passing latitude=null / longitude=null clears the geofence — the branch then
+  // has no location restriction and check-in works from anywhere.
+  async setBranchLocation(
+    db: Pool,
+    redis: Redis,
+    branchId: string,
+    payload: UpdateBranchLocationInput
+  ): Promise<any> {
+    // Build SET clause: radius is only changed when explicitly supplied
+    const result = await db.query(
+      `UPDATE branches
+       SET latitude          = $1,
+           longitude         = $2,
+           geofence_radius_m = COALESCE($3, geofence_radius_m)
+       WHERE id = $4
+       RETURNING id, name, latitude, longitude, geofence_radius_m`,
+      [
+        payload.latitude,
+        payload.longitude,
+        payload.geofenceRadiusM ?? null,
+        branchId,
+      ]
+    );
+
+    if (result.rows.length === 0) throw new NotFoundError('Branch not found');
+
+    // Bust both caches so the next GET /branches and GET /branches/:id reflect the change
+    await Promise.all([
+      redis.del(BRANCHES_CACHE_KEY),
+      redis.del(`cache:branch:${branchId}`),
+    ]);
+
+    return result.rows[0];
+  },
+
+  // ─── SET HEAD BRANCH (Management only) ───
+  // Atomically moves the is_head_branch flag to the chosen branch. Exactly one
+  // branch will have is_head_branch = true after this call completes, or the
+  // transaction rolls back leaving the state unchanged.
+  async setHeadBranch(db: Pool, redis: Redis, branchId: string): Promise<any> {
+    const branch = await runInTransaction(db, async (client) => {
+      // Clear the old head branch (0 or 1 row — safe either way)
+      await client.query(
+        `UPDATE branches SET is_head_branch = false WHERE is_head_branch = true`
+      );
+      // Set the new one — only succeeds if the branch exists and is active
+      const result = await client.query(
+        `UPDATE branches
+         SET    is_head_branch = true
+         WHERE  id = $1 AND is_active = true
+         RETURNING id, name, is_head_branch`,
+        [branchId]
+      );
+      if (result.rows.length === 0) {
+        // Trigger ROLLBACK: the first UPDATE's cleared flag is also reverted
+        throw new NotFoundError('Branch not found or is inactive');
+      }
+      return result.rows[0];
+    });
+
+    // Bust the branches list cache so the next GET /branches reflects the change
+    await redis.del(BRANCHES_CACHE_KEY);
+    return branch;
   },
 };

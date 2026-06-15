@@ -141,7 +141,12 @@ export const BuildersIncentivesService = {
     for (const person of chain) {
       const key: RulesKey = `${args.plan.package_number}:${person.role}:one_time`;
       const amount = rulesMap.get(key) ?? 0;
-      if (amount <= 0) continue;
+      if (amount <= 0) {
+        // MISCONFIG: builders_incentive_rules is missing a one_time row for this tier+role.
+        // The enrollment succeeds but this person receives zero incentive.
+        console.warn('[BuildersIncentivesService] distributeOneTime: missing/zero rule for package=%d role=%s — zero one_time incentive paid. Check builders_incentive_rules.', args.plan.package_number, person.role);
+        continue;
+      }
 
       // TS: override created_at when an effective date is provided (backdated entry)
       await client.query(
@@ -182,7 +187,12 @@ export const BuildersIncentivesService = {
     const rulesMap = await BuildersIncentivesService.loadRulesMap(client);
     const key: RulesKey = `${args.plan.package_number}:sales_officer:monthly`;
     const amount = rulesMap.get(key) ?? 0;
-    if (amount <= 0) return;
+    if (amount <= 0) {
+      // MISCONFIG: builders_incentive_rules is missing a monthly row for this tier.
+      // The payout month is recorded but the SO receives zero monthly incentive.
+      console.warn('[BuildersIncentivesService] creditMonthly: missing/zero rule for package=%d sales_officer monthly — zero monthly incentive paid. Check builders_incentive_rules.', args.plan.package_number);
+      return;
+    }
 
     const description =
       `Builders monthly incentive: Month ${args.monthNumber} (Tier ${args.plan.package_number})`;

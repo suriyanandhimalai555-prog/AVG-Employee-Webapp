@@ -23,5 +23,21 @@ export const UpdateBranchSchema = z.object({
   isActive:   z.boolean().optional(),
 });
 
-export type CreateBranchInput = z.infer<typeof CreateBranchSchema>;
-export type UpdateBranchInput = z.infer<typeof UpdateBranchSchema>;
+// Set the head branch (Management only — single global head branch for all schemes)
+export const SetHeadBranchSchema = z.object({
+  branchId: z.string().uuid(),
+});
+
+// Set branch geofence coordinates (Management only).
+// latitude/longitude may be null to CLEAR the geofence (branch then has no location restriction).
+// geofenceRadiusM is optional — omitting it leaves the existing radius unchanged.
+export const UpdateBranchLocationSchema = z.object({
+  latitude:        z.number().min(-90).max(90).nullable(),
+  longitude:       z.number().min(-180).max(180).nullable(),
+  geofenceRadiusM: z.number().int().min(20).max(5000).optional(),
+});
+
+export type CreateBranchInput          = z.infer<typeof CreateBranchSchema>;
+export type UpdateBranchInput          = z.infer<typeof UpdateBranchSchema>;
+export type SetHeadBranchInput         = z.infer<typeof SetHeadBranchSchema>;
+export type UpdateBranchLocationInput  = z.infer<typeof UpdateBranchLocationSchema>;

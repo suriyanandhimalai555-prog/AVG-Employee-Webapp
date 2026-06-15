@@ -1,6 +1,7 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../shared/errors';
+import { runInTransaction } from '../../shared/transaction-helper';
 import type {
   CreateProjectInput,
   UpdateProjectInput,
@@ -134,15 +135,24 @@ export const MoneyService = {
     // Insert collection — self-held cash is auto-approved so it lands in the wallet immediately.
     // collectionDate (YYYY-MM-DD) is set by branch_admin to backdate within the active cycle;
     // all other roles always use NOW() as submitted_at.
+    //
+    // ON CONFLICT on idempotency_key (partial unique index from migration 008):
+    // If the client provides an idempotencyKey and retries the same request, the conflict
+    // handler returns the original row — no duplicate collection, no double incentive credit.
+    // NULL idempotency_key (key omitted) bypasses the partial index and behaves as before.
+    const idempotencyKey = payload.idempotencyKey ?? null;
     const result = await db.query(
       `INSERT INTO money_collections (
         user_id, project_id, amount, mode, client_name, client_phone, photo_key,
-        assigned_verifier_id, status, verified_at, submitted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-        CASE WHEN $9 THEN 'approved'::text ELSE 'pending'::text END,
-        CASE WHEN $9 THEN NOW() ELSE NULL END,
-        COALESCE($10::date, NOW())
-      ) RETURNING *`,
+        assigned_verifier_id, idempotency_key, status, verified_at, submitted_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+        CASE WHEN $10 THEN 'approved'::text ELSE 'pending'::text END,
+        CASE WHEN $10 THEN NOW() ELSE NULL END,
+        COALESCE($11::date, NOW())
+      )
+      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+      DO NOTHING
+      RETURNING *`,
       [
         userId,
         payload.projectId,
@@ -152,10 +162,20 @@ export const MoneyService = {
         payload.clientPhone,
         payload.photoKey || null,
         assignedVerifierId,
+        idempotencyKey,
         selfHeld,
         payload.collectionDate || null,
       ]
     );
+
+    // If ON CONFLICT DO NOTHING fired (duplicate idempotency key), fetch the original row.
+    if (!result.rows[0] && idempotencyKey) {
+      const existing = await db.query(
+        'SELECT * FROM money_collections WHERE idempotency_key = $1',
+        [idempotencyKey]
+      );
+      return existing.rows[0];
+    }
 
     return result.rows[0];
   },
@@ -167,39 +187,54 @@ export const MoneyService = {
     collectionId: string,
     payload: VerifyCollectionInput
   ): Promise<any> {
-    const recordResult = await db.query('SELECT * FROM money_collections WHERE id = $1', [collectionId]);
-    if (recordResult.rows.length === 0) {
-      throw new NotFoundError('Money collection record not found');
-    }
-
-    const record = recordResult.rows[0];
-
-    // Privacy & Authorization check
-    if (verifierRole !== 'md' && record.assigned_verifier_id !== verifierId) {
-      throw new ForbiddenError('You do not have permission to verify this transaction');
-    }
-
-    if (record.status !== 'pending') {
-      throw new ConflictError('This transaction has already been processed');
-    }
-
-    const result = await db.query(
-      `UPDATE money_collections SET
-        status = $1,
-        rejection_note = $2,
-        verified_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [payload.status, payload.rejectionNote || null, collectionId]
-    );
-
-    if (payload.status === 'rejected' && record.source_collection_ids && record.source_collection_ids.length > 0) {
-      await db.query(
-        'UPDATE money_collections SET is_forwarded = false WHERE id = ANY($1)',
-        [record.source_collection_ids]
+    // TS: runInTransaction wraps BEGIN/COMMIT/ROLLBACK — both the status UPDATE and
+    // the is_forwarded reset are all-or-nothing. FOR UPDATE serialises concurrent
+    // verify/reject attempts on the same row, turning the TOCTOU re-check into a
+    // true exclusive guard.
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Re-read inside the transaction with FOR UPDATE to prevent concurrent double-processing.
+      const recordResult = await client.query(
+        'SELECT * FROM money_collections WHERE id = $1 FOR UPDATE',
+        [collectionId]
       );
-    }
+      if (recordResult.rows.length === 0) {
+        throw new NotFoundError('Money collection record not found');
+      }
 
-    return result.rows[0];
+      const record = recordResult.rows[0];
+
+      // Privacy & Authorization check — performed after the lock so the auth check
+      // uses the same snapshot as the subsequent UPDATE.
+      if (verifierRole !== 'md' && record.assigned_verifier_id !== verifierId) {
+        throw new ForbiddenError('You do not have permission to verify this transaction');
+      }
+
+      // This check is now atomic with the UPDATE — no other request can sneak in
+      // and change the status between the SELECT and UPDATE within this transaction.
+      if (record.status !== 'pending') {
+        throw new ConflictError('This transaction has already been processed');
+      }
+
+      const result = await client.query(
+        `UPDATE money_collections SET
+          status = $1,
+          rejection_note = $2,
+          verified_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [payload.status, payload.rejectionNote || null, collectionId]
+      );
+
+      // TS: un-forward the source collections in the same transaction so a rejection
+      // can never leave forwarded rows in a dangling state if this update fails.
+      if (payload.status === 'rejected' && record.source_collection_ids && record.source_collection_ids.length > 0) {
+        await client.query(
+          'UPDATE money_collections SET is_forwarded = false WHERE id = ANY($1)',
+          [record.source_collection_ids]
+        );
+      }
+
+      return result.rows[0];
+    });
   },
 
   async getCollections(

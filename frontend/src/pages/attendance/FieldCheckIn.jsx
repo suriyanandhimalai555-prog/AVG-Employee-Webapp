@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut } from 'lucide-react';
+import { Camera, ArrowRight, CheckCircle2, ChevronRight, Loader2, LogOut, MapPin } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { useCheckIn } from './hooks/useCheckIn';
@@ -90,6 +90,33 @@ export const FieldCheckIn = () => {
           </div>
 
           <div className="pb-32 space-y-6">
+            {/* GPS status — shown early so the user can fix location before reaching step 3 */}
+            <div className="flex items-center gap-2 px-1">
+              <div className={`w-2 h-2 rounded-full shrink-0 ${
+                gpsStatus === 'fetching' ? 'bg-amber-400 animate-pulse' :
+                gpsStatus === 'error'    ? 'bg-red-500' :
+                gpsStatus               ? 'bg-emerald' :
+                                          'bg-navy/20'
+              }`} />
+              <p className={`text-[10px] font-bold ${
+                gpsStatus === 'error' ? 'text-red-500' :
+                gpsStatus === 'fetching' ? 'text-amber-600' :
+                gpsStatus ? 'text-emerald' : 'text-navy/30'
+              }`}>
+                {gpsStatus === 'fetching' ? 'Acquiring GPS…' :
+                 gpsStatus === 'error'    ? (gpsPermissionDenied ? 'Location blocked — check browser settings' : 'Location unavailable — will retry on submit') :
+                 gpsStatus               ? 'Location ready' : 'Waiting for GPS…'}
+              </p>
+              {gpsStatus === 'error' && (
+                <button
+                  onClick={fetchGps}
+                  className="ml-auto text-[10px] font-bold text-indigo underline underline-offset-2"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+
             <input
               type="file"
               accept="image/*"
@@ -147,20 +174,34 @@ export const FieldCheckIn = () => {
             </div>
           </Card>
 
-          <div className="pb-32 pt-8 flex gap-4">
-            <button
-              onClick={() => setFieldStep(1)}
-              className="p-5 rounded-2xl bg-white text-navy font-bold flex items-center gap-2 tactile-press card-shadow"
-            >
-              <ArrowRight size={20} className="rotate-180" /> Back
-            </button>
-            <button
-              onClick={() => setFieldStep(3)}
-              disabled={!fieldNote.trim()}
-              className="flex-1 gradient-primary text-white p-5 rounded-2xl font-bold flex items-center justify-center gap-3 tactile-press shadow-xl shadow-indigo/20 disabled:opacity-50"
-            >
-              Next Step <ArrowRight size={20} />
-            </button>
+          <div className="pb-32 pt-8 space-y-3">
+            {/* GPS status reminder on the note step */}
+            {gpsStatus === 'error' && (
+              <div className="flex items-center gap-2 px-1">
+                <MapPin size={12} className="text-red-400 shrink-0" />
+                <p className="text-[10px] font-bold text-red-500 flex-1">
+                  {gpsPermissionDenied ? 'Location blocked — check browser settings' : 'Location unavailable'}
+                </p>
+                <button onClick={fetchGps} className="text-[10px] font-bold text-indigo underline underline-offset-2">
+                  Retry
+                </button>
+              </div>
+            )}
+            <div className="flex gap-4">
+              <button
+                onClick={() => setFieldStep(1)}
+                className="p-5 rounded-2xl bg-white text-navy font-bold flex items-center gap-2 tactile-press card-shadow"
+              >
+                <ArrowRight size={20} className="rotate-180" /> Back
+              </button>
+              <button
+                onClick={() => setFieldStep(3)}
+                disabled={!fieldNote.trim()}
+                className="flex-1 gradient-primary text-white p-5 rounded-2xl font-bold flex items-center justify-center gap-3 tactile-press shadow-xl shadow-indigo/20 disabled:opacity-50"
+              >
+                Next Step <ArrowRight size={20} />
+              </button>
+            </div>
           </div>
         </div>
       )}

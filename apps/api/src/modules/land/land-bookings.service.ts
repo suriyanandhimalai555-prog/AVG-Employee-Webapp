@@ -277,6 +277,8 @@ export const LandBookingsService = {
   },
 
   // ─── RECORD ADVANCE PAYMENT ───────────────────────────────────────────────
+  // Wrapped in runInTransaction so the booking UPDATE and audit log row are
+  // either both committed or both rolled back — mirrors recordFullPayment below.
   async recordAdvance(
     db: Pool,
     userId: string,
@@ -284,44 +286,49 @@ export const LandBookingsService = {
     branchId: string | null,
     payload: RecordAdvanceInput
   ): Promise<any> {
-    const params: any[] = [bookingId];
-    let findWhere = 'id = $1';
-    if (branchId) { findWhere += ` AND branch_id = $2`; params.push(branchId); }
+    return runInTransaction(db, async (client: PoolClient) => {
+      const params: any[] = [bookingId];
+      let findWhere = 'id = $1';
+      if (branchId) { findWhere += ` AND branch_id = $2`; params.push(branchId); }
 
-    const existing = await db.query(
-      `SELECT * FROM land_bookings WHERE ${findWhere}`,
-      params
-    );
-    if (existing.rows.length === 0) throw new NotFoundError('Booking not found');
-    const booking = existing.rows[0];
+      // TS: FOR UPDATE locks the row so concurrent advance attempts are serialised.
+      const existing = await client.query(
+        `SELECT * FROM land_bookings WHERE ${findWhere} FOR UPDATE`,
+        params
+      );
+      if (existing.rows.length === 0) throw new NotFoundError('Booking not found');
+      const booking = existing.rows[0];
 
-    if (booking.payment_mode !== 'advance_full_payment') {
-      throw new ValidationError('This booking uses full_payment mode; no advance applies');
-    }
-    if (booking.status !== 'booked') {
-      throw new ValidationError(`Advance already recorded (current status: ${booking.status})`);
-    }
+      if (booking.payment_mode !== 'advance_full_payment') {
+        throw new ValidationError('This booking uses full_payment mode; no advance applies');
+      }
+      if (booking.status !== 'booked') {
+        throw new ValidationError(`Advance already recorded (current status: ${booking.status})`);
+      }
 
-    const result = await db.query(
-      `UPDATE land_bookings
-       SET advance_amount = $1, advance_date = $2, status = 'advance_paid',
-           advance_channel = $3, advance_proof_key = $4,
-           updated_by = $5, updated_at = now()
-       WHERE id = $6
-       RETURNING *`,
-      [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash', payload.advanceProofKey || null, userId, bookingId]
-    );
-    const updated = result.rows[0];
+      const result = await client.query(
+        `UPDATE land_bookings
+         SET advance_amount = $1, advance_date = $2, status = 'advance_paid',
+             advance_channel = $3, advance_proof_key = $4,
+             updated_by = $5, updated_at = now()
+         WHERE id = $6
+         RETURNING *`,
+        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash', payload.advanceProofKey || null, userId, bookingId]
+      );
+      const updated = result.rows[0];
 
-    await LandAuditService.log(db, {
-      entity:    'booking',
-      recordId:  bookingId,
-      action:    'advance_payment',
-      changedBy: userId,
-      newValues: { advance_amount: payload.advanceAmount, advance_date: payload.advanceDate, status: 'advance_paid' },
+      // TS: pass the transaction client so the audit row and booking update share
+      // the same transaction — an audit-log failure rolls back the booking change too.
+      await LandAuditService.log(client, {
+        entity:    'booking',
+        recordId:  bookingId,
+        action:    'advance_payment',
+        changedBy: userId,
+        newValues: { advance_amount: payload.advanceAmount, advance_date: payload.advanceDate, status: 'advance_paid' },
+      });
+
+      return updated;
     });
-
-    return updated;
   },
 
   // ─── RECORD FULL PAYMENT ──────────────────────────────────────────────────

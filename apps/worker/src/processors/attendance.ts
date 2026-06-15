@@ -16,6 +16,10 @@ import { redis } from '../redis';
 export const processAttendance = async (job: Job): Promise<{ success: boolean }> => {
   console.log(`🔄 Attendance job ${job.id} — user ${job.data.userId}`);
 
+  // TS: hoisted so the redis.publish() below (outside try/catch) can read the value
+  // set inside the try block. Defaults to false — overwritten after the INSERT result.
+  let isDuplicate = false;
+
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -55,7 +59,12 @@ export const processAttendance = async (job: Job): Promise<{ success: boolean }>
       ]
     );
 
-    if (insertResult.rowCount && insertResult.rowCount > 0) {
+    // TS: assign to the outer-scoped isDuplicate so redis.publish() can read it after
+    // the try/finally block. True when ON CONFLICT fired but the WHERE status='absent'
+    // guard prevented the update — row already present and non-absent, nothing written.
+    isDuplicate = !insertResult.rowCount || insertResult.rowCount === 0;
+
+    if (!isDuplicate) {
       const attendanceId: string = insertResult.rows[0].id;
       await client.query(
         `INSERT INTO attendance_audit (attendance_id, changed_by, change_type, old_data, new_data)
@@ -79,11 +88,14 @@ export const processAttendance = async (job: Job): Promise<{ success: boolean }>
   await redis.publish(
     'attendance:confirmed',
     JSON.stringify({
-      userId:   job.data.userId,
-      date:     job.data.date,
-      status:   job.data.status,
-      jobId:    job.id,
-      markedBy: job.data.markedBy,
+      userId:    job.data.userId,
+      date:      job.data.date,
+      status:    job.data.status,
+      jobId:     job.id,
+      markedBy:  job.data.markedBy,
+      // Socket.io passes this to the frontend; both fresh write and duplicate no-op show
+      // a green checkmark, but the client can differentiate if needed (e.g. analytics).
+      duplicate: isDuplicate,
     })
   );
 

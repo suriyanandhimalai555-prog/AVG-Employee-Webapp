@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -66,6 +66,11 @@ export const MoneySubmitPage = () => {
   const [formError, setFormError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const fileInputRef = useRef(null);
+  // Idempotency key — generated once per form mount via crypto.randomUUID().
+  // Retries (network timeout → user clicks again) send the same key so the server
+  // returns the original row instead of creating a duplicate collection.
+  // The ref is stable across re-renders; a new key is generated on next component mount.
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 
   const handlePhotoCapture = (e) => {
     const file = e.target.files?.[0];
@@ -124,6 +129,8 @@ export const MoneySubmitPage = () => {
         photoKey,
         // branch_admin picks a specific date within the cycle; others always use server time
         collectionDate: user?.role === 'branch_admin' ? formState.collectionDate : undefined,
+        // Idempotency key — safe to retry: same key returns the original row, not a duplicate
+        idempotencyKey,
       }).unwrap();
 
       setSuccessMsg(

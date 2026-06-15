@@ -30,7 +30,10 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
 
   const { data: historyData = [], isFetching } = useGetHistoryQuery(
     { userId: employee?.id, month, year },
-    { skip: !isOpen || !employee?.id }
+    // refetchOnMountOrArgChange ensures a fresh network call fires whenever
+    // month/year changes (or the modal reopens) — without it RTK Query serves
+    // the stale cached entry and the calendar shows nothing on month switch.
+    { skip: !isOpen || !employee?.id, refetchOnMountOrArgChange: true, refetchOnFocus: true }
   );
 
   // Only fetch photo URL when a field record with a photo is selected

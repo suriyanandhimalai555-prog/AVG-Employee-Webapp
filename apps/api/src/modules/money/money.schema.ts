@@ -20,6 +20,10 @@ export const SubmitCollectionSchema = z.object({
   // Optional override for branch_admin — must be within the active cycle (6th of
   // current month → 5th of next month). Defaults to current server time if omitted.
   collectionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  // Client-generated UUID for idempotency — retries with the same key are safe.
+  // The partial unique index (idx_money_collections_idempotency_key, migration 008)
+  // ensures only one row is ever created for a given key.
+  idempotencyKey: z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
   // For non-cash modes, a photo receipt is always required.
   // For cash, handedOverTo is optional — omitting it means the collector keeps
