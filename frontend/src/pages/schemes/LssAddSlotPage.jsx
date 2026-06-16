@@ -29,6 +29,7 @@ import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { TransactionIdField } from '../../components/money/TransactionIdField';
 
 const SLOTS_PER_ROOM  = 20;
 const WRITER_ROLES    = new Set(['branch_admin', 'management', 'md', 'director']);
@@ -56,6 +57,7 @@ export const LssAddSlotPage = () => {
     saleDate:    getTodayISO(),
   });
   const [proofKey,     setProofKey]     = useState([]);
+  const [txnId,        setTxnId]        = useState('');
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -88,9 +90,9 @@ export const LssAddSlotPage = () => {
       setError(`Quantity must be between 1 and ${SLOTS_PER_ROOM}.`); return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.paymentMode !== 'cash' && !proofKey.length) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
       setShowProofErr(true);
-      setError('Please upload payment proof for GPay/bank payments.');
+      setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
@@ -101,6 +103,7 @@ export const LssAddSlotPage = () => {
         quantity:    effectiveQuantity,
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
+        transactionId: txnId.trim() || undefined,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
@@ -279,7 +282,7 @@ export const LssAddSlotPage = () => {
         <FormField label="Payment mode" required>
           <PaymentModeSelect
             value={form.paymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
             variant="buttons"
           />
         </FormField>
@@ -288,6 +291,13 @@ export const LssAddSlotPage = () => {
           mode={form.paymentMode}
           proofKey={proofKey}
           onChange={setProofKey}
+          showError={showProofErr}
+        />
+
+        <TransactionIdField
+          mode={form.paymentMode}
+          value={txnId}
+          onChange={setTxnId}
           showError={showProofErr}
         />
 

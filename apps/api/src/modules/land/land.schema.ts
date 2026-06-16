@@ -102,12 +102,20 @@ export const RecordAdvanceSchema = z.object({
   advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   advanceChannel:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   advanceProofKey: z.array(z.string()).optional(),
+  advanceTransactionId: z.string().max(100).optional(),
 }).superRefine((data, ctx) => {
   if (data.advanceChannel !== 'cash' && !data.advanceProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'advanceProofKey is required for gpay and bank_receipt payments',
       path: ['advanceProofKey'],
+    });
+  }
+  if (data.advanceChannel !== 'cash' && !data.advanceTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'advanceTransactionId is required for gpay and bank_receipt payments',
+      path: ['advanceTransactionId'],
     });
   }
 });
@@ -117,6 +125,7 @@ export const RecordFullPaymentSchema = z.object({
   fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   fullChannel:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   fullProofKey:    z.array(z.string()).optional(),
+  fullTransactionId: z.string().max(100).optional(),
   loanTaken:       z.boolean().default(false),
   loanAmount:      z.number().positive().optional(),
 }).superRefine((data, ctx) => {
@@ -125,6 +134,13 @@ export const RecordFullPaymentSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'fullProofKey is required for gpay and bank_receipt payments',
       path: ['fullProofKey'],
+    });
+  }
+  if (data.fullChannel !== 'cash' && !data.fullTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'fullTransactionId is required for gpay and bank_receipt payments',
+      path: ['fullTransactionId'],
     });
   }
 });
@@ -148,12 +164,20 @@ export const MarkPayoutPaidSchema = z.object({
   paidDate:    z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paidChannel: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   paidProofKey: z.array(z.string()).optional(),
+  paidTransactionId: z.string().max(100).optional(),
 }).superRefine((data, ctx) => {
   if (data.paidChannel !== 'cash' && !data.paidProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'paidProofKey is required for gpay and bank_receipt payments',
       path: ['paidProofKey'],
+    });
+  }
+  if (data.paidChannel !== 'cash' && !data.paidTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'paidTransactionId is required for gpay and bank_receipt payments',
+      path: ['paidTransactionId'],
     });
   }
 });
@@ -180,10 +204,12 @@ export const CorrectLandBookingSchema = z.object({
   advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   advanceChannel:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   advanceProofKey: z.array(z.string()).optional(),
+  advanceTransactionId: z.string().max(100).optional().nullable(),
   fullAmount:      z.number().positive().optional(),
   fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   fullChannel:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   fullProofKey:    z.array(z.string()).optional(),
+  fullTransactionId: z.string().max(100).optional().nullable(),
   loanTaken:       z.boolean().optional(),
   loanAmount:      z.number().positive().optional().nullable(),
   notes:           z.string().max(1000).optional().nullable(),
@@ -201,6 +227,20 @@ export const CorrectLandBookingSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'fullProofKey is required when setting fullChannel to gpay or bank_receipt',
       path: ['fullProofKey'],
+    });
+  }
+  if (data.advanceChannel && data.advanceChannel !== 'cash' && !data.advanceTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'advanceTransactionId is required when setting advanceChannel to gpay or bank_receipt',
+      path: ['advanceTransactionId'],
+    });
+  }
+  if (data.fullChannel && data.fullChannel !== 'cash' && !data.fullTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'fullTransactionId is required when setting fullChannel to gpay or bank_receipt',
+      path: ['fullTransactionId'],
     });
   }
 });

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, BookOpen, ChevronRight } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetLandBookingsQuery } from '../../store/api/apiSlice';
+import { REFERRER_ROLES } from '../../lib/schemeConstants';
 import { formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -37,6 +38,9 @@ export const LandBookingsPage = () => {
   const user         = useSelector(selectCurrentUser);
   const navigate     = useNavigate();
   const isBranchAdmin = user?.role === 'branch_admin';
+  // Referrer-only roles get the personal "my referrals" framing; the server already
+  // returns only the bookings they referred.
+  const isReferrerView = REFERRER_ROLES.has(user?.role);
   const [statusFilter, setStatusFilter] = useState('');
 
   const { data: result, isLoading } = useGetLandBookingsQuery({
@@ -60,8 +64,8 @@ export const LandBookingsPage = () => {
     <SchemePageWrapper>
       <SchemePageHeader
         backTo="/money/schemes/land"
-        title="Bookings"
-        subtitle="Land plot bookings"
+        title={isReferrerView ? 'My Referrals' : 'Bookings'}
+        subtitle={isReferrerView ? 'Land bookings you referred' : 'Land plot bookings'}
         action={rightAction}
       />
 

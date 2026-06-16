@@ -7,6 +7,7 @@ import {
   useGetUploadUrlMutation,
   apiSlice,
 } from '../../../store/api/apiSlice';
+import { useGeolocation } from '../../../hooks/useGeolocation';
 
 /**
  * Encapsulates all state and async logic for the employee self-check-in flow.
@@ -24,15 +25,24 @@ export const useCheckIn = ({ onSuccess } = {}) => {
   const [fieldPhoto, setFieldPhoto] = useState(null); // { file, previewUrl }
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  const [gpsStatus, setGpsStatus] = useState(null); // null | 'fetching' | { lat, lng, accuracy } | 'error'
 
   // Inline error message — replaces browser alert() for production
   const [checkInError, setCheckInError] = useState(null);
 
+  // GPS state via the shared hook. Map to the existing gpsStatus shape
+  // (null | 'fetching' | { lat, lng, accuracy } | 'error') so FieldCheckIn.jsx
+  // needs no changes.
+  const geo = useGeolocation();
+  // Shape: null (idle) | 'fetching' | 'error' | { lat, lng, accuracy } (ready).
+  // Always guard with explicit string checks before accessing .lat — truthy string
+  // 'fetching' or 'error' would pass a naive `gpsStatus && gpsStatus.lat` check.
+  const gpsStatus = geo.status === 'ready'  ? geo.coords   // { lat, lng, accuracy }
+                  : geo.status === 'idle'   ? null
+                  : geo.status;                             // 'fetching' | 'error'
   // True when the browser has permanently denied location access (error code 1).
   // Distinguished from a transient failure (no signal, timeout) so the UI can show
   // "go to browser settings" instead of just "try again".
-  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+  const gpsPermissionDenied = geo.errorCode === 1;
 
   // Optimistic flag: show as marked immediately after submit (worker writes async)
   const [submittedThisSession, setSubmittedThisSession] = useState(false);
@@ -61,21 +71,7 @@ export const useCheckIn = ({ onSuccess } = {}) => {
       : (submittedThisSession ? { status: 'present', mode: 'office' } : null);
 
   /** Call this when the user enters the office or field check-in view, or to re-prompt after error. */
-  const fetchGps = () => {
-    setGpsStatus('fetching');
-    setGpsPermissionDenied(false); // reset on every attempt
-    if (!navigator.geolocation) { setGpsStatus('error'); return; }
-    navigator.geolocation.getCurrentPosition(
-      // accuracy: metres radius that the browser reports for this fix (used server-side to widen geofence tolerance)
-      (pos) => setGpsStatus({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      (err) => {
-        setGpsStatus('error');
-        // code 1 = PERMISSION_DENIED — user blocked location; must go to browser settings
-        if (err.code === 1) setGpsPermissionDenied(true);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    );
-  };
+  const fetchGps = geo.request;
 
   const handlePhotoCapture = (e) => {
     const file = e.target.files?.[0];

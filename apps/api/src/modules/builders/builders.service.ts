@@ -111,11 +111,11 @@ export const BuildersService = {
             investment_amount, monthly_payout, cash_final_monthly, house_worth,
             lump_sum_date, lump_sum_mode, lump_sum_proof_key,
             cooling_end_date, payout_start_date,
-            referrer_id, referrer_name, notes, entered_by)
+            referrer_id, referrer_name, notes, entered_by, lump_sum_transaction_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                  ($8::date + $11 * INTERVAL '1 day'),
                  ($8::date + $11 * INTERVAL '1 day'),
-                 $12, $13, $14, $15)
+                 $12, $13, $14, $15, $16)
          RETURNING *`,
         [
           branchId,
@@ -133,6 +133,7 @@ export const BuildersService = {
           referrerName,
           payload.notes || null,
           enteredBy,
+          payload.lumpSumTransactionId || null,
         ]
       );
       const plan = insertResult.rows[0];
@@ -157,8 +158,17 @@ export const BuildersService = {
     branchId: string,
     query: GetBuildersPlansQuery
   ): Promise<{ data: any[]; total: number }> {
-    const params: any[] = [branchId];
-    let where = 'p.branch_id = $1';
+    // Referrer-scoped roles see their own referred plans across ALL branches (match
+    // on referrer_id, drop the branch filter); everyone else stays branch-scoped.
+    const params: any[] = [];
+    let where: string;
+    if (query.referrerId) {
+      params.push(query.referrerId);
+      where = 'p.referrer_id = $1';
+    } else {
+      params.push(branchId);
+      where = 'p.branch_id = $1';
+    }
     let idx = 2;
 
     if (query.status === 'in_progress') {
@@ -167,11 +177,6 @@ export const BuildersService = {
     } else if (query.status) {
       where += ` AND p.status = $${idx++}`;
       params.push(query.status);
-    }
-
-    if (query.referrerId) {
-      where += ` AND p.referrer_id = $${idx++}`;
-      params.push(query.referrerId);
     }
 
     const countResult = await db.query(
@@ -317,8 +322,8 @@ export const BuildersService = {
       try {
         const insertResult = await client.query(
           `INSERT INTO builders_payouts
-             (plan_id, month_number, amount, payout_date, payment_mode, proof_key, notes, entered_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (plan_id, month_number, amount, payout_date, payment_mode, proof_key, transaction_id, notes, entered_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING *`,
           [
             planId,
@@ -327,6 +332,7 @@ export const BuildersService = {
             payload.payoutDate,
             payload.paymentMode,
             payload.proofKey || null,
+            payload.transactionId || null,
             payload.notes || null,
             enteredBy,
           ]
@@ -513,11 +519,15 @@ export const BuildersService = {
   async getBranchSummary(
     db: Pool,
     branchId: string,
-    _scopedToUserId?: string,
+    scopedToUserId?: string,
     dateFilter?: { startDate?: string; endDate?: string }
   ): Promise<any> {
-    const params: any[] = [branchId];
-    let where = 'p.branch_id = $1';
+    // Referrer-scoped roles: count their referred plans across ALL branches (match
+    // on referrer_id, drop the branch filter); otherwise scope to the branch.
+    const params: any[] = [];
+    let where: string;
+    if (scopedToUserId) { params.push(scopedToUserId); where = 'p.referrer_id = $1'; }
+    else                { params.push(branchId);       where = 'p.branch_id = $1'; }
     let idx = 2;
     // Filter by business date (lump_sum_date) so backdated plans count in their real period
     if (dateFilter?.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
@@ -548,9 +558,12 @@ export const BuildersService = {
       params
     );
 
-    // Commission — from the unified incentives ledger (0 until incentive wiring is done)
-    const commParams: any[] = [branchId, SCHEME_CODE];
-    let commWhere = 'bp2.branch_id = $1 AND ei.scheme_code = $2';
+    // Commission — from the unified incentives ledger (0 until incentive wiring is done).
+    // Referrer-scoped: sum incentives credited to that user across ALL branches.
+    const commParams: any[] = [];
+    let commWhere: string;
+    if (scopedToUserId) { commParams.push(scopedToUserId, SCHEME_CODE); commWhere = 'ei.user_id = $1 AND ei.scheme_code = $2'; }
+    else                { commParams.push(branchId, SCHEME_CODE);       commWhere = 'bp2.branch_id = $1 AND ei.scheme_code = $2'; }
     let commIdx = 3;
     if (dateFilter?.startDate) { commWhere += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { commWhere += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }
@@ -664,6 +677,7 @@ export const BuildersService = {
       if (payload.lumpSumDate     != null) { fields.push(`lump_sum_date = $${idx++}`);      vals.push(payload.lumpSumDate); }
       if (payload.lumpSumMode     != null) { fields.push(`lump_sum_mode = $${idx++}`);      vals.push(payload.lumpSumMode); }
       if (payload.lumpSumProofKey != null) { fields.push(`lump_sum_proof_key = $${idx++}`); vals.push(payload.lumpSumProofKey); }
+      if (payload.lumpSumTransactionId !== undefined) { fields.push(`lump_sum_transaction_id = $${idx++}`); vals.push(payload.lumpSumTransactionId); }
       if (payload.notes !== undefined)     { fields.push(`notes = $${idx++}`);               vals.push(payload.notes); }
 
       // Handle referrerId + denormalised name together
@@ -776,6 +790,7 @@ export const BuildersService = {
       if (payload.payoutDate  != null) { fields.push(`payout_date = $${idx++}`);   vals.push(payload.payoutDate); }
       if (payload.paymentMode != null) { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
       if (payload.proofKey    != null) { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
       if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

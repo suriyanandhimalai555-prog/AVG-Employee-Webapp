@@ -21,11 +21,13 @@ export const OfficeCheckIn = () => {
     fetchGps,
     isSubmitting,
     handleCheckIn,
+    checkInError,
   } = useCheckIn({ onSuccess: () => navigate('/') });
 
   const {
     fetchGps: fetchSignOffGps,
     gpsStatus: signOffGpsStatus,
+    gpsPermissionDenied: signOffGpsPermissionDenied,
     isSubmitting: isSigningOff,
     signOffError,
     handleSignOff,
@@ -180,7 +182,7 @@ export const OfficeCheckIn = () => {
               )}
               {signOffGpsStatus === 'error' && !signOffError && (
                 <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-amber-600">
-                  {gpsPermissionDenied
+                  {signOffGpsPermissionDenied
                     ? 'Location access is blocked — enable it in your browser settings, then tap the button to retry.'
                     : 'Location unavailable — tap the button above to request access again.'}
                 </p>
@@ -213,6 +215,11 @@ export const OfficeCheckIn = () => {
                   {gpsStatus !== 'error' && (
                     <p className="text-center text-[10px] leading-relaxed text-navy/40 px-8 font-medium">
                       Your GPS coordinates will be verified for office compliance.
+                    </p>
+                  )}
+                  {checkInError && (
+                    <p className="text-center text-[10px] leading-relaxed px-8 font-medium text-red-500">
+                      {checkInError}
                     </p>
                   )}
                 </>

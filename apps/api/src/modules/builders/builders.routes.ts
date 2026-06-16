@@ -68,7 +68,9 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const query = GetBuildersSummaryQuerySchema.parse(req.query);
-      const data  = await BuildersService.getBranchSummary(fastify.db, req.user.branchId, undefined, query);
+      // Referrer-only roles see personal totals (own referrals across all branches)
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data  = await BuildersService.getBranchSummary(fastify.db, req.user.branchId, referrerId, query);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

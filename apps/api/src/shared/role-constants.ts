@@ -46,9 +46,12 @@ export const READER_ROLES: readonly RoleValue[] = [
   Role.ABM, Role.SALES_OFFICER, Role.BRANCH_ADMIN, Role.MANAGEMENT,
 ];
 
-// Roles whose scheme reads must be scoped to entries THEY enrolled
+// Roles whose scheme reads must be scoped to entries THEY referred — across ALL
+// branches (match on referrer_id, ignore branch). Everyone in the reporting chain
+// below Management. Branch Admin (full branch view) and MD/Management (full org view)
+// are intentionally excluded.
 export const REFERRER_ONLY_ROLES: readonly RoleValue[] = [
-  Role.BRANCH_MANAGER, Role.ABM, Role.SALES_OFFICER,
+  Role.DIRECTOR, Role.GM, Role.BRANCH_MANAGER, Role.ABM, Role.SALES_OFFICER,
 ];
 
 // Roles allowed to view Gold Coin rooms (oversight roles + branch_admin + management)

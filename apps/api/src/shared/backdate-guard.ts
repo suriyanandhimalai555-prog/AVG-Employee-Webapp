@@ -16,14 +16,11 @@ import { Role } from './role-constants';
 // TS: period helper keeps the 7-to-6 boundary in one place (shared/scheme-period.ts
 // mirrors frontend/src/lib/schemePeriod.js — update both if the cutoff changes).
 import { getPeriodStartForDate } from './scheme-period';
+// TS: IST-aware date — never use new Date().toLocaleDateString() here; on UTC servers
+// that returns the wrong date for 5.5 hours every day.
+import { getCompanyToday } from './date';
 
 export const BACKDATED_ENTRY_KEY = 'backdated_entry_enabled';
-
-// Today's date as YYYY-MM-DD in server-local time (matches how the
-// frontend produces its date strings — never UTC-shifted).
-export function todayISO(): string {
-  return new Date().toLocaleDateString('en-CA');
-}
 
 // Reads the flag straight from app_settings — one indexed PK lookup, only
 // on write paths, so no cache layer (a toggle must take effect immediately).
@@ -53,7 +50,7 @@ export async function assertBackdateAllowed(
 
   // Compute the start of the period containing today (e.g. '2026-06-07').
   // Dates on or after this are same-period entries and never require the flag.
-  const periodStart = getPeriodStartForDate(todayISO());
+  const periodStart = getPeriodStartForDate(getCompanyToday());
   const hasPriorPeriodDate = dates.some(d => !!d && d < periodStart);
   if (!hasPriorPeriodDate) return;
 

@@ -33,6 +33,7 @@ export const CreateBuildersPlanSchema = z.object({
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   lumpSumProofKey: z.array(z.string()).optional(),
+  lumpSumTransactionId: z.string().max(100).optional(),
   referrerId:      z.string().uuid().optional(),
   notes:           z.string().max(1000).optional(),
   branchId:        z.string().uuid().optional(),
@@ -44,6 +45,13 @@ export const CreateBuildersPlanSchema = z.object({
       path: ['lumpSumProofKey'],
     });
   }
+  if (data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumTransactionId is required for gpay and bank_receipt payments',
+      path: ['lumpSumTransactionId'],
+    });
+  }
 });
 
 export const RecordBuildersPayoutSchema = z.object({
@@ -52,6 +60,7 @@ export const RecordBuildersPayoutSchema = z.object({
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -60,6 +69,13 @@ export const RecordBuildersPayoutSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required for gpay and bank_receipt payments',
+      path: ['transactionId'],
     });
   }
 });
@@ -113,6 +129,7 @@ export const CorrectBuildersPlanSchema = z.object({
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   lumpSumProofKey: z.array(z.string()).optional(),
+  lumpSumTransactionId: z.string().max(100).optional().nullable(),
   notes:           z.string().max(1000).optional().nullable(),
   branchId:        z.string().uuid().optional(),  // management must supply; MD optional
 }).superRefine((data, ctx) => {
@@ -123,6 +140,13 @@ export const CorrectBuildersPlanSchema = z.object({
       path: ['lumpSumProofKey'],
     });
   }
+  if (data.lumpSumMode && data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumTransactionId is required when setting lumpSumMode to gpay or bank_receipt',
+      path: ['lumpSumTransactionId'],
+    });
+  }
 });
 
 // Correct an existing payout row.
@@ -131,6 +155,7 @@ export const CorrectBuildersPayoutSchema = z.object({
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -139,6 +164,13 @@ export const CorrectBuildersPayoutSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
+      path: ['transactionId'],
     });
   }
 });

@@ -21,16 +21,19 @@ export { LandAuditService }    from './land-audit.service';
 export const LandService: SchemeService = {
   schemeCode: SCHEME_CODE,
 
-  // Branch summary: booking counts + total collected for one branch.
-  // scopedToUserId is not used for land sales (no per-referrer scoping).
+  // Branch summary: booking counts + total collected.
+  // Referrer-scoped roles: count their referred bookings across ALL branches
+  // (match on referrer_id, drop the branch filter); otherwise scope to the branch.
   async getBranchSummary(
     db: Pool,
     branchId: string,
-    _scopedToUserId?: string,
+    scopedToUserId?: string,
     dateFilter?: SchemeDateFilter
   ): Promise<any> {
-    const params: any[] = [branchId];
-    let where = 'bk.branch_id = $1';
+    const params: any[] = [];
+    let where: string;
+    if (scopedToUserId) { params.push(scopedToUserId); where = 'bk.referrer_id = $1'; }
+    else                { params.push(branchId);       where = 'bk.branch_id = $1'; }
     let idx = 2;
     if (dateFilter?.startDate) { where += ` AND bk.booking_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND bk.booking_date <= $${idx++}::date`; params.push(dateFilter.endDate); }
@@ -46,9 +49,12 @@ export const LandService: SchemeService = {
       params
     );
 
-    // Sum all employee_incentives earned from this branch's land bookings
-    const commParams: any[] = [branchId, SCHEME_CODE];
-    let commWhere = 'bk.branch_id = $1 AND ei.scheme_code = $2';
+    // Sum employee_incentives earned. Referrer-scoped: this user's credits across
+    // ALL branches; otherwise the whole branch.
+    const commParams: any[] = [];
+    let commWhere: string;
+    if (scopedToUserId) { commParams.push(scopedToUserId, SCHEME_CODE); commWhere = 'ei.user_id = $1 AND ei.scheme_code = $2'; }
+    else                { commParams.push(branchId, SCHEME_CODE);       commWhere = 'bk.branch_id = $1 AND ei.scheme_code = $2'; }
     let commIdx = 3;
     if (dateFilter?.startDate) { commWhere += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { commWhere += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }

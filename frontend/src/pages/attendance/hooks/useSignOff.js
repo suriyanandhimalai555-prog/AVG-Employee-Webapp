@@ -6,6 +6,7 @@ import {
   useGetSummaryQuery,
   apiSlice,
 } from '../../../store/api/apiSlice';
+import { useGeolocation } from '../../../hooks/useGeolocation';
 
 /**
  * Encapsulates all state and async logic for the employee self sign-off (clock-out) flow.
@@ -19,10 +20,13 @@ export const useSignOff = ({ onSuccess } = {}) => {
   const user = useSelector(selectCurrentUser);
   const dispatch = useDispatch();
 
-  // GPS state — null | 'fetching' | { lat, lng } | 'error'
-  const [gpsStatus, setGpsStatus] = useState(null);
-  // True when the browser permanently denied location (error code 1)
-  const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
+  // GPS state via the shared hook. Map to the existing gpsStatus shape
+  // (null | 'fetching' | { lat, lng, accuracy } | 'error') so callers need no changes.
+  const geo = useGeolocation();
+  const gpsStatus = geo.status === 'ready' ? geo.coords
+                  : geo.status === 'idle'  ? null
+                  : geo.status;             // 'fetching' | 'error'
+  const gpsPermissionDenied = geo.errorCode === 1;
 
   // Inline error — replaces any browser alert()
   const [signOffError, setSignOffError] = useState(null);
@@ -38,19 +42,7 @@ export const useSignOff = ({ onSuccess } = {}) => {
   const [submitSignOff, { isLoading: isSubmitting }] = useSubmitSignOffMutation();
 
   /** Trigger a fresh GPS location request. Call when entering the sign-off view. */
-  const fetchGps = () => {
-    setGpsStatus('fetching');
-    setGpsPermissionDenied(false);
-    if (!navigator.geolocation) { setGpsStatus('error'); return; }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setGpsStatus({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => {
-        setGpsStatus('error');
-        if (err.code === 1) setGpsPermissionDenied(true);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    );
-  };
+  const fetchGps = geo.request;
 
   /** Submit the sign-off with current GPS coordinates. */
   const handleSignOff = async () => {
@@ -75,6 +67,7 @@ export const useSignOff = ({ onSuccess } = {}) => {
       await submitSignOff({
         checkOutLat: gpsStatus.lat,
         checkOutLng: gpsStatus.lng,
+        checkOutAccuracy: gpsStatus.accuracy ?? undefined,
       }).unwrap();
 
       setSignedOffThisSession(true);

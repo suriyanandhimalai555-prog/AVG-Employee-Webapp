@@ -14,7 +14,6 @@ import { useSignOff } from './hooks/useSignOff';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetEmployeesQuery, useGetSummaryQuery, useAdminSignOffMutation } from '../../store/api/apiSlice';
 import { StatsGrid } from '../../components/attendance/StatsGrid';
-import { useGeolocation } from '../../hooks/useGeolocation';
 
 
 const FILTERS = [
@@ -76,9 +75,6 @@ export const BranchAdminPanel = () => {
   // GPS error message for admin sign-off — shown as a dismissable banner near the action list.
   // A non-null value means the last sign-off attempt failed due to GPS or API error.
   const [adminSignOffGpsError, setAdminSignOffGpsError] = useState(null);
-  // Shared GPS hook for admin sign-off location capture
-  const geo = useGeolocation();
-
   const {
     staffFilter, setStaffFilter,
     markModal, markStatus, setMarkStatus, markNote, setMarkNote, markLoading,
@@ -120,6 +116,7 @@ export const BranchAdminPanel = () => {
         targetUserId: emp.id,
         checkOutLat: pos.coords.latitude,
         checkOutLng: pos.coords.longitude,
+        checkOutAccuracy: pos.coords.accuracy ?? undefined,
       }).unwrap();
     } catch (err) {
       // GeolocationPositionError carries a numeric .code (1/2/3); API errors carry .data

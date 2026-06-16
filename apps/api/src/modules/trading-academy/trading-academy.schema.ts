@@ -7,6 +7,7 @@ export const AddTradingMemberSchema = z.object({
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   proofKey:       z.array(z.string()).optional(),
+  transactionId:  z.string().max(100).optional(),
   notes:          z.string().max(1000).optional(),
   branchId:       z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -15,6 +16,13 @@ export const AddTradingMemberSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required for gpay and bank_receipt payments',
+      path: ['transactionId'],
     });
   }
 });
@@ -41,6 +49,7 @@ export const CorrectTradingMemberSchema = z.object({
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   proofKey:       z.array(z.string()).optional(),
+  transactionId:  z.string().max(100).optional().nullable(),
   notes:          z.string().max(1000).optional().nullable(),
   branchId:       z.string().uuid().optional(),  // management must supply; MD optional
 }).superRefine((data, ctx) => {
@@ -49,6 +58,13 @@ export const CorrectTradingMemberSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
+      path: ['transactionId'],
     });
   }
 });

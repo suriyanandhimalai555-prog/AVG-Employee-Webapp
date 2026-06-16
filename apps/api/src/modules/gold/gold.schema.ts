@@ -10,6 +10,7 @@ export const AddGoldMemberSchema = z.object({
   totalMonths:           z.number().int().min(1).max(60).default(12),
   firstPaymentMode:      z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   firstPaymentProofKey:  z.array(z.string()).optional(),
+  firstPaymentTransactionId: z.string().max(100).optional(),
   notes:                 z.string().max(1000).optional(),
   // Passed by management role only — ignored for branch_admin (branchId from JWT)
   branchId:              z.string().uuid().optional(),
@@ -19,6 +20,13 @@ export const AddGoldMemberSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'firstPaymentProofKey is required for gpay and bank_receipt payments',
       path: ['firstPaymentProofKey'],
+    });
+  }
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'firstPaymentTransactionId is required for gpay and bank_receipt payments',
+      path: ['firstPaymentTransactionId'],
     });
   }
 });
@@ -51,6 +59,7 @@ export const AddGoldPaymentSchema = z.object({
   amount:       z.number().positive(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -59,6 +68,13 @@ export const AddGoldPaymentSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required for gpay and bank_receipt payments',
+      path: ['transactionId'],
     });
   }
 });
@@ -84,6 +100,7 @@ export const CorrectGoldPaymentSchema = z.object({
   amount:       z.number().positive().optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -92,6 +109,13 @@ export const CorrectGoldPaymentSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
+      path: ['transactionId'],
     });
   }
 });

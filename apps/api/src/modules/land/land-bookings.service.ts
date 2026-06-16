@@ -60,13 +60,19 @@ export const LandBookingsService = {
   async listBookings(
     db: Pool,
     branchId: string | null,   // null = all (MD)
-    query: ListBookingsQuery
+    query: ListBookingsQuery,
+    referrerId?: string,       // set for referrer-only roles → own referrals across ALL branches
   ): Promise<{ data: any[]; total: number }> {
     const params: any[] = [];
     let where = '1=1';
     let idx = 1;
 
-    if (branchId) {
+    // Referrer-scoped roles see their own referred bookings across every branch
+    // (match on referrer_id, ignore branch); everyone else stays branch-scoped.
+    if (referrerId) {
+      where += ` AND bk.referrer_id = $${idx++}`;
+      params.push(referrerId);
+    } else if (branchId) {
       where += ` AND bk.branch_id = $${idx++}`;
       params.push(branchId);
     }
@@ -309,11 +315,11 @@ export const LandBookingsService = {
       const result = await client.query(
         `UPDATE land_bookings
          SET advance_amount = $1, advance_date = $2, status = 'advance_paid',
-             advance_channel = $3, advance_proof_key = $4,
-             updated_by = $5, updated_at = now()
-         WHERE id = $6
+             advance_channel = $3, advance_proof_key = $4, advance_transaction_id = $5,
+             updated_by = $6, updated_at = now()
+         WHERE id = $7
          RETURNING *`,
-        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash', payload.advanceProofKey || null, userId, bookingId]
+        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash', payload.advanceProofKey || null, payload.advanceTransactionId || null, userId, bookingId]
       );
       const updated = result.rows[0];
 
@@ -393,9 +399,9 @@ export const LandBookingsService = {
          SET full_amount = $1, full_payment_date = $2,
              loan_taken = $3, loan_amount = $4,
              buyback_start_date = $5, status = 'full_paid',
-             full_channel = $6, full_proof_key = $7,
-             updated_by = $8, updated_at = now()
-         WHERE id = $9
+             full_channel = $6, full_proof_key = $7, full_transaction_id = $8,
+             updated_by = $9, updated_at = now()
+         WHERE id = $10
          RETURNING *`,
         [
           payload.fullAmount,
@@ -405,6 +411,7 @@ export const LandBookingsService = {
           buybackStartDate,
           payload.fullChannel || 'cash',
           payload.fullProofKey || null,
+          payload.fullTransactionId || null,
           userId,
           bookingId,
         ]
@@ -604,23 +611,25 @@ export const LandBookingsService = {
       }
 
       // Advance corrections are only meaningful once an advance was recorded
-      if (payload.advanceAmount != null || payload.advanceDate != null || payload.advanceChannel != null || payload.advanceProofKey != null) {
+      if (payload.advanceAmount != null || payload.advanceDate != null || payload.advanceChannel != null || payload.advanceProofKey != null || payload.advanceTransactionId !== undefined) {
         if (old.advance_amount == null) throw new ValidationError('No advance recorded on this booking');
         if (payload.advanceAmount  != null) { fields.push(`advance_amount = $${idx++}`);     vals.push(payload.advanceAmount); }
         if (payload.advanceDate    != null) { fields.push(`advance_date = $${idx++}`);        vals.push(payload.advanceDate); }
         if (payload.advanceChannel != null) { fields.push(`advance_channel = $${idx++}`);     vals.push(payload.advanceChannel); }
         if (payload.advanceProofKey != null) { fields.push(`advance_proof_key = $${idx++}`); vals.push(payload.advanceProofKey); }
+        if (payload.advanceTransactionId !== undefined) { fields.push(`advance_transaction_id = $${idx++}`); vals.push(payload.advanceTransactionId); }
       }
 
       // Full-payment corrections — moving the date also moves the buyback start
       // (full_payment_date + cooling days) and the pending payout schedule below.
       // TS: newBuybackStart doubles as the "schedule needs shifting" flag after the UPDATE
       let newBuybackStart: string | null = null;
-      if (payload.fullAmount != null || payload.fullPaymentDate != null || payload.fullChannel != null || payload.fullProofKey != null) {
+      if (payload.fullAmount != null || payload.fullPaymentDate != null || payload.fullChannel != null || payload.fullProofKey != null || payload.fullTransactionId !== undefined) {
         if (old.full_payment_date == null) throw new ValidationError('No full payment recorded on this booking');
         if (payload.fullAmount   != null) { fields.push(`full_amount = $${idx++}`);      vals.push(payload.fullAmount); }
         if (payload.fullChannel  != null) { fields.push(`full_channel = $${idx++}`);     vals.push(payload.fullChannel); }
         if (payload.fullProofKey != null) { fields.push(`full_proof_key = $${idx++}`);   vals.push(payload.fullProofKey); }
+        if (payload.fullTransactionId !== undefined) { fields.push(`full_transaction_id = $${idx++}`); vals.push(payload.fullTransactionId); }
         if (payload.fullPaymentDate != null) {
           newBuybackStart = addDays(payload.fullPaymentDate, COOLING_DAYS);
           fields.push(`full_payment_date = $${idx++}`);  vals.push(payload.fullPaymentDate);
@@ -1105,11 +1114,11 @@ export const LandBookingsService = {
       const payoutResult = await client.query(
         `UPDATE land_buyback_payouts
          SET status = 'paid', paid_date = $1, paid_by = $2,
-             paid_channel = $3, paid_proof_key = $4,
+             paid_channel = $3, paid_proof_key = $4, paid_transaction_id = $5,
              updated_at = now()
-         WHERE booking_id = $5 AND month_number = $6 AND status = 'pending'
+         WHERE booking_id = $6 AND month_number = $7 AND status = 'pending'
          RETURNING *`,
-        [payload.paidDate, userId, payload.paidChannel || 'cash', payload.paidProofKey || null, bookingId, monthNumber]
+        [payload.paidDate, userId, payload.paidChannel || 'cash', payload.paidProofKey || null, payload.paidTransactionId || null, bookingId, monthNumber]
       );
       if (payoutResult.rows.length === 0) {
         throw new NotFoundError('Payout not found or already marked paid');

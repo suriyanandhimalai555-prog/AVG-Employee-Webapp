@@ -168,8 +168,11 @@ export const MoneyService = {
       ]
     );
 
-    // If ON CONFLICT DO NOTHING fired (duplicate idempotency key), fetch the original row.
-    if (!result.rows[0] && idempotencyKey) {
+    // ON CONFLICT DO NOTHING can only fire when idempotencyKey is non-null (partial index
+    // WHERE idempotency_key IS NOT NULL). A null-key INSERT always returns 1 row.
+    // Guard here so a hypothetical null key never runs `WHERE idempotency_key = NULL`
+    // (which matches nothing in SQL and would silently return undefined).
+    if (result.rows.length === 0 && idempotencyKey) {
       const existing = await db.query(
         'SELECT * FROM money_collections WHERE idempotency_key = $1',
         [idempotencyKey]

@@ -15,6 +15,7 @@ import { FormField } from './components/FormField';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { TransactionIdField } from '../../components/money/TransactionIdField';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 export const GoldSchemeAddPage = () => {
@@ -37,6 +38,7 @@ export const GoldSchemeAddPage = () => {
     notes:            '',
   });
   const [proofKey,    setProofKey]    = useState([]);
+  const [txnId,       setTxnId]       = useState('');
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -53,9 +55,9 @@ export const GoldSchemeAddPage = () => {
       return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.firstPaymentMode !== 'cash' && !proofKey.length) {
+    if (form.firstPaymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
       setShowProofErr(true);
-      setError('Please upload payment proof for GPay/bank payments.');
+      setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
@@ -68,6 +70,7 @@ export const GoldSchemeAddPage = () => {
         totalMonths:           parseInt(form.totalMonths, 10),
         firstPaymentMode:      form.firstPaymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
+        firstPaymentTransactionId: txnId.trim() || undefined,
         notes:                 form.notes.trim() || undefined,
         branchId:              isManagement ? branchId : undefined,
       }).unwrap();
@@ -208,7 +211,7 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
@@ -220,6 +223,13 @@ export const GoldSchemeAddPage = () => {
           mode={form.firstPaymentMode}
           proofKey={proofKey}
           onChange={setProofKey}
+          showError={showProofErr}
+        />
+
+        <TransactionIdField
+          mode={form.firstPaymentMode}
+          value={txnId}
+          onChange={setTxnId}
           showError={showProofErr}
         />
 

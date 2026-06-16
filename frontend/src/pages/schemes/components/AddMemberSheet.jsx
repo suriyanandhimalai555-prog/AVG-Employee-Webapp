@@ -10,6 +10,7 @@ import { TRADING_ROLE_LABELS, createFormSetter, getTodayISO } from '../../../lib
 import { FormError } from './FormError';
 import { SuccessConfirmation } from './SuccessConfirmation';
 import { ProofUploadField } from '../../../components/money/ProofUploadField';
+import { TransactionIdField } from '../../../components/money/TransactionIdField';
 
 // Trading Academy forms use focus:border-indigo (not ring-indigo/20) — kept local
 const SHEET_INPUT_CLASS =
@@ -27,6 +28,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     notes:          '',
   });
   const [proofKey,     setProofKey]     = useState([]);
+  const [txnId,        setTxnId]        = useState('');
   const [showProofErr, setShowProofErr] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
@@ -38,9 +40,9 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer'); return; }
-    if (form.paymentMode !== 'cash' && !proofKey.length) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
       setShowProofErr(true);
-      setError('Please upload payment proof for GPay/bank payments.');
+      setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
@@ -51,6 +53,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         enrollmentDate: form.enrollmentDate,
         paymentMode:    form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
+        transactionId: txnId.trim() || undefined,
         notes:          form.notes || undefined,
         branchId:       branchId || undefined,
       }).unwrap();
@@ -157,7 +160,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <div className="relative">
             <select
               value={form.paymentMode}
-              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setShowProofErr(false); }}
+              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
               className={`${SHEET_INPUT_CLASS} appearance-none pr-8`}
             >
               <option value="cash">Cash</option>
@@ -173,6 +176,13 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         mode={form.paymentMode}
         proofKey={proofKey}
         onChange={setProofKey}
+        showError={showProofErr}
+      />
+
+      <TransactionIdField
+        mode={form.paymentMode}
+        value={txnId}
+        onChange={setTxnId}
         showError={showProofErr}
       />
 

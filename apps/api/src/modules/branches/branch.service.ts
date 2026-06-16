@@ -218,10 +218,12 @@ export const BranchService = {
 
     if (result.rows.length === 0) throw new NotFoundError('Branch not found');
 
-    // Bust both caches so the next GET /branches and GET /branches/:id reflect the change
+    // Bust branch list/detail caches AND the attendance geofence cache so the next
+    // office check-in picks up the new coordinates without waiting for the 10-min TTL.
     await Promise.all([
       redis.del(BRANCHES_CACHE_KEY),
       redis.del(`cache:branch:${branchId}`),
+      redis.del(`geo:${branchId}`),
     ]);
 
     return result.rows[0];

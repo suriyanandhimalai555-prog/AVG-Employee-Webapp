@@ -89,9 +89,9 @@ export const GoldService = {
       // Auto-record month 1 — member pays on enrollment day
       await client.query(
         `INSERT INTO gold_scheme_payments
-           (member_id, month_number, paid_date, amount, payment_mode, proof_key, entered_by)
-         VALUES ($1, 1, $2, $3, $4, $5, $6)`,
-        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', payload.firstPaymentProofKey || null, enteredBy]
+           (member_id, month_number, paid_date, amount, payment_mode, proof_key, transaction_id, entered_by)
+         VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`,
+        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', payload.firstPaymentProofKey || null, payload.firstPaymentTransactionId || null, enteredBy]
       );
 
       // Credit referrer the configured % of monthly_amount as enrollment incentive.
@@ -132,18 +132,23 @@ export const GoldService = {
     branchId: string,
     query: GetGoldMembersQuery
   ): Promise<{ data: any[]; total: number }> {
-    const params: any[] = [branchId];
-    let where = 'g.branch_id = $1';
+    // Referrer-scoped roles see their own referrals across ALL branches; everyone
+    // else stays branch-scoped. The two are mutually exclusive — referrer_id alone
+    // already pins the row to that person regardless of which branch entered it.
+    const params: any[] = [];
+    let where: string;
+    if (query.referrerId) {
+      params.push(query.referrerId);
+      where = 'g.referrer_id = $1';
+    } else {
+      params.push(branchId);
+      where = 'g.branch_id = $1';
+    }
     let idx = 2;
 
     if (query.status) {
       where += ` AND g.status = $${idx++}`;
       params.push(query.status);
-    }
-
-    if (query.referrerId) {
-      where += ` AND g.referrer_id = $${idx++}`;
-      params.push(query.referrerId);
     }
 
     if (query.search) {
@@ -229,14 +234,21 @@ export const GoldService = {
   },
 
   // ─── GET BRANCH EMPLOYEES (referrer picker) ───
+  // Returns branch-resident staff PLUS the GMs/Directors overseeing this branch
+  // (linked via user_oversight_branches, not branch_id) PLUS the MD (no branch link).
   async getBranchEmployees(db: Pool, branchId: string): Promise<any[]> {
     const result = await db.query(
-      `SELECT id, name, role
-       FROM users
-       WHERE branch_id = $1
-         AND is_active = true
-         AND role NOT IN ('md')
-       ORDER BY name ASC`,
+      `SELECT DISTINCT u.id, u.name, u.role
+       FROM users u
+       WHERE u.is_active = true
+         AND (
+           (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
+           OR (u.role IN ('gm', 'director')
+               AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                           WHERE uob.user_id = u.id AND uob.branch_id = $1))
+           OR u.role = 'md'
+         )
+       ORDER BY u.name ASC`,
       [branchId]
     );
     return result.rows;
@@ -271,10 +283,10 @@ export const GoldService = {
 
       const result = await client.query(
         `INSERT INTO gold_scheme_payments
-           (member_id, month_number, paid_date, amount, payment_mode, proof_key, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           (member_id, month_number, paid_date, amount, payment_mode, proof_key, transaction_id, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING *`,
-        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.proofKey || null, payload.notes || null, enteredBy]
+        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.proofKey || null, payload.transactionId || null, payload.notes || null, enteredBy]
       );
 
       // Credit referrer the configured renewal % for month 2 onwards.
@@ -329,9 +341,13 @@ export const GoldService = {
   // ─── SUMMARY (total chits, active, amounts, commission) ───
   // Pass referrerId to scope to one referrer's stats (for SO/ABM/BM/GM personal view)
   async getBranchSummary(db: Pool, branchId: string, referrerId?: string, dateFilter?: { startDate?: string; endDate?: string }): Promise<any> {
-    const params: any[] = [branchId];
-    let extra = referrerId ? ` AND referrer_id = $2` : '';
-    if (referrerId) params.push(referrerId);
+    // Referrer-scoped roles: count their referrals across ALL branches (match on
+    // referrer_id, drop the branch filter). Otherwise scope to the branch.
+    const params: any[] = [];
+    let baseWhere: string;
+    if (referrerId) { params.push(referrerId); baseWhere = 'referrer_id = $1'; }
+    else            { params.push(branchId);   baseWhere = 'branch_id = $1'; }
+    let extra = '';
     let idx = params.length + 1;
 
     if (dateFilter?.startDate) {
@@ -353,21 +369,25 @@ export const GoldService = {
          COALESCE(SUM(monthly_amount) FILTER (WHERE status='active'),0) AS monthly_commitment,
          COALESCE(SUM(monthly_amount * total_months) FILTER (WHERE status='active'),0) AS total_scheme_value
        FROM gold_scheme_members
-       WHERE branch_id = $1${extra}`,
+       WHERE ${baseWhere}${extra}`,
       params
     );
 
     // ─── Commission query — sums incentives earned from gold_scheme ───
     // payment_event distinguishes enrollment (month 1) vs renewal (month 2+);
     // both columns are written by IncentiveService.distributeIncentives.
-    const commParams: any[] = [branchId, GOLD_PROJECT_CODE];
-    let commWhere = 'g.branch_id = $1 AND ei.scheme_code = $2';
-    let commIdx = 3;
-
+    // Referrer-scoped: sum incentives credited to that user across ALL branches.
+    // Otherwise sum the whole branch's incentives.
+    const commParams: any[] = [];
+    let commWhere: string;
     if (referrerId) {
-      commWhere += ` AND ei.user_id = $${commIdx++}`;
-      commParams.push(referrerId);
+      commParams.push(referrerId, GOLD_PROJECT_CODE);
+      commWhere = 'ei.user_id = $1 AND ei.scheme_code = $2';
+    } else {
+      commParams.push(branchId, GOLD_PROJECT_CODE);
+      commWhere = 'g.branch_id = $1 AND ei.scheme_code = $2';
     }
+    let commIdx = 3;
     if (dateFilter?.startDate) {
       commWhere += ` AND ei.created_at >= $${commIdx++}::date`;
       commParams.push(dateFilter.startDate);
@@ -637,6 +657,7 @@ export const GoldService = {
       if (payload.amount      != null)  { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
       if (payload.paymentMode != null)  { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
       if (payload.proofKey    != null)  { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
       if (payload.notes !== undefined)  { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

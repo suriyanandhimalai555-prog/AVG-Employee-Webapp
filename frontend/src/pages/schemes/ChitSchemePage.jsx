@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Loader2, Layers, ChevronRight, ShieldCheck } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetChitGroupsQuery, useGetChitSummaryQuery } from '../../store/api/apiSlice';
+import { REFERRER_ROLES } from '../../lib/schemeConstants';
 import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -77,6 +78,8 @@ export const ChitSchemePage = () => {
 
   const isHeadBranchAdmin = user?.role === 'branch_admin' && user?.isHeadBranch;
   const canSeeHeadPage    = HEAD_VIEW_ROLES.has(user?.role) && (isHeadBranchAdmin || user?.role !== 'branch_admin');
+  // Referrer-only roles see only the groups they have a card in (filtered server-side)
+  const isReferrerView    = REFERRER_ROLES.has(user?.role);
 
   const rightAction = (
     <div className="flex items-center gap-2">
@@ -107,8 +110,8 @@ export const ChitSchemePage = () => {
     <SchemePageWrapper>
       <SchemePageHeader
         backTo="/money/schemes"
-        title="Agila Chit Fund"
-        subtitle="20 members · 20 months · monthly winner"
+        title={isReferrerView ? 'My Referrals' : 'Agila Chit Fund'}
+        subtitle={isReferrerView ? 'Chit groups you referred into' : '20 members · 20 months · monthly winner'}
         action={rightAction}
       />
 

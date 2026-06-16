@@ -21,6 +21,7 @@ import {
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../../lib/schemeConstants';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { TransactionIdField } from '../../components/money/TransactionIdField';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -83,6 +84,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
   const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().split('T')[0]);
   const [paymentMode,   setPaymentMode]   = useState('cash');
   const [proofKey,      setProofKey]      = useState([]);
+  const [txnId,         setTxnId]         = useState('');
   const [showProofErr,  setShowProofErr]  = useState(false);
   const [notes,         setNotes]         = useState('');
   const [error,         setError]         = useState(null);
@@ -102,13 +104,13 @@ function PaymentModal({ member, group, onClose, groupId }) {
     setError(null);
     if (!selectedMonth) { setError('Select a month.'); return; }
     if (!amount || parseFloat(amount) <= 0) { setError('Enter a valid amount.'); return; }
-    if (paymentMode !== 'cash' && !proofKey.length) {
+    if (paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
       setShowProofErr(true);
-      setError('Please upload payment proof for GPay/bank payments.');
+      setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
-      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, notes: notes.trim() || undefined }).unwrap();
+      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, transactionId: txnId.trim() || undefined, notes: notes.trim() || undefined }).unwrap();
       onClose();
     } catch (err) { setError(err?.data?.error?.message || 'Failed to record payment.'); }
   };
@@ -173,7 +175,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
             <FormField label="Mode" required>
               <PaymentModeSelect
                 value={paymentMode}
-                onChange={(val) => { setPaymentMode(val); setProofKey([]); setShowProofErr(false); }}
+                onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
                 variant="buttons"
               />
             </FormField>
@@ -182,6 +184,13 @@ function PaymentModal({ member, group, onClose, groupId }) {
               mode={paymentMode}
               proofKey={proofKey}
               onChange={setProofKey}
+              showError={showProofErr}
+            />
+
+            <TransactionIdField
+              mode={paymentMode}
+              value={txnId}
+              onChange={setTxnId}
               showError={showProofErr}
             />
 

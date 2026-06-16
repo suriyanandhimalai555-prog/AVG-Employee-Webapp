@@ -63,9 +63,11 @@ export const TRADING_ROLE_LABELS = {
 
 // ─── Referrer roles ───────────────────────────────────────────────────────────
 
-// Roles that see "My Referrals" view instead of the full branch list
+// Roles that see "My Referrals" view instead of the full branch list.
+// Mirrors the backend REFERRER_ONLY_ROLES (everyone in the chain below Management;
+// branch_admin sees the full branch, md/management see the whole org).
 export const REFERRER_ROLES = new Set([
-  'sales_officer', 'abm', 'branch_manager', 'gm',
+  'director', 'gm', 'branch_manager', 'abm', 'sales_officer',
 ]);
 
 // ─── Schemes hub ──────────────────────────────────────────────────────────────

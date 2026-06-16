@@ -11,7 +11,7 @@
 //   LSS          — 5 plan rows (price)
 //   Land         — entry point to site / plot management
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -47,6 +47,7 @@ import {
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
 import { CommissionPanel } from './schemes/components/CommissionPanel';
+import { useGeolocation } from '../hooks/useGeolocation';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -704,6 +705,7 @@ const LandTab = ({ navigate }) => {
 
 const BranchLocationRow = ({ branch }) => {
   const [setBranchLocation, { isLoading: saving }] = useSetBranchLocationMutation();
+  const geo = useGeolocation();
   const [editing, setEditing]   = useState(false);
   const [lat,     setLat]       = useState('');
   const [lng,     setLng]       = useState('');
@@ -713,6 +715,18 @@ const BranchLocationRow = ({ branch }) => {
   const [saved,   setSaved]     = useState(false);
 
   const hasCoords = branch.latitude != null && branch.longitude != null;
+
+  // Sync hook state → local gpsMsg + auto-fill form fields when GPS resolves.
+  useEffect(() => {
+    if (geo.status === 'fetching') setGpsMsg('fetching');
+    else if (geo.status === 'ready' && geo.coords) {
+      setLat(geo.coords.lat.toFixed(6));
+      setLng(geo.coords.lng.toFixed(6));
+      setGpsMsg('ready');
+    } else if (geo.status === 'error') {
+      setGpsMsg('blocked');
+    }
+  }, [geo.status, geo.coords]);
 
   const startEdit = () => {
     setLat(hasCoords ? String(parseFloat(branch.latitude)) : '');
@@ -725,19 +739,11 @@ const BranchLocationRow = ({ branch }) => {
 
   const cancelEdit = () => { setEditing(false); setErr(''); setGpsMsg(''); };
 
-  // Fill lat/lng from the device's GPS (useful when standing at the branch)
+  // Fill lat/lng from the device's GPS (useful when standing at the branch).
+  // Delegates to the shared useGeolocation hook — no inline navigator calls.
   const useMyLocation = () => {
-    if (!navigator.geolocation) { setGpsMsg('blocked'); return; }
-    setGpsMsg('fetching');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude.toFixed(6));
-        setLng(pos.coords.longitude.toFixed(6));
-        setGpsMsg('ready');
-      },
-      () => setGpsMsg('blocked'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    );
+    setGpsMsg('');
+    geo.request();
   };
 
   const save = async () => {
@@ -759,8 +765,9 @@ const BranchLocationRow = ({ branch }) => {
   };
 
   const clearGeofence = async () => {
+    if (!window.confirm(`Remove the geofence for "${branch.name}"? Check-in will become unrestricted for this branch.`)) return;
     try {
-      await setBranchLocation({ id: branch.id, latitude: null, longitude: null }).unwrap();
+      await setBranchLocation({ id: branch.id, latitude: null, longitude: null, geofenceRadiusM: null }).unwrap();
     } catch (e) {
       setErr(e?.data?.error?.message || 'Clear failed');
     }

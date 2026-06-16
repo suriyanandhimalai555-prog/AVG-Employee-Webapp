@@ -56,8 +56,8 @@ export const TradingAcademyService = {
       const insertResult = await client.query(
         `INSERT INTO trading_academy_members
            (branch_id, project_id, customer_id, amount, enrolled_by,
-            enrollment_date, payment_mode, proof_key, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            enrollment_date, payment_mode, proof_key, transaction_id, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
         [
           branchId,
@@ -68,6 +68,7 @@ export const TradingAcademyService = {
           payload.enrollmentDate,
           payload.paymentMode,
           payload.proofKey ?? null,
+          payload.transactionId ?? null,
           payload.notes ?? null,
           enteredBy,
         ]
@@ -106,14 +107,18 @@ export const TradingAcademyService = {
   ): Promise<{ data: any[]; total: number }> {
     const projectId = await TradingAcademyService.getProjectId(db);
 
-    const params: any[] = [branchId, projectId];
-    let where = 't.branch_id = $1 AND t.project_id = $2';
-    let idx = 3;
-
+    // Referrer-scoped roles see their own enrolments across ALL branches (match on
+    // enrolled_by, drop the branch filter); everyone else stays branch-scoped.
+    const params: any[] = [];
+    let where: string;
     if (query.enrolledBy) {
-      where += ` AND t.enrolled_by = $${idx++}`;
-      params.push(query.enrolledBy);
+      params.push(query.enrolledBy, projectId);
+      where = 't.enrolled_by = $1 AND t.project_id = $2';
+    } else {
+      params.push(branchId, projectId);
+      where = 't.branch_id = $1 AND t.project_id = $2';
     }
+    let idx = 3;
 
     if (query.search) {
       where += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
@@ -168,12 +173,18 @@ export const TradingAcademyService = {
     const enrolledBy = scopedToUserId;
     const projectId = await TradingAcademyService.getProjectId(db);
 
-    const params: any[] = [branchId, projectId];
-    let extra = '';
+    // Referrer-scoped: count this user's enrolments across ALL branches; otherwise
+    // scope to the branch. project_id is kept either way.
+    const params: any[] = [];
+    let baseWhere: string;
     if (enrolledBy) {
-      extra += ` AND enrolled_by = $${params.length + 1}`;
-      params.push(enrolledBy);
+      params.push(enrolledBy, projectId);
+      baseWhere = 'enrolled_by = $1 AND project_id = $2';
+    } else {
+      params.push(branchId, projectId);
+      baseWhere = 'branch_id = $1 AND project_id = $2';
     }
+    let extra = '';
     if (dateFilter?.startDate) {
       extra += ` AND enrollment_date >= $${params.length + 1}::date`;
       params.push(dateFilter.startDate);
@@ -189,7 +200,7 @@ export const TradingAcademyService = {
          COALESCE(SUM(amount), 0)   AS total_collected,
          COUNT(*) FILTER (WHERE enrollment_date = CURRENT_DATE) AS enrolled_today
        FROM trading_academy_members
-       WHERE branch_id = $1 AND project_id = $2${extra}`,
+       WHERE ${baseWhere}${extra}`,
       params
     );
     const r = res.rows[0];
@@ -201,12 +212,20 @@ export const TradingAcademyService = {
   },
 
   // ─── GET BRANCH EMPLOYEES (for the "enrolled by" picker) ───
+  // Branch-resident field staff PLUS the GMs/Directors overseeing this branch
+  // (via user_oversight_branches) PLUS the MD (no branch link of their own).
   async getBranchEmployees(db: Pool, branchId: string): Promise<any[]> {
     const res = await db.query(
-      `SELECT id, name, role FROM users
-       WHERE branch_id = $1 AND is_active = true
-         AND role IN ('sales_officer', 'abm', 'branch_manager')
-       ORDER BY name ASC`,
+      `SELECT DISTINCT u.id, u.name, u.role FROM users u
+       WHERE u.is_active = true
+         AND (
+           (u.branch_id = $1 AND u.role IN ('sales_officer', 'abm', 'branch_manager'))
+           OR (u.role IN ('gm', 'director')
+               AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                           WHERE uob.user_id = u.id AND uob.branch_id = $1))
+           OR u.role = 'md'
+         )
+       ORDER BY u.name ASC`,
       [branchId]
     );
     return res.rows;
@@ -243,6 +262,7 @@ export const TradingAcademyService = {
       if (payload.enrollmentDate != null) { fields.push(`enrollment_date = $${idx++}`);  vals.push(payload.enrollmentDate); }
       if (payload.paymentMode    != null) { fields.push(`payment_mode = $${idx++}`);     vals.push(payload.paymentMode); }
       if (payload.proofKey       != null) { fields.push(`proof_key = $${idx++}`);        vals.push(payload.proofKey); }
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
       if (payload.notes !== undefined)    { fields.push(`notes = $${idx++}`);            vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

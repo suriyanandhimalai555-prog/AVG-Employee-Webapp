@@ -102,9 +102,9 @@ export const SlotsService = {
         const slotRes = await client.query(
           `INSERT INTO gold_coin_slots
              (room_id, slot_number, customer_id, branch_id, amount_paid,
-              payment_mode, proof_key, referrer_id, notes, entered_by, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                   COALESCE($11::timestamptz, now()))
+              payment_mode, proof_key, transaction_id, referrer_id, notes, entered_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                   COALESCE($12::timestamptz, now()))
            RETURNING *`,
           [
             room.id,
@@ -114,6 +114,7 @@ export const SlotsService = {
             payload.amountPaid,
             payload.paymentMode,
             payload.proofKey ?? null,
+            payload.transactionId ?? null,
             payload.referrerId ?? null,
             payload.notes ?? null,
             enteredBy,
@@ -216,6 +217,7 @@ export const SlotsService = {
       if (payload.notes      !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
       if (payload.paymentMode != null)      { fields.push(`payment_mode = $${idx++}`); vals.push(payload.paymentMode); }
       if (payload.proofKey   != null)       { fields.push(`proof_key = $${idx++}`);    vals.push(payload.proofKey); }
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
       if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
       // TS: customerId allows admin to re-assign slot to correct customer
       if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`);  vals.push(payload.customerId); }

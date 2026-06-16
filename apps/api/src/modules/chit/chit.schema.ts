@@ -33,6 +33,7 @@ export const AddChitMemberSchema = z.object({
   firstPaymentDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   firstPaymentMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   firstPaymentProofKey: z.array(z.string()).optional(),
+  firstPaymentTransactionId: z.string().max(100).optional(),
   notes:                z.string().max(500).optional(),
   branchId:             z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -43,6 +44,13 @@ export const AddChitMemberSchema = z.object({
       path: ['firstPaymentProofKey'],
     });
   }
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentTransactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'firstPaymentTransactionId is required for gpay and bank_receipt payments',
+      path: ['firstPaymentTransactionId'],
+    });
+  }
 });
 
 export const RecordChitPaymentSchema = z.object({
@@ -51,6 +59,7 @@ export const RecordChitPaymentSchema = z.object({
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -59,6 +68,13 @@ export const RecordChitPaymentSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required for gpay and bank_receipt payments',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required for gpay and bank_receipt payments',
+      path: ['transactionId'],
     });
   }
 });
@@ -113,6 +129,7 @@ export const CorrectChitPaymentSchema = z.object({
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
   proofKey:     z.array(z.string()).optional(),
+  transactionId: z.string().max(100).optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -121,6 +138,13 @@ export const CorrectChitPaymentSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: 'proofKey is required when setting paymentMode to gpay or bank_receipt',
       path: ['proofKey'],
+    });
+  }
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
+      path: ['transactionId'],
     });
   }
 });

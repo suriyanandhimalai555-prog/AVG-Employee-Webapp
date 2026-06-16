@@ -26,6 +26,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
+import { TransactionIdField } from '../../components/money/TransactionIdField';
 import { PhotoProof } from '../../components/money/PhotoProof';
 
 // ─── Status presentation ──────────────────────────────────────────────────────
@@ -61,15 +62,16 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
     notes:        '',
   });
   const [proofKey,     setProofKey]     = useState([]);
+  const [txnId,        setTxnId]        = useState('');
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.paymentMode !== 'cash' && !proofKey.length) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
       setShowProofErr(true);
-      setError('Please upload payment proof for GPay/bank payments.');
+      setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
@@ -80,6 +82,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
         payoutDate:  form.payoutDate,
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
+        transactionId: txnId.trim() || undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onSuccess(res);
@@ -149,7 +152,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mb-2">Mode</p>
             <PaymentModeSelect
               value={form.paymentMode}
-              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -158,6 +161,13 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             mode={form.paymentMode}
             proofKey={proofKey}
             onChange={setProofKey}
+            showError={showProofErr}
+          />
+
+          <TransactionIdField
+            mode={form.paymentMode}
+            value={txnId}
+            onChange={setTxnId}
             showError={showProofErr}
           />
 

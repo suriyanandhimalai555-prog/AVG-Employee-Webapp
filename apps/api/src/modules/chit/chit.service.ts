@@ -178,13 +178,23 @@ export const ChitService = {
   async getGroups(
     db: Pool,
     branchId: string,
-    query: GetChitGroupsQuery
+    query: GetChitGroupsQuery,
+    referrerId?: string,   // set for referrer-only roles → only groups they have a card in
   ): Promise<{ data: any[]; total: number }> {
     // Lazy promotion: any forming group whose deadline passed becomes pending_combine
     await promoteStaleFormingGroups(db);
 
-    const params: any[] = [branchId];
-    let where = 'g.branch_id = $1';
+    // Referrer-scoped roles see only groups where they referred ≥1 member, across
+    // ALL branches; everyone else stays branch-scoped.
+    const params: any[] = [];
+    let where: string;
+    if (referrerId) {
+      params.push(referrerId);
+      where = 'EXISTS (SELECT 1 FROM agila_chit_members mm WHERE mm.group_id = g.id AND mm.referrer_id = $1)';
+    } else {
+      params.push(branchId);
+      where = 'g.branch_id = $1';
+    }
     let idx = 2;
 
     if (query.status === 'in_progress') {
@@ -236,14 +246,23 @@ export const ChitService = {
   },
 
   // ─── GET SINGLE GROUP WITH MEMBERS ────────────────────────────────────────
-  async getGroup(db: Pool, groupId: string, branchId: string): Promise<any> {
+  async getGroup(db: Pool, groupId: string, branchId: string, referrerId?: string): Promise<any> {
+    // Referrer-scoped roles can open a group from any branch, but only if they have
+    // a card in it — gate access via EXISTS instead of the branch match.
     const groupResult = await db.query(
-      `SELECT g.*, u.name AS created_by_name, b.is_head_branch AS branch_is_head
-       FROM agila_chit_groups g
-       JOIN users    u ON g.created_by = u.id
-       JOIN branches b ON b.id = g.branch_id
-       WHERE g.id = $1 AND g.branch_id = $2`,
-      [groupId, branchId]
+      referrerId
+        ? `SELECT g.*, u.name AS created_by_name, b.is_head_branch AS branch_is_head
+           FROM agila_chit_groups g
+           JOIN users    u ON g.created_by = u.id
+           JOIN branches b ON b.id = g.branch_id
+           WHERE g.id = $1
+             AND EXISTS (SELECT 1 FROM agila_chit_members mm WHERE mm.group_id = g.id AND mm.referrer_id = $2)`
+        : `SELECT g.*, u.name AS created_by_name, b.is_head_branch AS branch_is_head
+           FROM agila_chit_groups g
+           JOIN users    u ON g.created_by = u.id
+           JOIN branches b ON b.id = g.branch_id
+           WHERE g.id = $1 AND g.branch_id = $2`,
+      [groupId, referrerId ?? branchId]
     );
     if (groupResult.rows.length === 0) throw new NotFoundError('Group not found');
     const group = groupResult.rows[0];
@@ -257,6 +276,10 @@ export const ChitService = {
       group.status = 'pending_combine';
     }
 
+    // Referrer-scoped roles only see the cards (and their winners) they referred.
+    const memberScope = referrerId ? ' AND m.referrer_id = $2' : '';
+    const memberParams = referrerId ? [groupId, referrerId] : [groupId];
+
     const membersResult = await db.query(
       `SELECT
          m.*,
@@ -268,10 +291,10 @@ export const ChitService = {
        JOIN customers c ON m.customer_id = c.id
        JOIN users u     ON m.entered_by  = u.id
        LEFT JOIN agila_chit_payments p ON p.member_id = m.id
-       WHERE m.group_id = $1
+       WHERE m.group_id = $1${memberScope}
        GROUP BY m.id, c.name, c.phone, c.customer_code, u.name
        ORDER BY m.created_at ASC`,
-      [groupId]
+      memberParams
     );
 
     const winnersResult = await db.query(
@@ -280,9 +303,9 @@ export const ChitService = {
        JOIN agila_chit_members m ON m.id = w.member_id
        JOIN customers c          ON c.id = m.customer_id
        JOIN users u              ON u.id = w.selected_by
-       WHERE w.group_id = $1
+       WHERE w.group_id = $1${memberScope}
        ORDER BY w.month_number ASC`,
-      [groupId]
+      memberParams
     );
 
     return {
@@ -376,9 +399,9 @@ export const ChitService = {
       // Auto-record Month-1 full payment
       await client.query(
         `INSERT INTO agila_chit_payments
-           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, entered_by)
-         VALUES ($1,$2,1,$3,$4,$5,$6,$7)`,
-        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, payload.firstPaymentProofKey || null, enteredBy]
+           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, transaction_id, entered_by)
+         VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)`,
+        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, payload.firstPaymentProofKey || null, payload.firstPaymentTransactionId || null, enteredBy]
       );
 
       // Credit referrer 20% of Month-1 full amount
@@ -453,11 +476,11 @@ export const ChitService = {
 
       const result = await client.query(
         `INSERT INTO agila_chit_payments
-           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, transaction_id, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
         [groupId, memberId, payload.monthNumber, payload.amount,
-         payload.paymentDate, payload.paymentMode, payload.proofKey || null, payload.notes || null, enteredBy]
+         payload.paymentDate, payload.paymentMode, payload.proofKey || null, payload.transactionId || null, payload.notes || null, enteredBy]
       );
 
       await client.query('COMMIT');
@@ -880,6 +903,7 @@ export const ChitService = {
       if (payload.paymentDate  != null)  { fields.push(`payment_date = $${idx++}`);   vals.push(payload.paymentDate); }
       if (payload.paymentMode  != null)  { fields.push(`payment_mode = $${idx++}`);   vals.push(payload.paymentMode); }
       if (payload.proofKey     != null)  { fields.push(`proof_key = $${idx++}`);      vals.push(payload.proofKey); }
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
       if (payload.notes !== undefined)   { fields.push(`notes = $${idx++}`);          vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 
@@ -1181,15 +1205,26 @@ export const ChitService = {
   async getBranchSummary(
     db: Pool,
     branchId: string,
-    _scopedToUserId?: string,
+    scopedToUserId?: string,
     dateFilter?: { startDate?: string; endDate?: string }
   ): Promise<any> {
-    const params: any[] = [branchId];
-    let where = 'g.branch_id = $1';
-    let idx = 2;
+    // Referrer-scoped roles (chit lives on the member, not the group): count the
+    // groups they participate in and ONLY their own referred members, across ALL
+    // branches. Everyone else stays branch-scoped.
+    // ── Groups: a group counts if the referrer has a card in it ──
+    const gParams: any[] = [];
+    let gWhere: string;
+    if (scopedToUserId) {
+      gParams.push(scopedToUserId);
+      gWhere = 'EXISTS (SELECT 1 FROM agila_chit_members mm WHERE mm.group_id = g.id AND mm.referrer_id = $1)';
+    } else {
+      gParams.push(branchId);
+      gWhere = 'g.branch_id = $1';
+    }
+    let gIdx = 2;
     // Filter by business date (start_date) so backdated groups count in their real period
-    if (dateFilter?.startDate) { where += ` AND g.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
-    if (dateFilter?.endDate)   { where += ` AND g.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    if (dateFilter?.startDate) { gWhere += ` AND g.start_date >= $${gIdx++}::date`; gParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { gWhere += ` AND g.start_date < ($${gIdx++}::date + INTERVAL '1 day')`; gParams.push(dateFilter.endDate); }
 
     const groupsResult = await db.query(
       `SELECT
@@ -1198,9 +1233,18 @@ export const ChitService = {
          COUNT(*) FILTER (WHERE g.status = 'active')::int            AS active_groups,
          COUNT(*) FILTER (WHERE g.status = 'completed')::int         AS completed_groups,
          COUNT(*) FILTER (WHERE g.status = 'pending_combine')::int   AS pending_groups
-       FROM agila_chit_groups g WHERE ${where}`,
-      params
+       FROM agila_chit_groups g WHERE ${gWhere}`,
+      gParams
     );
+
+    // ── Members: only the referrer's own cards when scoped ──
+    const mParams: any[] = [];
+    let mWhere: string;
+    if (scopedToUserId) { mParams.push(scopedToUserId); mWhere = 'm.referrer_id = $1'; }
+    else                { mParams.push(branchId);       mWhere = 'g.branch_id = $1'; }
+    let mIdx = 2;
+    if (dateFilter?.startDate) { mWhere += ` AND g.start_date >= $${mIdx++}::date`; mParams.push(dateFilter.startDate); }
+    if (dateFilter?.endDate)   { mWhere += ` AND g.start_date < ($${mIdx++}::date + INTERVAL '1 day')`; mParams.push(dateFilter.endDate); }
 
     const membersResult = await db.query(
       `SELECT
@@ -1212,12 +1256,15 @@ export const ChitService = {
        FROM agila_chit_groups g
        LEFT JOIN agila_chit_members  m ON m.group_id  = g.id
        LEFT JOIN agila_chit_payments p ON p.member_id = m.id
-       WHERE ${where}`,
-      params
+       WHERE ${mWhere}`,
+      mParams
     );
 
-    const commParams: any[] = [branchId, SCHEME_CODE];
-    let commWhere = 'acg.branch_id = $1 AND ei.scheme_code = $2';
+    // Referrer-scoped: sum incentives credited to that user across ALL branches.
+    const commParams: any[] = [];
+    let commWhere: string;
+    if (scopedToUserId) { commParams.push(scopedToUserId, SCHEME_CODE); commWhere = 'ei.user_id = $1 AND ei.scheme_code = $2'; }
+    else                { commParams.push(branchId, SCHEME_CODE);       commWhere = 'acg.branch_id = $1 AND ei.scheme_code = $2'; }
     let commIdx = 3;
     if (dateFilter?.startDate) { commWhere += ` AND ei.created_at >= $${commIdx++}::date`; commParams.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { commWhere += ` AND ei.created_at < ($${commIdx++}::date + INTERVAL '1 day')`; commParams.push(dateFilter.endDate); }

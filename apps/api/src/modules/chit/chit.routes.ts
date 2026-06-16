@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { ChitService } from './chit.service';
@@ -24,6 +24,8 @@ interface AuthRequest extends FastifyRequest { user: AuthUser; }
 
 const READER_ROLES      = new Set<string>(READER_LIST);
 const WRITER_ROLES      = new Set<string>(SCHEME_WRITER_ROLES);
+// Roles that see only chit cards they personally referred (across all branches)
+const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 const CONFIG_ROLES_SET  = new Set<string>([Role.MD, Role.DIRECTOR, 'management']);
 
 // Roles that can view the head-branch console (read-only for MD/Director)
@@ -65,7 +67,9 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const query = GetChitSummaryQuerySchema.parse(req.query);
-      const data = await ChitService.getBranchSummary(fastify.db, req.user.branchId, undefined, query);
+      // Referrer-only roles see personal totals (own cards across all branches)
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data = await ChitService.getBranchSummary(fastify.db, req.user.branchId, referrerId, query);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -78,7 +82,9 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const query = GetChitGroupsQuerySchema.parse(req.query);
-      const data = await ChitService.getGroups(fastify.db, req.user.branchId, query);
+      // Referrer-only roles see only groups they have a card in (across all branches)
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data = await ChitService.getGroups(fastify.db, req.user.branchId, query, referrerId);
       return reply.send({ success: true, ...data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -140,9 +146,13 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
       const req = request as AuthRequest;
       if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
       const { groupId } = req.params as { groupId: string };
-      // TS: resolveReadBranch handles null branchId for md/management via query param
-      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
-      const data = await ChitService.getGroup(fastify.db, groupId, branchId);
+      // Referrer-only roles open any group they have a card in (branch is irrelevant);
+      // everyone else resolves a branch (resolveReadBranch handles md/management).
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const branchId = referrerId
+        ? ''
+        : resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      const data = await ChitService.getGroup(fastify.db, groupId, branchId, referrerId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

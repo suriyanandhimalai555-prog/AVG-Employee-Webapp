@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import {
@@ -27,6 +27,8 @@ interface AuthUser { id: string; role: string; branchId: string; }
 interface AuthRequest extends FastifyRequest { user: AuthUser; }
 
 const READER_ROLES = new Set<string>(READER_LIST);
+// Roles that see only bookings they personally referred (across all branches)
+const REFERRER_ONLY_ROLES = new Set<string>(REFERRER_LIST);
 const MD_ROLE: string = Role.MD;
 const BRANCH_ADMIN_ROLE: string = Role.BRANCH_ADMIN;
 
@@ -69,7 +71,9 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const req = request as AuthRequest;
         if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
         const branchId = req.user.role === MD_ROLE ? null : req.user.branchId;
-        const data = await LandService.getBranchSummary(fastify.db, branchId ?? '', undefined);
+        // Referrer-only roles see personal totals (own referrals across all branches)
+        const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+        const data = await LandService.getBranchSummary(fastify.db, branchId ?? '', referrerId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }
@@ -287,10 +291,19 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
         // TS: resolveReadBranch handles null branchId for md/management via query param
         const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+        // Branch-resident staff PLUS GMs/Directors overseeing this branch (via
+        // user_oversight_branches) PLUS the MD (no branch link of their own).
         const result = await fastify.db.query(
-          `SELECT id, name, role FROM users
-           WHERE branch_id = $1 AND is_active = true AND role NOT IN ('md','client')
-           ORDER BY name ASC`,
+          `SELECT DISTINCT u.id, u.name, u.role FROM users u
+           WHERE u.is_active = true
+             AND (
+               (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
+               OR (u.role IN ('gm', 'director')
+                   AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                               WHERE uob.user_id = u.id AND uob.branch_id = $1))
+               OR u.role = 'md'
+             )
+           ORDER BY u.name ASC`,
           [branchId]
         );
         return reply.send({ success: true, data: result.rows });
@@ -345,7 +358,9 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const req      = request as AuthRequest;
         const branchId = resolveBranchScope(req);
         const query    = ListBookingsQuerySchema.parse(req.query);
-        const data     = await LandBookingsService.listBookings(fastify.db, branchId, query);
+        // Referrer-only roles see only bookings they referred (across all branches)
+        const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+        const data     = await LandBookingsService.listBookings(fastify.db, branchId, query, referrerId);
         return reply.send({ success: true, ...data });
       } catch (error) { return handleError(error, reply); }
     }
