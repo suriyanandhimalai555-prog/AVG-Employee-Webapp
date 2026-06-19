@@ -11,6 +11,7 @@
 // This is the SINGLE function all scheme write paths call — no per-scheme
 // copy-paste, no fetching the phone number here (the worker does that fresh).
 import { PoolClient } from 'pg';
+import { isWhatsappMessagesEnabled } from '../../shared/whatsapp-guard';
 
 // ── Template map ──────────────────────────────────────────────────────────────
 // Maps (schemeCode, event) → the pre-approved Meta template name.
@@ -92,8 +93,6 @@ export async function enqueueSchemeNotification(
 ): Promise<string | null> {
   // ── 1. Business gate: skip entirely when management has WhatsApp OFF ─────────
   // app_settings always exists (migration 066); this read is always safe.
-  // TS: import here to avoid a circular dependency with the guard module
-  const { isWhatsappMessagesEnabled } = await import('../../shared/whatsapp-guard');
   if (!(await isWhatsappMessagesEnabled(client))) {
     return null;
   }
