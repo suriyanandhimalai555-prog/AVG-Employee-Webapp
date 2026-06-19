@@ -3,8 +3,6 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
-import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
-import { addNotificationJob } from '../notifications/notifications.queue';
 import type {
   CreateChitGroupInput,
   AddChitMemberInput,
@@ -442,28 +440,7 @@ export const ChitService = {
         groupStatus = 'active';
       }
 
-      // Queue WhatsApp enrollment notification inside txn (atomic with member insert)
-      const notifOutboxId = await enqueueSchemeNotification(client, {
-        schemeCode:     SCHEME_CODE,
-        event:          'enrollment',
-        sourceId:       member.id,
-        customerId:     payload.customerId,
-        branchId,
-        templateParams: {
-          customerName: customerName,
-          schemeName:   `Agila Chit — ${group.group_name}`,
-          amount:       fullAmount,
-          dateStr:      paymentDate,
-        },
-      });
-
       await client.query('COMMIT');
-
-      if (notifOutboxId) {
-        addNotificationJob(notifOutboxId).catch((err) =>
-          console.error(`⚠️  Chit notify enqueue failed (outbox ${notifOutboxId}):`, err)
-        );
-      }
 
       return { member, customer: custResult.rows[0], commissionAmount, memberCount: newCount, groupStatus };
     } catch (err: any) {

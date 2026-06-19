@@ -5,6 +5,7 @@ import { processSignOff } from './processors/signOff';
 import { processAutoAbsent } from './processors/autoAbsent';
 import { processAutoDeactivate } from './processors/autoDeactivate';
 import { processWhatsAppNotification } from './processors/whatsapp';
+import { processWhatsAppDispatch } from './processors/whatsapp-dispatch';
 
 /**
  * Routes incoming jobs from the 'attendance' queue to the correct processor.
@@ -79,6 +80,10 @@ const notificationsRouter = async (job: Job): Promise<void> => {
 
     case 'whatsapp-sweep':
       await runWhatsAppSweep();
+      return;
+
+    case 'whatsapp-dispatch':
+      await processWhatsAppDispatch();
       return;
 
     default:

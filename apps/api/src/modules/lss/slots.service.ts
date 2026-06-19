@@ -10,9 +10,6 @@ import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import { RoomsService, LSS_SLOTS_PER_ROOM } from './rooms.service';
 import type { CreateSlotInput, CorrectLssSlotInput } from './lss.schema';
-import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
-import { addNotificationJob } from '../notifications/notifications.queue';
-
 const SCHEME_CODE = 'lss_scheme';
 
 export const SlotsService = {
@@ -24,8 +21,6 @@ export const SlotsService = {
     payload: CreateSlotInput,
   ): Promise<{ slots: any[]; room: any; commissionAmount: number; totalAmountPaid: number }> {
     const quantity = payload.quantity ?? 1;
-    // TS: closure variable captures the outbox id from inside the transaction
-    let notifOutboxId: string | null = null;
     const result = await runInTransaction(db, async (client) => {
       // 1. Customer must exist and belong to this branch
       const custRes = await client.query(
@@ -147,30 +142,9 @@ export const SlotsService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
-      // Queue WhatsApp enrollment notification inside txn (atomic with slot inserts).
-      // source_id = slots[0].id — one notification per purchase batch
-      notifOutboxId = await enqueueSchemeNotification(client, {
-        schemeCode:     SCHEME_CODE,
-        event:          'enrollment',
-        sourceId:       slots[0].id,
-        customerId:     payload.customerId,
-        branchId,
-        templateParams: {
-          customerName: customer.name,
-          schemeName:   `LSS — ${plan.name}`,
-          amount:       totalAmountPaid,
-          dateStr:      payload.saleDate ?? new Date().toISOString().slice(0, 10),
-        },
-      });
-
       return { slots, room, commissionAmount, totalAmountPaid };
     });
 
-    if (notifOutboxId) {
-      addNotificationJob(notifOutboxId).catch((err) =>
-        console.error(`⚠️  LSS notify enqueue failed (outbox ${notifOutboxId}):`, err)
-      );
-    }
     return result;
   },
 

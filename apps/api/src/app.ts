@@ -34,6 +34,7 @@ import buildersRoutes from './modules/builders/builders.routes';
 import landRoutes from './modules/land/land.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
 import settingsRoutes from './modules/settings/settings.routes';
+import notificationWebhookRoutes from './modules/notifications/notifications.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -193,6 +194,10 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // App-level settings (backdated-entry permission flag)
   await app.register(settingsRoutes, { prefix: '/api/settings' });
+
+  // WhatsApp delivery-receipt webhooks — public, no JWT auth.
+  // Meta verifies ownership via GET challenge and signs POST bodies with HMAC-SHA256.
+  await app.register(notificationWebhookRoutes, { prefix: '/api/webhooks' });
 
   return app;
 };

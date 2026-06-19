@@ -53,6 +53,10 @@ const envSchema = z.object({
   WHATSAPP_ACCESS_TOKEN:         z.string().optional(),
   WHATSAPP_API_VERSION:          z.string().optional(),
   WHATSAPP_DEFAULT_COUNTRY_CODE: z.string().optional(),
+  // TS: Webhook verify token + HMAC secret for Meta delivery receipt callbacks.
+  // Must match what is configured in the Meta App Dashboard → Webhooks.
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
+  WHATSAPP_WEBHOOK_SECRET:       z.string().optional(),
 });
 
 // Infer the TypeScript type from the Zod schema for compile-time type safety

@@ -3,8 +3,6 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
-import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
-import { addNotificationJob } from '../notifications/notifications.queue';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
@@ -118,31 +116,7 @@ export const GoldService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
-      // Queue WhatsApp enrollment notification (inside txn for atomicity).
-      // source_id = member.id so the unique index prevents duplicate messages.
-      const notifOutboxId = await enqueueSchemeNotification(client, {
-        schemeCode:     GOLD_PROJECT_CODE,
-        event:          'enrollment',
-        sourceId:       member.id,
-        customerId:     payload.customerId,
-        branchId,
-        templateParams: {
-          customerName: customerName,
-          schemeName:   'Gold Savings Scheme',
-          amount:       parseFloat(payload.monthlyAmount.toString()),
-          dateStr:      payload.startDate,
-        },
-      });
-
       await client.query('COMMIT');
-
-      // Enqueue the notification job after commit — non-fatal if Redis is down
-      // (the scheduler sweep will recover pending rows after 2 minutes)
-      if (notifOutboxId) {
-        addNotificationJob(notifOutboxId).catch((err) =>
-          console.error(`⚠️  Gold enrollment notify enqueue failed (outbox ${notifOutboxId}):`, err)
-        );
-      }
 
       return { member, commissionAmount };
     } catch (err) {
@@ -337,34 +311,7 @@ export const GoldService = {
         });
       }
 
-      // Queue WhatsApp renewal notification for month 2 onwards.
-      // Month 1 notification is already sent by addMember (enrollment event).
-      // source_id = payment row id so each month has its own dedup key.
-      let renewalOutboxId: string | null = null;
-      if (payload.monthNumber > 1) {
-        renewalOutboxId = await enqueueSchemeNotification(client, {
-          schemeCode:     GOLD_PROJECT_CODE,
-          event:          'renewal',
-          sourceId:       result.rows[0].id,
-          customerId:     memberRow.customer_id,
-          branchId,
-          templateParams: {
-            customerName: memberRow.customer_name,
-            schemeName:   'Gold Savings Scheme',
-            amount:       parseFloat(payload.amount.toString()),
-            monthNumber:  payload.monthNumber,
-            dateStr:      payload.paidDate,
-          },
-        });
-      }
-
       await client.query('COMMIT');
-
-      if (renewalOutboxId) {
-        addNotificationJob(renewalOutboxId).catch((err) =>
-          console.error(`⚠️  Gold renewal notify enqueue failed (outbox ${renewalOutboxId}):`, err)
-        );
-      }
 
       return result.rows[0];
     } catch (err: any) {

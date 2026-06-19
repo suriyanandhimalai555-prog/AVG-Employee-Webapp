@@ -1,8 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
-import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
-import { addNotificationJob } from '../notifications/notifications.queue';
 import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
@@ -106,8 +104,6 @@ export const BuildersService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
-    // TS: closure variable captures the outbox id from inside the transaction
-    let notifOutboxId: string | null = null;
     const result = await runInTransaction(db, async (client: PoolClient) => {
       const insertResult = await client.query(
         `INSERT INTO builders_plans
@@ -152,29 +148,9 @@ export const BuildersService = {
         effectiveDate: payload.lumpSumDate,
       });
 
-      // Queue WhatsApp enrollment notification inside txn (atomic with plan insert)
-      notifOutboxId = await enqueueSchemeNotification(client, {
-        schemeCode:     'builders_scheme',
-        event:          'enrollment',
-        sourceId:       plan.id,
-        customerId:     payload.customerId,
-        branchId,
-        templateParams: {
-          customerName: custResult.rows[0].name,
-          schemeName:   `Builders Scheme — Package ${payload.packageNumber}`,
-          amount:       parseFloat(pkg.investmentAmount.toString()),
-          dateStr:      payload.lumpSumDate,
-        },
-      });
-
       return { plan, customer: custResult.rows[0] };
     });
 
-    if (notifOutboxId) {
-      addNotificationJob(notifOutboxId).catch((err) =>
-        console.error(`⚠️  Builders notify enqueue failed (outbox ${notifOutboxId}):`, err)
-      );
-    }
     return result;
   },
 

@@ -107,7 +107,7 @@ export const UserManagement = () => {
     gm:             ['director'],
     branch_manager: ['gm'],
     abm:            ['branch_manager'],
-    sales_officer:  ['abm', 'oa', 'branch_admin'],
+    sales_officer:  ['abm', 'oa', 'branch_admin', 'branch_manager'],
   };
 
   // Must stay in sync with MANAGER_REQUIRED_ROLES in hierarchy-policy.ts

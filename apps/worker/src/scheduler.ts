@@ -9,7 +9,7 @@ export const schedulerQueue = new Queue('attendance', { connection: redis });
 export const notificationsSchedulerQueue = new Queue('notifications', { connection: redis });
 
 const REPEATABLE_JOB_NAMES         = new Set(['auto-absent', 'auto-deactivate']);
-const NOTIFICATION_REPEATABLE_NAMES = new Set(['whatsapp-sweep']);
+const NOTIFICATION_REPEATABLE_NAMES = new Set(['whatsapp-sweep', 'whatsapp-dispatch']);
 
 /**
  * Removes any stale repeatable jobs from prior deployments and registers
@@ -58,6 +58,14 @@ export const registerScheduledJobs = async (): Promise<void> => {
     jobId:  'whatsapp-sweep-recurring',
   });
   console.log('✅ Scheduled: whatsapp-sweep every 2 minutes');
+
+  // Every 5 minutes — scans scheme tables for new records and inserts outbox rows.
+  // 5-minute interval keeps notification lag acceptable without hammering the DB.
+  await notificationsSchedulerQueue.add('whatsapp-dispatch', {}, {
+    repeat: { every: 5 * 60 * 1000 },   // TS: every = ms interval
+    jobId:  'whatsapp-dispatch-recurring',
+  });
+  console.log('✅ Scheduled: whatsapp-dispatch every 5 minutes');
 };
 
 /**
