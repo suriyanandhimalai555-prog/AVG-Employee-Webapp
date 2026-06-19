@@ -17,6 +17,8 @@ import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import { RoomsService, GC_SLOTS_PER_ROOM } from './rooms.service';
 import type { CreateSlotInput, CorrectGoldCoinSlotInput } from './gold-coin.schema';
+import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
+import { addNotificationJob } from '../notifications/notifications.queue';
 
 const SCHEME_CODE = 'gold_coin_scheme';
 
@@ -29,7 +31,9 @@ export const SlotsService = {
     payload: CreateSlotInput,
   ): Promise<{ slots: any[]; room: any; commissionAmount: number; totalAmountPaid: number }> {
     const quantity = payload.quantity ?? 1;
-    return runInTransaction(db, async (client) => {
+    // TS: closure variable captures the outbox id from inside the transaction
+    let notifOutboxId: string | null = null;
+    const result = await runInTransaction(db, async (client) => {
       // 1. Customer must exist and belong to this branch
       const custRes = await client.query(
         `SELECT id, name, customer_code FROM customers WHERE id = $1 AND branch_id = $2`,
@@ -152,8 +156,32 @@ export const SlotsService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
+      // Queue WhatsApp enrollment notification (inside txn for atomicity).
+      // source_id = slots[0].id — one notification per purchase, not per slot.
+      // TS: customer.name + pkg.name + totalAmountPaid are all in scope here
+      notifOutboxId = await enqueueSchemeNotification(client, {
+        schemeCode:     SCHEME_CODE,
+        event:          'enrollment',
+        sourceId:       slots[0].id,
+        customerId:     payload.customerId,
+        branchId,
+        templateParams: {
+          customerName: customer.name,
+          schemeName:   `Gold Coin — ${pkg.name}`,
+          amount:       totalAmountPaid,
+          dateStr:      payload.saleDate ?? new Date().toISOString().slice(0, 10),
+        },
+      });
+
       return { slots, room, commissionAmount, totalAmountPaid };
     });
+
+    if (notifOutboxId) {
+      addNotificationJob(notifOutboxId).catch((err) =>
+        console.error(`⚠️  Gold Coin notify enqueue failed (outbox ${notifOutboxId}):`, err)
+      );
+    }
+    return result;
   },
 
   // Refund a single held slot. callerBranchId must match the slot's branch_id.

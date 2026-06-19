@@ -18,7 +18,7 @@ import {
   Settings2, IndianRupee, Building2, Gem, Coins,
   Layers, Landmark, Edit2, Check, X, Loader2,
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
-  MapPin, Navigation,
+  MapPin, Navigation, MessageCircle,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -40,6 +40,12 @@ import {
   useUpdateLandLayoutMutation,
   useGetBackdatedEntrySettingQuery,
   useUpdateBackdatedEntrySettingMutation,
+  useGetWhatsappMessagesSettingQuery,
+  useUpdateWhatsappMessagesSettingMutation,
+  useGetLssEligibilityBypassSettingQuery,
+  useUpdateLssEligibilityBypassSettingMutation,
+  useGetGoldCoinEligibilityBypassSettingQuery,
+  useUpdateGoldCoinEligibilityBypassSettingMutation,
   useGetBranchesQuery,
   useSetHeadBranchMutation,
   useSetBranchLocationMutation,
@@ -1019,6 +1025,68 @@ const HeadBranchSetting = () => {
   );
 };
 
+// ─── WhatsApp messages toggle (Management only) ───────────────────────────────
+// Controls whether scheme purchase/renewal notifications are sent to customers
+// via WhatsApp.  Must be ON for messages to go out — acts as the business gate
+// on top of the infra gate (WHATSAPP_ENABLED env on the worker).
+const WhatsappMessagesToggle = () => {
+  const { data, isLoading }   = useGetWhatsappMessagesSettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateWhatsappMessagesSettingMutation();
+  const enabled = data?.enabled === true;
+
+  const toggle = async () => {
+    try {
+      await updateSetting({ enabled: !enabled }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch stays put.
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+              <MessageCircle size={16} className="text-emerald-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-navy">WhatsApp notifications</p>
+              <p className="text-xs text-navy/40 mt-0.5">
+                {enabled
+                  ? 'ON — customers receive WhatsApp messages on scheme purchases and renewals.'
+                  : 'OFF — no WhatsApp messages sent. Enable once Meta setup is complete.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={isLoading || saving}
+            aria-label={enabled ? 'Disable WhatsApp notifications' : 'Enable WhatsApp notifications'}
+            className="flex-shrink-0 tactile-press disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 size={34} className="animate-spin text-navy/30" />
+              : enabled
+                ? <ToggleRight size={34} className="text-emerald-600" />
+                : <ToggleLeft  size={34} className="text-navy/30" />}
+          </button>
+        </div>
+        {enabled && (
+          <div className="mt-3 px-3 py-2 bg-emerald-50 rounded-xl">
+            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Active</p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              Messages will be sent to customers who have opted in (has_whatsapp = on) when
+              they buy a plan or pay a renewal across all schemes.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── Backdated-entry toggle (Management only) ─────────────────────────────────
 // While ON, branch admins may enter scheme data dated in the past (the
 // incentive lands in that date's wallet period). Management itself is always
@@ -1065,6 +1133,128 @@ const BackdatedEntryToggle = () => {
   );
 };
 
+// ─── LSS eligibility bypass toggle (Management only) ─────────────────────────
+// While ON, draws can be run on any LSS slot regardless of how long ago the
+// customer joined. Turn OFF to restore the 30-day minimum wait.
+const LssEligibilityBypassToggle = () => {
+  const { data, isLoading }   = useGetLssEligibilityBypassSettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateLssEligibilityBypassSettingMutation();
+  const enabled = data?.enabled === true;
+
+  const toggle = async () => {
+    try {
+      await updateSetting({ enabled: !enabled }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch stays put.
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Layers size={16} className="text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-navy">LSS — bypass 30-day draw eligibility</p>
+              <p className="text-xs text-navy/40 mt-0.5">
+                {enabled
+                  ? 'ON — draws can run on any LSS slot, no waiting period enforced.'
+                  : 'OFF — slots must be at least 30 days old before a draw can be run.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={isLoading || saving}
+            aria-label={enabled ? 'Disable LSS eligibility bypass' : 'Enable LSS eligibility bypass'}
+            className="flex-shrink-0 tactile-press disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 size={34} className="animate-spin text-navy/30" />
+              : enabled
+                ? <ToggleRight size={34} className="text-amber-500" />
+                : <ToggleLeft  size={34} className="text-navy/30" />}
+          </button>
+        </div>
+        {enabled && (
+          <div className="mt-3 px-3 py-2 bg-amber-50 rounded-xl">
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Bypass active</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              LSS draws will run on any slot immediately — the 30-day eligibility wait is suspended.
+              Turn OFF to restore the normal safeguard.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Gold-Coin eligibility bypass toggle (Management only) ───────────────────
+// While ON, draws can be run on any Gold-Coin slot regardless of how long ago
+// the customer joined. Turn OFF to restore the 30-day minimum wait.
+const GoldCoinEligibilityBypassToggle = () => {
+  const { data, isLoading }   = useGetGoldCoinEligibilityBypassSettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateGoldCoinEligibilityBypassSettingMutation();
+  const enabled = data?.enabled === true;
+
+  const toggle = async () => {
+    try {
+      await updateSetting({ enabled: !enabled }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch stays put.
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-6">
+      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Coins size={16} className="text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-navy">Gold-Coin — bypass 30-day draw eligibility</p>
+              <p className="text-xs text-navy/40 mt-0.5">
+                {enabled
+                  ? 'ON — draws can run on any Gold-Coin slot, no waiting period enforced.'
+                  : 'OFF — slots must be at least 30 days old before a draw can be run.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={isLoading || saving}
+            aria-label={enabled ? 'Disable Gold-Coin eligibility bypass' : 'Enable Gold-Coin eligibility bypass'}
+            className="flex-shrink-0 tactile-press disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 size={34} className="animate-spin text-navy/30" />
+              : enabled
+                ? <ToggleRight size={34} className="text-amber-500" />
+                : <ToggleLeft  size={34} className="text-navy/30" />}
+          </button>
+        </div>
+        {enabled && (
+          <div className="mt-3 px-3 py-2 bg-amber-50 rounded-xl">
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Bypass active</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Gold-Coin draws will run on any slot immediately — the 30-day eligibility wait is suspended.
+              Turn OFF to restore the normal safeguard.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ManagementControlCenter = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -1099,7 +1289,10 @@ export const ManagementControlCenter = () => {
       </div>
 
       {/* Management-only global settings */}
+      {user?.role === 'management' && <WhatsappMessagesToggle />}
       {user?.role === 'management' && <BackdatedEntryToggle />}
+      {user?.role === 'management' && <LssEligibilityBypassToggle />}
+      {user?.role === 'management' && <GoldCoinEligibilityBypassToggle />}
       {user?.role === 'management' && <HeadBranchSetting />}
 
       {/* Tab bar — tabs with a roles set are only shown to matching roles */}

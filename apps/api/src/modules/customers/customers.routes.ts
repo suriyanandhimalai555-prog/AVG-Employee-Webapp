@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { CustomerService } from './customers.service';
-import { CreateCustomerSchema, SearchCustomersQuerySchema } from './customers.schema';
+import { CreateCustomerSchema, UpdateCustomerSchema, SearchCustomersQuerySchema } from './customers.schema';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 
 interface AuthUser { id: string; role: string; branchId: string; }
@@ -72,6 +72,29 @@ export default async function customerRoutes(fastify: FastifyInstance): Promise<
 
       const data = await CustomerService.create(fastify.db, branchId, req.user.id, body);
       return reply.code(201).send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── PATCH /customers/:id — update mutable fields (name, phone, address, notes, has_whatsapp) ───
+  // Scoped to caller's branch — same resolution as create/search.
+  // Exists primarily so existing customers can be flagged has_whatsapp=true
+  // after the column is added (before create time they couldn't set it).
+  fastify.patch('/:id', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthReq;
+      if (!ALLOWED_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+
+      const branchId = await resolveCustomerBranch(
+        fastify.db, req, (req.body as any).branchId
+      );
+      if (!branchId) throw new ForbiddenError('No branch associated with your account');
+
+      const { id } = req.params as { id: string };
+      const body   = UpdateCustomerSchema.parse(req.body);
+      const data   = await CustomerService.update(fastify.db, id, branchId, body);
+      return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
 

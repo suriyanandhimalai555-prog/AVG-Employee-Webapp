@@ -108,7 +108,11 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
         throw new ForbiddenError('Access denied');
       }
       const { id } = req.params as { id: string };
-      const data = await GoldService.getMember(fastify.db, id, req.user.branchId);
+      // TS: resolveReadBranch handles null branchId for md/management via query param
+      const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+      // Referrer roles open their own referrals across branches; admins stay branch-scoped
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data = await GoldService.getMember(fastify.db, id, branchId, referrerId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -124,7 +128,9 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       const { id } = req.params as { id: string };
       // TS: resolveReadBranch handles null branchId for md/management via query param
       const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
-      const data = await GoldService.getPayments(fastify.db, id, branchId);
+      // Referrer roles read payments for their own cross-branch referrals
+      const referrerId = REFERRER_ONLY_ROLES.has(req.user.role) ? req.user.id : undefined;
+      const data = await GoldService.getPayments(fastify.db, id, branchId, referrerId);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

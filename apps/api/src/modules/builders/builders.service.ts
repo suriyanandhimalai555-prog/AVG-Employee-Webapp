@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import { ConflictError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
+import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
+import { addNotificationJob } from '../notifications/notifications.queue';
 import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
@@ -104,7 +106,9 @@ export const BuildersService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
-    return runInTransaction(db, async (client: PoolClient) => {
+    // TS: closure variable captures the outbox id from inside the transaction
+    let notifOutboxId: string | null = null;
+    const result = await runInTransaction(db, async (client: PoolClient) => {
       const insertResult = await client.query(
         `INSERT INTO builders_plans
            (branch_id, customer_id, package_number,
@@ -148,8 +152,30 @@ export const BuildersService = {
         effectiveDate: payload.lumpSumDate,
       });
 
+      // Queue WhatsApp enrollment notification inside txn (atomic with plan insert)
+      notifOutboxId = await enqueueSchemeNotification(client, {
+        schemeCode:     'builders_scheme',
+        event:          'enrollment',
+        sourceId:       plan.id,
+        customerId:     payload.customerId,
+        branchId,
+        templateParams: {
+          customerName: custResult.rows[0].name,
+          schemeName:   `Builders Scheme — Package ${payload.packageNumber}`,
+          amount:       parseFloat(pkg.investmentAmount.toString()),
+          dateStr:      payload.lumpSumDate,
+        },
+      });
+
       return { plan, customer: custResult.rows[0] };
     });
+
+    if (notifOutboxId) {
+      addNotificationJob(notifOutboxId).catch((err) =>
+        console.error(`⚠️  Builders notify enqueue failed (outbox ${notifOutboxId}):`, err)
+      );
+    }
+    return result;
   },
 
   // ─── LIST PLANS ──────────────────────────────────────────────────────────────
@@ -217,7 +243,10 @@ export const BuildersService = {
   },
 
   // ─── GET SINGLE PLAN ─────────────────────────────────────────────────────────
-  async getPlan(db: Pool, planId: string, branchId: string): Promise<any> {
+  // Referrer-scoped roles can open a plan from any branch, but only one they
+  // referred — gate on referrer_id instead of the branch match (same as the list
+  // endpoint). Everyone else stays branch-scoped.
+  async getPlan(db: Pool, planId: string, branchId: string, referrerId?: string): Promise<any> {
     const planResult = await db.query(
       `SELECT
          p.*,
@@ -228,8 +257,8 @@ export const BuildersService = {
        FROM builders_plans p
        JOIN customers c ON c.id = p.customer_id
        JOIN users     u ON u.id = p.entered_by
-       WHERE p.id = $1 AND p.branch_id = $2`,
-      [planId, branchId]
+       WHERE p.id = $1 AND ${referrerId ? 'p.referrer_id' : 'p.branch_id'} = $2`,
+      [planId, referrerId ?? branchId]
     );
     if (planResult.rows.length === 0) throw new NotFoundError('Plan not found');
     const plan = planResult.rows[0];
@@ -247,10 +276,12 @@ export const BuildersService = {
   },
 
   // ─── GET PLAN PAYOUTS ────────────────────────────────────────────────────────
-  async getPayouts(db: Pool, planId: string, branchId: string): Promise<any[]> {
+  async getPayouts(db: Pool, planId: string, branchId: string, referrerId?: string): Promise<any[]> {
+    // Referrer-scoped roles match on referrer_id (their own cross-branch
+    // referrals); everyone else stays branch-scoped.
     const check = await db.query(
-      'SELECT id FROM builders_plans WHERE id = $1 AND branch_id = $2',
-      [planId, branchId]
+      `SELECT id FROM builders_plans WHERE id = $1 AND ${referrerId ? 'referrer_id' : 'branch_id'} = $2`,
+      [planId, referrerId ?? branchId]
     );
     if (check.rows.length === 0) throw new NotFoundError('Plan not found');
 

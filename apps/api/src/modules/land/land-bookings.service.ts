@@ -23,6 +23,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { runInTransaction } from '../../shared/transaction-helper';
 import { IncentiveService } from '../incentives/incentives.service';
 import { LandAuditService } from './land-audit.service';
+import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
+import { addNotificationJob } from '../notifications/notifications.queue';
 import { LandIncentivesService } from './land-incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import type {
@@ -180,7 +182,9 @@ export const LandBookingsService = {
     branchId: string,
     payload: CreateLandBookingInput
   ): Promise<any> {
-    return runInTransaction(db, async (client: PoolClient) => {
+    // TS: closure variable captures the outbox id from inside the transaction
+    let notifOutboxId: string | null = null;
+    const result = await runInTransaction(db, async (client: PoolClient) => {
       // Step 1 — customer must exist in this branch (prevents cross-branch bookings)
       const custResult = await client.query(
         `SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2`,
@@ -274,12 +278,34 @@ export const LandBookingsService = {
         },
       });
 
+      // Queue WhatsApp enrollment notification inside txn (atomic with booking insert)
+      notifOutboxId = await enqueueSchemeNotification(client, {
+        schemeCode:     'land_scheme',
+        event:          'enrollment',
+        sourceId:       booking.id,
+        customerId:     payload.customerId,
+        branchId,
+        templateParams: {
+          customerName: custResult.rows[0].name,
+          schemeName:   `Land Booking — Plot ${plot.site_number}`,
+          amount:       parseFloat(plot.land_cost ?? 0),
+          dateStr:      payload.bookingDate,
+        },
+      });
+
       return {
         booking,
         customer: custResult.rows[0],
         plot: { site_number: plot.site_number, land_cost: plot.land_cost },
       };
     });
+
+    if (notifOutboxId) {
+      addNotificationJob(notifOutboxId).catch((err) =>
+        console.error(`⚠️  Land booking notify enqueue failed (outbox ${notifOutboxId}):`, err)
+      );
+    }
+    return result;
   },
 
   // ─── RECORD ADVANCE PAYMENT ───────────────────────────────────────────────

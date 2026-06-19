@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Plus, X, User, CheckCircle2, Loader2 } from 'lucide-react';
+import { Search, Plus, X, User, CheckCircle2, Loader2, MessageCircle } from 'lucide-react';
 import { useLazySearchCustomersQuery, useCreateCustomerMutation } from '../store/api/apiSlice';
 
 const inputClass = "w-full px-4 py-3 bg-white rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 placeholder:text-navy/30";
@@ -17,7 +17,7 @@ const inputClass = "w-full px-4 py-3 bg-white rounded-2xl border border-navy/10 
 export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
   const [query, setQuery]       = useState('');
   const [showNew, setShowNew]   = useState(false);
-  const [newForm, setNewForm]   = useState({ name: '', phone: '', address: '' });
+  const [newForm, setNewForm]   = useState({ name: '', phone: '', address: '', hasWhatsapp: false });
   const [newError, setNewError] = useState(null);
 
   const [searchCustomers, { data: searchResult, isFetching }] = useLazySearchCustomersQuery();
@@ -43,16 +43,17 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
     if (!newForm.name.trim()) { setNewError('Name is required'); return; }
     try {
       const customer = await createCustomer({
-        name:     newForm.name.trim(),
-        phone:    newForm.phone.trim()   || undefined,
-        address:  newForm.address.trim() || undefined,
+        name:         newForm.name.trim(),
+        phone:        newForm.phone.trim()   || undefined,
+        address:      newForm.address.trim() || undefined,
+        has_whatsapp: newForm.hasWhatsapp,
         // management passes branchId so the server knows which branch to assign to
-        branchId: branchId || undefined,
+        branchId:     branchId || undefined,
       }).unwrap();
       onChange(customer);
       setShowNew(false);
       setQuery('');
-      setNewForm({ name: '', phone: '', address: '' });
+      setNewForm({ name: '', phone: '', address: '', hasWhatsapp: false });
     } catch (err) {
       setNewError(err?.data?.error?.message || 'Failed to create customer');
     }
@@ -155,6 +156,37 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
             onChange={e => setNewForm(f => ({ ...f, phone: e.target.value }))}
             className={inputClass}
           />
+
+          {/* WhatsApp opt-in — only show when a phone number is entered */}
+          {newForm.phone.trim() && (
+            <label className="flex items-center gap-3 px-4 py-3 bg-white rounded-2xl border border-navy/10 cursor-pointer select-none">
+              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                newForm.hasWhatsapp
+                  ? 'bg-emerald-500 border-emerald-500'
+                  : 'bg-white border-navy/20'
+              }`}>
+                {newForm.hasWhatsapp && (
+                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <MessageCircle size={14} className="text-emerald-600 flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-navy">Customer uses WhatsApp</p>
+                  <p className="text-[10px] text-navy/40 font-medium">Send scheme updates to this number</p>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={newForm.hasWhatsapp}
+                onChange={e => setNewForm(f => ({ ...f, hasWhatsapp: e.target.checked }))}
+              />
+            </label>
+          )}
+
           <input
             placeholder="Address / Area"
             value={newForm.address}

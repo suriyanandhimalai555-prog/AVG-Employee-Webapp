@@ -20,6 +20,7 @@ import {
   useRemoveGoldCoinSlotMutation,
   useCorrectGoldCoinSlotMutation,
   useGetGoldEmployeesQuery,
+  useGetGoldCoinEligibilityBypassSettingQuery,
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -174,14 +175,20 @@ export const GoldCoinRoomDetailPage = () => {
   const [voidConfirm,    setVoidConfirm]         = useState(false);
   const [voidError,      setVoidError]           = useState('');
 
+  // Management can bypass the 30-day eligibility wait via the Control Center toggle.
+  // When ON, every held slot is treated as eligible client-side so the Eliminate button renders.
+  const { data: bypassData } = useGetGoldCoinEligibilityBypassSettingQuery();
+  const bypassEligibility = bypassData?.enabled === true;
+
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  const isEligible = (s) => Date.now() - new Date(s.paid_at).getTime() >= THIRTY_DAYS_MS;
+  const isEligible = (s) =>
+    bypassEligibility || Date.now() - new Date(s.paid_at).getTime() >= THIRTY_DAYS_MS;
   const daysUntilEligible = (s) =>
     Math.max(1, Math.ceil((THIRTY_DAYS_MS - (Date.now() - new Date(s.paid_at).getTime())) / 86400000));
 
   const eligibleHeldCount = useMemo(
     () => (room?.slots ?? []).filter(s => s.status === 'held' && isEligible(s)).length,
-    [room?.slots]
+    [room?.slots, bypassEligibility]
   );
 
   if (isLoading) {
@@ -401,13 +408,13 @@ export const GoldCoinRoomDetailPage = () => {
             room.slots
               .filter((s) => {
                 if (!canDraw || !hideIneligible) return true;
-                return s.status !== 'held' || isEligible(s);
+                return s.status !== 'held' || isEligible(s); // isEligible already honors bypassEligibility
               })
               .map((s) => {
               const isWon      = s.status === 'won';
               const isRefunded = s.status === 'refunded';
               const isHeld     = !isWon && !isRefunded;
-              const eligible   = isEligible(s);
+              const eligible   = isEligible(s); // bypassEligibility folded in above
               const canPick    = canDraw && isHeld && eligible;
               return (
                 <div key={s.id} className="px-4 py-3">

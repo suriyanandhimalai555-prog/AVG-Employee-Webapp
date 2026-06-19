@@ -43,6 +43,16 @@ const envSchema = z.object({
 
   // Optional comma-separated CORS allowlist (e.g. "https://app.example.com,https://admin.example.com")
   ALLOWED_ORIGINS: z.string().optional(),
+
+  // ── WhatsApp Cloud API (Meta Graph API) ──────────────────────────────────────
+  // All optional — the API itself never sends messages (the worker does).
+  // These are documented here so .env.example stays the single source of truth.
+  // Set WHATSAPP_ENABLED=true in the worker env once Meta credentials are ready.
+  WHATSAPP_ENABLED:              z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID:      z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN:         z.string().optional(),
+  WHATSAPP_API_VERSION:          z.string().optional(),
+  WHATSAPP_DEFAULT_COUNTRY_CODE: z.string().optional(),
 });
 
 // Infer the TypeScript type from the Zod schema for compile-time type safety

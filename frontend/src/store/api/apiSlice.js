@@ -1820,6 +1820,13 @@ export const apiSlice = createApi({
       providesTags: ['SchemeBranchEntries'],
     }),
 
+    // ─── Customer update (PATCH — for toggling has_whatsapp on existing customers) ───
+    updateCustomer: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/customers/${id}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Customers'],
+    }),
+
     // ─── App Settings (backdated-entry permission) ───
     getBackdatedEntrySetting: builder.query({
       query: () => '/settings/backdated-entry',
@@ -1829,6 +1836,45 @@ export const apiSlice = createApi({
 
     updateBackdatedEntrySetting: builder.mutation({
       query: (data) => ({ url: '/settings/backdated-entry', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
+    }),
+
+    // ─── App Settings (WhatsApp messages — management toggle) ───
+    getWhatsappMessagesSetting: builder.query({
+      query: () => '/settings/whatsapp-messages',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateWhatsappMessagesSetting: builder.mutation({
+      query: (data) => ({ url: '/settings/whatsapp-messages', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
+    }),
+
+    // ─── App Settings (LSS eligibility bypass — management toggle) ───
+    getLssEligibilityBypassSetting: builder.query({
+      query: () => '/settings/lss-eligibility-bypass',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateLssEligibilityBypassSetting: builder.mutation({
+      query: (data) => ({ url: '/settings/lss-eligibility-bypass', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
+    }),
+
+    // ─── App Settings (Gold-Coin eligibility bypass — management toggle) ───
+    getGoldCoinEligibilityBypassSetting: builder.query({
+      query: () => '/settings/gold-coin-eligibility-bypass',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateGoldCoinEligibilityBypassSetting: builder.mutation({
+      query: (data) => ({ url: '/settings/gold-coin-eligibility-bypass', method: 'PUT', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['AppSettings'],
     }),
@@ -2049,8 +2095,15 @@ export const {
   useUndoLandFullPaymentMutation,
   useUndoLandAdvanceMutation,
   useGetSchemeAuditLogQuery,
+  useUpdateCustomerMutation,
   useGetBackdatedEntrySettingQuery,
   useUpdateBackdatedEntrySettingMutation,
+  useGetWhatsappMessagesSettingQuery,
+  useUpdateWhatsappMessagesSettingMutation,
+  useGetLssEligibilityBypassSettingQuery,
+  useUpdateLssEligibilityBypassSettingMutation,
+  useGetGoldCoinEligibilityBypassSettingQuery,
+  useUpdateGoldCoinEligibilityBypassSettingMutation,
   useSetHeadBranchMutation,
   useSetBranchLocationMutation,
 } = apiSlice;

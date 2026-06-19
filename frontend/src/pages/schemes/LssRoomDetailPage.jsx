@@ -22,6 +22,7 @@ import {
   useRemoveLssSlotMutation,
   useCorrectLssSlotMutation,
   useGetGoldEmployeesQuery,
+  useGetLssEligibilityBypassSettingQuery,
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -180,9 +181,14 @@ export const LssRoomDetailPage = () => {
   const [voidConfirm,    setVoidConfirm]        = useState(false);
   const [voidError,      setVoidError]          = useState('');
 
+  // Management can bypass the 30-day eligibility wait via the Control Center toggle.
+  // When ON, every held slot is treated as eligible client-side so the Eliminate button renders.
+  const { data: bypassData } = useGetLssEligibilityBypassSettingQuery();
+  const bypassEligibility = bypassData?.enabled === true;
+
   const eligibleHeldCount = useMemo(
-    () => (room?.slots ?? []).filter(s => s.status === 'held' && isEligible(s)).length,
-    [room?.slots]
+    () => (room?.slots ?? []).filter(s => s.status === 'held' && (bypassEligibility || isEligible(s))).length,
+    [room?.slots, bypassEligibility]
   );
 
   if (isLoading) {
@@ -416,13 +422,13 @@ export const LssRoomDetailPage = () => {
             room.slots
               .filter((s) => {
                 if (!canDraw || !hideIneligible) return true;
-                return s.status !== 'held' || isEligible(s);
+                return s.status !== 'held' || bypassEligibility || isEligible(s);
               })
               .map((s) => {
                 const isWon      = s.status === 'won';
                 const isRefunded = s.status === 'refunded';
                 const isHeld     = !isWon && !isRefunded;
-                const eligible   = isEligible(s);
+                const eligible   = bypassEligibility || isEligible(s);
                 const canPick    = canDraw && isHeld && eligible;
                 return (
                   <div key={s.id} className="px-4 py-3">

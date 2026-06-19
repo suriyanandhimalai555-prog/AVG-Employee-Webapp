@@ -3,8 +3,8 @@
 import './config/env'; // validate env before anything else
 import { db } from './db';
 import { redis } from './redis';
-import { worker } from './worker';
-import { schedulerQueue, registerScheduledJobs, recoverFailedAttendanceJobs } from './scheduler';
+import { worker, notificationsWorker } from './worker';
+import { schedulerQueue, notificationsSchedulerQueue, registerScheduledJobs, recoverFailedAttendanceJobs } from './scheduler';
 
 /**
  * Wait for DB and Redis to be reachable before proceeding.
@@ -42,13 +42,16 @@ const startup = async (): Promise<void> => {
   // during a previous startup before this job could be processed.
   await recoverFailedAttendanceJobs();
 
-  console.log('✅ Attendance worker started — waiting for jobs...');
+  console.log('✅ Workers started (attendance + notifications) — waiting for jobs...');
 };
 
 const shutdown = async (): Promise<void> => {
   console.log('🔄 Worker shutting down gracefully...');
-  await schedulerQueue.close();
+  // Close all queues and workers — order: workers first, then queues, then infra
+  await notificationsWorker.close();
   await worker.close();
+  await notificationsSchedulerQueue.close();
+  await schedulerQueue.close();
   await db.end();
   redis.disconnect();
   console.log('✅ Worker shut down complete');

@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { RoomsService, LSS_SLOTS_PER_ROOM } from './rooms.service';
+import { isEligibilityBypassEnabled, LSS_ELIGIBILITY_BYPASS_KEY } from '../../shared/eligibility-bypass-guard';
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
@@ -76,13 +77,18 @@ export const DrawsService = {
           'LSS_SLOT_NOT_HELD'
         );
       }
-      const slotAgeMs = Date.now() - new Date(winning.paid_at).getTime();
-      if (slotAgeMs < THIRTY_DAYS) {
-        const daysLeft = Math.ceil((THIRTY_DAYS - slotAgeMs) / 86400000);
-        throw new ValidationError(
-          `Slot ${winning.slot_number} is not yet eligible — customer joined less than 30 days ago (eligible in ${daysLeft} day${daysLeft === 1 ? '' : 's'})`,
-          'LSS_SLOT_NOT_ELIGIBLE',
-        );
+      // Management can enable a bypass toggle to skip the 30-day wait per scheme.
+      // All other guards (room active, slot held, draw-count cap) are always enforced.
+      const eligibilityBypassed = await isEligibilityBypassEnabled(client, LSS_ELIGIBILITY_BYPASS_KEY);
+      if (!eligibilityBypassed) {
+        const slotAgeMs = Date.now() - new Date(winning.paid_at).getTime();
+        if (slotAgeMs < THIRTY_DAYS) {
+          const daysLeft = Math.ceil((THIRTY_DAYS - slotAgeMs) / 86400000);
+          throw new ValidationError(
+            `Slot ${winning.slot_number} is not yet eligible — customer joined less than 30 days ago (eligible in ${daysLeft} day${daysLeft === 1 ? '' : 's'})`,
+            'LSS_SLOT_NOT_ELIGIBLE',
+          );
+        }
       }
 
       // 4. Fetch plan price to compute payout for this draw level

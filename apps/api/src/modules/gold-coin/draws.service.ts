@@ -8,6 +8,7 @@ import { Pool } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { RoomsService, GC_SLOTS_PER_ROOM } from './rooms.service';
+import { isEligibilityBypassEnabled, GOLD_COIN_ELIGIBILITY_BYPASS_KEY } from '../../shared/eligibility-bypass-guard';
 
 export const DrawsService = {
 
@@ -69,14 +70,19 @@ export const DrawsService = {
           'GC_SLOT_NOT_HELD'
         );
       }
-      const slotAgeMs   = Date.now() - new Date(winning.paid_at).getTime();
-      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-      if (slotAgeMs < THIRTY_DAYS) {
-        const daysLeft = Math.ceil((THIRTY_DAYS - slotAgeMs) / 86400000);
-        throw new ValidationError(
-          `Slot ${winning.slot_number} is not yet eligible — customer joined less than 30 days ago (eligible in ${daysLeft} day${daysLeft === 1 ? '' : 's'})`,
-          'GC_SLOT_NOT_ELIGIBLE',
-        );
+      // Management can enable a bypass toggle to skip the 30-day wait per scheme.
+      // All other guards (room active, slot held, draw-count cap) are always enforced.
+      const eligibilityBypassed = await isEligibilityBypassEnabled(client, GOLD_COIN_ELIGIBILITY_BYPASS_KEY);
+      if (!eligibilityBypassed) {
+        const slotAgeMs   = Date.now() - new Date(winning.paid_at).getTime();
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+        if (slotAgeMs < THIRTY_DAYS) {
+          const daysLeft = Math.ceil((THIRTY_DAYS - slotAgeMs) / 86400000);
+          throw new ValidationError(
+            `Slot ${winning.slot_number} is not yet eligible — customer joined less than 30 days ago (eligible in ${daysLeft} day${daysLeft === 1 ? '' : 's'})`,
+            'GC_SLOT_NOT_ELIGIBLE',
+          );
+        }
       }
 
       // 4. Insert the draw row

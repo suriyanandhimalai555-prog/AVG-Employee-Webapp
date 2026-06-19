@@ -5,7 +5,11 @@ import { redis } from './redis';
 // The Worker instance in worker.ts processes all jobs from this same queue.
 export const schedulerQueue = new Queue('attendance', { connection: redis });
 
-const REPEATABLE_JOB_NAMES = new Set(['auto-absent', 'auto-deactivate']);
+// TS: separate queue for notification-related repeatable jobs (sweep)
+export const notificationsSchedulerQueue = new Queue('notifications', { connection: redis });
+
+const REPEATABLE_JOB_NAMES         = new Set(['auto-absent', 'auto-deactivate']);
+const NOTIFICATION_REPEATABLE_NAMES = new Set(['whatsapp-sweep']);
 
 /**
  * Removes any stale repeatable jobs from prior deployments and registers
@@ -37,6 +41,23 @@ export const registerScheduledJobs = async (): Promise<void> => {
     jobId:  'auto-deactivate-daily',
   });
   console.log('✅ Scheduled: auto-deactivate at 23:45 IST daily');
+
+  // ── WhatsApp sweep: re-enqueue stuck pending/failed outbox rows ──────────────
+  // Purge stale schedules first (same pattern as above)
+  const existingNotifJobs = await notificationsSchedulerQueue.getRepeatableJobs();
+  for (const job of existingNotifJobs) {
+    if (NOTIFICATION_REPEATABLE_NAMES.has(job.name)) {
+      await notificationsSchedulerQueue.removeRepeatableByKey(job.key);
+      console.log(`🧹 Removed stale notification repeatable job: ${job.key}`);
+    }
+  }
+
+  // Every 2 minutes — recovers rows where COMMIT succeeded but enqueue failed
+  await notificationsSchedulerQueue.add('whatsapp-sweep', {}, {
+    repeat: { every: 2 * 60 * 1000 },   // TS: every = ms interval
+    jobId:  'whatsapp-sweep-recurring',
+  });
+  console.log('✅ Scheduled: whatsapp-sweep every 2 minutes');
 };
 
 /**

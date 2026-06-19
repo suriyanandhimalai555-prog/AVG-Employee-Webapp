@@ -3,6 +3,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
+import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
+import { addNotificationJob } from '../notifications/notifications.queue';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
@@ -116,7 +118,32 @@ export const GoldService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
+      // Queue WhatsApp enrollment notification (inside txn for atomicity).
+      // source_id = member.id so the unique index prevents duplicate messages.
+      const notifOutboxId = await enqueueSchemeNotification(client, {
+        schemeCode:     GOLD_PROJECT_CODE,
+        event:          'enrollment',
+        sourceId:       member.id,
+        customerId:     payload.customerId,
+        branchId,
+        templateParams: {
+          customerName: customerName,
+          schemeName:   'Gold Savings Scheme',
+          amount:       parseFloat(payload.monthlyAmount.toString()),
+          dateStr:      payload.startDate,
+        },
+      });
+
       await client.query('COMMIT');
+
+      // Enqueue the notification job after commit — non-fatal if Redis is down
+      // (the scheduler sweep will recover pending rows after 2 minutes)
+      if (notifOutboxId) {
+        addNotificationJob(notifOutboxId).catch((err) =>
+          console.error(`⚠️  Gold enrollment notify enqueue failed (outbox ${notifOutboxId}):`, err)
+        );
+      }
+
       return { member, commissionAmount };
     } catch (err) {
       await client.query('ROLLBACK');
@@ -200,7 +227,10 @@ export const GoldService = {
   },
 
   // ─── GET SINGLE MEMBER ───
-  async getMember(db: Pool, id: string, branchId: string): Promise<any> {
+  // Referrer-scoped roles can open a member from any branch, but only one they
+  // referred — gate on referrer_id instead of the branch match (same as the list
+  // endpoint). Everyone else stays branch-scoped.
+  async getMember(db: Pool, id: string, branchId: string, referrerId?: string): Promise<any> {
     const result = await db.query(
       `SELECT g.*,
               c.name AS customer_name, c.phone AS customer_phone, c.customer_code,
@@ -209,8 +239,8 @@ export const GoldService = {
        JOIN customers c  ON g.customer_id  = c.id
        JOIN users u      ON g.entered_by   = u.id
        LEFT JOIN users r ON g.referrer_id  = r.id
-       WHERE g.id = $1 AND g.branch_id = $2`,
-      [id, branchId]
+       WHERE g.id = $1 AND ${referrerId ? 'g.referrer_id' : 'g.branch_id'} = $2`,
+      [id, referrerId ?? branchId]
     );
     if (result.rows.length === 0) throw new NotFoundError('Member not found');
     return result.rows[0];
@@ -264,7 +294,7 @@ export const GoldService = {
   ): Promise<any> {
     // Verify the member belongs to this branch and fetch referrer info for incentive
     const memberCheck = await db.query(
-      `SELECT g.id, g.total_months, g.referrer_id, g.chit_number, c.name AS customer_name
+      `SELECT g.id, g.customer_id, g.total_months, g.referrer_id, g.chit_number, c.name AS customer_name
        FROM gold_scheme_members g
        JOIN customers c ON g.customer_id = c.id
        WHERE g.id = $1 AND g.branch_id = $2`,
@@ -307,7 +337,35 @@ export const GoldService = {
         });
       }
 
+      // Queue WhatsApp renewal notification for month 2 onwards.
+      // Month 1 notification is already sent by addMember (enrollment event).
+      // source_id = payment row id so each month has its own dedup key.
+      let renewalOutboxId: string | null = null;
+      if (payload.monthNumber > 1) {
+        renewalOutboxId = await enqueueSchemeNotification(client, {
+          schemeCode:     GOLD_PROJECT_CODE,
+          event:          'renewal',
+          sourceId:       result.rows[0].id,
+          customerId:     memberRow.customer_id,
+          branchId,
+          templateParams: {
+            customerName: memberRow.customer_name,
+            schemeName:   'Gold Savings Scheme',
+            amount:       parseFloat(payload.amount.toString()),
+            monthNumber:  payload.monthNumber,
+            dateStr:      payload.paidDate,
+          },
+        });
+      }
+
       await client.query('COMMIT');
+
+      if (renewalOutboxId) {
+        addNotificationJob(renewalOutboxId).catch((err) =>
+          console.error(`⚠️  Gold renewal notify enqueue failed (outbox ${renewalOutboxId}):`, err)
+        );
+      }
+
       return result.rows[0];
     } catch (err: any) {
       await client.query('ROLLBACK');
@@ -319,11 +377,12 @@ export const GoldService = {
   },
 
   // ─── GET PAYMENTS FOR MEMBER ───
-  async getPayments(db: Pool, memberId: string, branchId: string): Promise<any[]> {
-    // Verify branch ownership
+  async getPayments(db: Pool, memberId: string, branchId: string, referrerId?: string): Promise<any[]> {
+    // Verify ownership: referrer-scoped roles match on referrer_id (their own
+    // referrals across branches); everyone else stays branch-scoped.
     const check = await db.query(
-      'SELECT id FROM gold_scheme_members WHERE id = $1 AND branch_id = $2',
-      [memberId, branchId]
+      `SELECT id FROM gold_scheme_members WHERE id = $1 AND ${referrerId ? 'referrer_id' : 'branch_id'} = $2`,
+      [memberId, referrerId ?? branchId]
     );
     if (check.rows.length === 0) throw new NotFoundError('Member not found');
 

@@ -2,6 +2,8 @@ import { Pool, PoolClient } from 'pg';
 import { NotFoundError, ValidationError } from '../../shared/errors';
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
+import { enqueueSchemeNotification } from '../notifications/notifications.outbox';
+import { addNotificationJob } from '../notifications/notifications.queue';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import type { AddTradingMemberInput, GetTradingMembersQuery, CorrectTradingMemberInput } from './trading-academy.schema';
 
@@ -89,7 +91,29 @@ export const TradingAcademyService = {
         effectiveDate:     payload.enrollmentDate,
       });
 
+      // Queue WhatsApp enrollment notification (inside txn for atomicity)
+      const notifOutboxId = await enqueueSchemeNotification(client, {
+        schemeCode:     PROJECT_CODE,
+        event:          'enrollment',
+        sourceId:       member.id,
+        customerId:     payload.customerId,
+        branchId,
+        templateParams: {
+          customerName: customer.name,
+          schemeName:   'Trading Academy',
+          amount:       parseFloat(payload.amount.toString()),
+          dateStr:      payload.enrollmentDate,
+        },
+      });
+
       await client.query('COMMIT');
+
+      if (notifOutboxId) {
+        addNotificationJob(notifOutboxId).catch((err) =>
+          console.error(`⚠️  Trading Academy notify enqueue failed (outbox ${notifOutboxId}):`, err)
+        );
+      }
+
       return { member: { ...member, customer }, incentivesCreated: incentives.length };
     } catch (err) {
       await client.query('ROLLBACK');

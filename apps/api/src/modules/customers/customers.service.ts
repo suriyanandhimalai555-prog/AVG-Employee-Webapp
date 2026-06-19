@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { NotFoundError } from '../../shared/errors';
-import type { CreateCustomerInput, SearchCustomersQuery } from './customers.schema';
+import type { CreateCustomerInput, UpdateCustomerInput, SearchCustomersQuery } from './customers.schema';
 
 export const CustomerService = {
 
@@ -44,10 +44,10 @@ export const CustomerService = {
       const customerCode = await CustomerService.nextCustomerCode(client, branchId);
 
       const result = await client.query(
-        `INSERT INTO customers (customer_code, branch_id, name, phone, address, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO customers (customer_code, branch_id, name, phone, address, notes, has_whatsapp, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
-        [customerCode, branchId, payload.name, payload.phone ?? null, payload.address ?? null, payload.notes ?? null, createdBy]
+        [customerCode, branchId, payload.name, payload.phone ?? null, payload.address ?? null, payload.notes ?? null, payload.has_whatsapp ?? false, createdBy]
       );
 
       await client.query('COMMIT');
@@ -104,6 +104,43 @@ export const CustomerService = {
        WHERE c.id = $1 AND c.branch_id = $2`,
       [id, branchId]
     );
+    if (result.rows.length === 0) throw new NotFoundError('Customer not found');
+    return result.rows[0];
+  },
+
+  // ─── UPDATE ───────────────────────────────────────────────────────────────
+  // Partial update — only the provided fields are changed.  Scoped to the
+  // caller's branch so cross-branch edits are impossible even if id is guessed.
+  async update(
+    db: Pool,
+    id: string,
+    branchId: string,
+    payload: UpdateCustomerInput
+  ): Promise<any> {
+    // TS: build SET clause dynamically from whichever fields are supplied
+    const fields: string[] = [];
+    const vals: unknown[]  = [];
+    let idx = 1;
+
+    if (payload.name         !== undefined) { fields.push(`name = $${idx++}`);         vals.push(payload.name); }
+    if (payload.phone        !== undefined) { fields.push(`phone = $${idx++}`);        vals.push(payload.phone); }
+    if (payload.address      !== undefined) { fields.push(`address = $${idx++}`);      vals.push(payload.address); }
+    if (payload.notes        !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
+    if (payload.has_whatsapp !== undefined) { fields.push(`has_whatsapp = $${idx++}`); vals.push(payload.has_whatsapp); }
+
+    // Schema .refine() already rejects empty payloads, but guard here for safety
+    if (fields.length === 0) throw new NotFoundError('No fields to update');
+
+    vals.push(id, branchId);
+
+    const result = await db.query(
+      `UPDATE customers
+       SET ${fields.join(', ')}
+       WHERE id = $${idx} AND branch_id = $${idx + 1}
+       RETURNING *`,
+      vals
+    );
+
     if (result.rows.length === 0) throw new NotFoundError('Customer not found');
     return result.rows[0];
   },
