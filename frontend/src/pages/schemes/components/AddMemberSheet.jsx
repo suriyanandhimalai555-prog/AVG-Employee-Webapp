@@ -28,7 +28,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     notes:          '',
   });
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
@@ -40,7 +40,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer'); return; }
-    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -53,7 +53,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         enrollmentDate: form.enrollmentDate,
         paymentMode:    form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
-        transactionId: txnId.trim() || undefined,
+        transactionId: txnId.length ? txnId : undefined,
         notes:          form.notes || undefined,
         branchId:       branchId || undefined,
       }).unwrap();
@@ -160,7 +160,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <div className="relative">
             <select
               value={form.paymentMode}
-              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
               className={`${SHEET_INPUT_CLASS} appearance-none pr-8`}
             >
               <option value="cash">Cash</option>

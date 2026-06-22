@@ -321,7 +321,11 @@ export const LandBookingsService = {
              updated_by = $6, updated_at = now()
          WHERE id = $7
          RETURNING *`,
-        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash', payload.advanceProofKey || null, payload.advanceTransactionId || null, userId, bookingId]
+        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash',
+          payload.advanceProofKey?.length ? payload.advanceProofKey : null,
+          // advanceTransactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.advanceTransactionId?.length ? payload.advanceTransactionId : null,
+          userId, bookingId]
       );
       const updated = result.rows[0];
 
@@ -412,8 +416,9 @@ export const LandBookingsService = {
           payload.loanAmount || null,
           buybackStartDate,
           payload.fullChannel || 'cash',
-          payload.fullProofKey || null,
-          payload.fullTransactionId || null,
+          payload.fullProofKey?.length ? payload.fullProofKey : null,
+          // fullTransactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.fullTransactionId?.length ? payload.fullTransactionId : null,
           userId,
           bookingId,
         ]
@@ -619,7 +624,8 @@ export const LandBookingsService = {
         if (payload.advanceDate    != null) { fields.push(`advance_date = $${idx++}`);        vals.push(payload.advanceDate); }
         if (payload.advanceChannel != null) { fields.push(`advance_channel = $${idx++}`);     vals.push(payload.advanceChannel); }
         if (payload.advanceProofKey != null) { fields.push(`advance_proof_key = $${idx++}`); vals.push(payload.advanceProofKey); }
-        if (payload.advanceTransactionId !== undefined) { fields.push(`advance_transaction_id = $${idx++}`); vals.push(payload.advanceTransactionId); }
+        // advanceTransactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+        if (payload.advanceTransactionId !== undefined) { fields.push(`advance_transaction_id = $${idx++}`); vals.push(payload.advanceTransactionId?.length ? payload.advanceTransactionId : null); }
       }
 
       // Full-payment corrections — moving the date also moves the buyback start
@@ -631,7 +637,8 @@ export const LandBookingsService = {
         if (payload.fullAmount   != null) { fields.push(`full_amount = $${idx++}`);      vals.push(payload.fullAmount); }
         if (payload.fullChannel  != null) { fields.push(`full_channel = $${idx++}`);     vals.push(payload.fullChannel); }
         if (payload.fullProofKey != null) { fields.push(`full_proof_key = $${idx++}`);   vals.push(payload.fullProofKey); }
-        if (payload.fullTransactionId !== undefined) { fields.push(`full_transaction_id = $${idx++}`); vals.push(payload.fullTransactionId); }
+        // fullTransactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+        if (payload.fullTransactionId !== undefined) { fields.push(`full_transaction_id = $${idx++}`); vals.push(payload.fullTransactionId?.length ? payload.fullTransactionId : null); }
         if (payload.fullPaymentDate != null) {
           newBuybackStart = addDays(payload.fullPaymentDate, COOLING_DAYS);
           fields.push(`full_payment_date = $${idx++}`);  vals.push(payload.fullPaymentDate);
@@ -1120,7 +1127,11 @@ export const LandBookingsService = {
              updated_at = now()
          WHERE booking_id = $6 AND month_number = $7 AND status = 'pending'
          RETURNING *`,
-        [payload.paidDate, userId, payload.paidChannel || 'cash', payload.paidProofKey || null, payload.paidTransactionId || null, bookingId, monthNumber]
+        [payload.paidDate, userId, payload.paidChannel || 'cash',
+          payload.paidProofKey?.length ? payload.paidProofKey : null,
+          // paidTransactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.paidTransactionId?.length ? payload.paidTransactionId : null,
+          bookingId, monthNumber]
       );
       if (payoutResult.rows.length === 0) {
         throw new NotFoundError('Payout not found or already marked paid');

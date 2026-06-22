@@ -401,7 +401,7 @@ export const ChitService = {
         `INSERT INTO agila_chit_payments
            (group_id, member_id, month_number, amount, payment_date, payment_mode, proof_key, transaction_id, entered_by)
          VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)`,
-        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, payload.firstPaymentProofKey || null, payload.firstPaymentTransactionId || null, enteredBy]
+        [groupId, member.id, fullAmount, paymentDate, payload.firstPaymentMode, payload.firstPaymentProofKey?.length ? payload.firstPaymentProofKey : null, payload.firstPaymentTransactionId?.length ? payload.firstPaymentTransactionId : null, enteredBy]
       );
 
       // Credit referrer 20% of Month-1 full amount
@@ -481,7 +481,11 @@ export const ChitService = {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
         [groupId, memberId, payload.monthNumber, payload.amount,
-         payload.paymentDate, payload.paymentMode, payload.proofKey || null, payload.transactionId || null, payload.notes || null, enteredBy]
+         payload.paymentDate, payload.paymentMode,
+         payload.proofKey?.length ? payload.proofKey : null,
+         // transactionId is TEXT[] — bind array directly; empty array → NULL
+         payload.transactionId?.length ? payload.transactionId : null,
+         payload.notes || null, enteredBy]
       );
 
       await client.query('COMMIT');
@@ -745,6 +749,8 @@ export const ChitService = {
           paymentEvent: 'enrollment',
         });
         if (effectiveReferrer) {
+          // TS: effectiveDate = original enrollment date so the corrected credit lands
+          // in the same accounting period the old credit was removed from (not today).
           await IncentiveService.distributeIncentives(client, {
             schemeCode:        SCHEME_CODE,
             dealMakerUserId:   effectiveReferrer,
@@ -755,6 +761,7 @@ export const ChitService = {
             sourceId:          memberId,
             sourceDescription: `Agila Chit enrollment (corrected): ${old.customer_name} – ${old.group_name}`,
             creditedBy:        correctedBy,
+            effectiveDate:     old.created_at,
           });
         }
       }
@@ -904,7 +911,8 @@ export const ChitService = {
       if (payload.paymentDate  != null)  { fields.push(`payment_date = $${idx++}`);   vals.push(payload.paymentDate); }
       if (payload.paymentMode  != null)  { fields.push(`payment_mode = $${idx++}`);   vals.push(payload.paymentMode); }
       if (payload.proofKey     != null)  { fields.push(`proof_key = $${idx++}`);      vals.push(payload.proofKey); }
-      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
+      // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
       if (payload.notes !== undefined)   { fields.push(`notes = $${idx++}`);          vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

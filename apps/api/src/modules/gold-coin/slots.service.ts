@@ -112,8 +112,9 @@ export const SlotsService = {
             branchId,
             payload.amountPaid,
             payload.paymentMode,
-            payload.proofKey ?? null,
-            payload.transactionId ?? null,
+            payload.proofKey?.length ? payload.proofKey : null,
+            // transactionId is TEXT[] — bind array directly; empty array → NULL
+            payload.transactionId?.length ? payload.transactionId : null,
             payload.referrerId ?? null,
             payload.notes ?? null,
             enteredBy,
@@ -218,7 +219,8 @@ export const SlotsService = {
       if (payload.notes      !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
       if (payload.paymentMode != null)      { fields.push(`payment_mode = $${idx++}`); vals.push(payload.paymentMode); }
       if (payload.proofKey   != null)       { fields.push(`proof_key = $${idx++}`);    vals.push(payload.proofKey); }
-      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
+      // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
       if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
       // TS: customerId allows admin to re-assign slot to correct customer
       if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`);  vals.push(payload.customerId); }
@@ -234,39 +236,49 @@ export const SlotsService = {
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
 
       if (referrerChanged) {
-        // The referrer belongs to the customer's whole holding in this room, and
-        // enrollment incentives are keyed to the FIRST slot of each purchase batch —
-        // so operate on every sibling slot, not just the one being edited.
-        const siblings = await client.query(
-          `SELECT id FROM gold_coin_slots
-           WHERE room_id = $1 AND customer_id = $2
+        // Scope to the BATCH the corrected slot belongs to: slots sharing the same
+        // (room_id, customer_id, created_at). This prevents a multi-batch customer
+        // from having a different batch's referrer reversed or its amount combined.
+        // Batches are isolated by created_at because Postgres now() is transaction-
+        // stable, so all slots in one purchase share an identical created_at.
+        const batchSlots = await client.query(
+          `SELECT id, amount_paid FROM gold_coin_slots
+           WHERE room_id = $1 AND customer_id = $2 AND created_at = $3
            ORDER BY slot_number ASC`,
-          [old.room_id, old.customer_id]
+          [old.room_id, old.customer_id, old.created_at]
         );
+        // TS: anchorSlotId is the first slot of this batch — the sourceId used at creation
+        const anchorSlotId = batchSlots.rows[0]?.id ?? slotId;
+        // TS: batchAmount is the total value of THIS batch only (not all batches in the room)
+        const batchAmount = parseFloat(old.amount_paid) * batchSlots.rows.length;
+
+        // Update referrer_id on this batch's slots only
+        const batchIds = batchSlots.rows.map((r: { id: string }) => r.id);
         await client.query(
-          `UPDATE gold_coin_slots SET referrer_id = $1 WHERE room_id = $2 AND customer_id = $3`,
-          [payload.referrerId ?? null, old.room_id, old.customer_id]
+          `UPDATE gold_coin_slots SET referrer_id = $1 WHERE id = ANY($2::uuid[])`,
+          [payload.referrerId ?? null, batchIds]
         );
-        for (const sib of siblings.rows) {
-          await IncentiveService.reverseIncentives(client, {
-            schemeCode:   SCHEME_CODE,
-            sourceId:     sib.id,
-            paymentEvent: 'enrollment',
-          });
-        }
+        // Reverse the batch-anchor's enrollment credit (keyed to anchorSlotId at creation)
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode:   SCHEME_CODE,
+          sourceId:     anchorSlotId,
+          paymentEvent: 'enrollment',
+        });
         if (effectiveReferrer) {
-          const anchorSlotId = siblings.rows[0]?.id ?? slotId;
-          const totalAmount = parseFloat(old.total_amount ?? old.amount_paid);
+          // Re-credit in the ORIGINAL batch's period so the commission moves between
+          // referrers within the same accounting period (mirrors gold.service.ts pattern).
+          // TS: effectiveDate pins created_at to the batch's original transaction date
           await IncentiveService.distributeIncentives(client, {
             schemeCode:        SCHEME_CODE,
             dealMakerUserId:   effectiveReferrer,
             mode:              'percent_referrer',
             percentRole:       'referrer_direct',
-            baseAmount:        totalAmount,
+            baseAmount:        batchAmount,
             paymentEvent:      'enrollment',
             sourceId:          anchorSlotId,
             sourceDescription: `Gold Coin (corrected) — ${old.customer_name} (${old.customer_code})`,
             creditedBy:        correctedBy,
+            effectiveDate:     old.created_at,
           });
         }
       }

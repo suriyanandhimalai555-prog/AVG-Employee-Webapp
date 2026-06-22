@@ -20,6 +20,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { AddPaymentModal } from './components/AddPaymentModal';
 import { PhotoProof } from '../../components/money/PhotoProof';
+import { TransactionIdList } from '../../components/money/TransactionIdList';
 
 export const GoldMemberDetailPage = () => {
   const { id }   = useParams();
@@ -237,10 +238,11 @@ export const GoldMemberDetailPage = () => {
                         </span>
                       </td>
                     </tr>
-                    {p.proof_key && (
+                    {(p.proof_key || p.transaction_id) && (
                       <tr key={`${p.id}-proof`} className="border-b border-navy/5">
-                        <td colSpan={4} className="px-4 pb-3">
+                        <td colSpan={4} className="px-4 pb-3 space-y-2">
                           <PhotoProof photoKey={p.proof_key} />
+                          <TransactionIdList transactionId={p.transaction_id} />
                         </td>
                       </tr>
                     )}

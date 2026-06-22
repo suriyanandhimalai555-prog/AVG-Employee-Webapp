@@ -32,8 +32,9 @@ export const CreateBuildersPlanSchema = z.object({
   packageNumber:   z.number().int().min(1).max(6),
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  lumpSumProofKey: z.array(z.string()).optional(),
-  lumpSumTransactionId: z.string().max(100).optional(),
+  lumpSumProofKey: z.array(z.string()).max(5).optional(),
+  // lumpSumTransactionId is an array of up to 5 UPI/bank reference strings
+  lumpSumTransactionId: z.array(z.string().max(100)).max(5).optional(),
   referrerId:      z.string().uuid().optional(),
   notes:           z.string().max(1000).optional(),
   branchId:        z.string().uuid().optional(),
@@ -45,7 +46,7 @@ export const CreateBuildersPlanSchema = z.object({
       path: ['lumpSumProofKey'],
     });
   }
-  if (data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.trim()) {
+  if (data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'lumpSumTransactionId is required for gpay and bank_receipt payments',
@@ -59,8 +60,9 @@ export const RecordBuildersPayoutSchema = z.object({
   amount:       z.number().positive(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:     z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional(),
+  proofKey:     z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -71,7 +73,7 @@ export const RecordBuildersPayoutSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required for gpay and bank_receipt payments',
@@ -128,8 +130,9 @@ export const CorrectBuildersPlanSchema = z.object({
   referrerId:      z.string().uuid().optional().nullable(),
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  lumpSumProofKey: z.array(z.string()).optional(),
-  lumpSumTransactionId: z.string().max(100).optional().nullable(),
+  lumpSumProofKey: z.array(z.string()).max(5).optional(),
+  // lumpSumTransactionId is an array of up to 5 UPI/bank reference strings
+  lumpSumTransactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   notes:           z.string().max(1000).optional().nullable(),
   branchId:        z.string().uuid().optional(),  // management must supply; MD optional
 }).superRefine((data, ctx) => {
@@ -140,7 +143,7 @@ export const CorrectBuildersPlanSchema = z.object({
       path: ['lumpSumProofKey'],
     });
   }
-  if (data.lumpSumMode && data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.trim()) {
+  if (data.lumpSumMode && data.lumpSumMode !== 'cash' && !data.lumpSumTransactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'lumpSumTransactionId is required when setting lumpSumMode to gpay or bank_receipt',
@@ -154,8 +157,9 @@ export const CorrectBuildersPayoutSchema = z.object({
   amount:       z.number().positive().optional(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:     z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional().nullable(),
+  proofKey:     z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -166,7 +170,7 @@ export const CorrectBuildersPayoutSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',

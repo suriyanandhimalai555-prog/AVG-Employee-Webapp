@@ -67,8 +67,9 @@ export const TradingAcademyService = {
           payload.enrolledBy,
           payload.enrollmentDate,
           payload.paymentMode,
-          payload.proofKey ?? null,
-          payload.transactionId ?? null,
+          payload.proofKey?.length ? payload.proofKey : null,
+          // transactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.transactionId?.length ? payload.transactionId : null,
           payload.notes ?? null,
           enteredBy,
         ]
@@ -263,7 +264,8 @@ export const TradingAcademyService = {
       if (payload.enrollmentDate != null) { fields.push(`enrollment_date = $${idx++}`);  vals.push(payload.enrollmentDate); }
       if (payload.paymentMode    != null) { fields.push(`payment_mode = $${idx++}`);     vals.push(payload.paymentMode); }
       if (payload.proofKey       != null) { fields.push(`proof_key = $${idx++}`);        vals.push(payload.proofKey); }
-      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
+      // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
       if (payload.notes !== undefined)    { fields.push(`notes = $${idx++}`);            vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

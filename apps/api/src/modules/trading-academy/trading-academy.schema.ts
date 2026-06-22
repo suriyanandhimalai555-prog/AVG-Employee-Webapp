@@ -6,8 +6,9 @@ export const AddTradingMemberSchema = z.object({
   enrolledBy:     z.string().uuid(),
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:       z.array(z.string()).optional(),
-  transactionId:  z.string().max(100).optional(),
+  proofKey:       z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId:  z.array(z.string().max(100)).max(5).optional(),
   notes:          z.string().max(1000).optional(),
   branchId:       z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -18,7 +19,7 @@ export const AddTradingMemberSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required for gpay and bank_receipt payments',
@@ -48,8 +49,9 @@ export const CorrectTradingMemberSchema = z.object({
   amount:         z.number().positive().max(100_000_000).optional(),
   enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   paymentMode:    z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:       z.array(z.string()).optional(),
-  transactionId:  z.string().max(100).optional().nullable(),
+  proofKey:       z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId:  z.array(z.string().max(100)).max(5).optional().nullable(),
   notes:          z.string().max(1000).optional().nullable(),
   branchId:       z.string().uuid().optional(),  // management must supply; MD optional
 }).superRefine((data, ctx) => {
@@ -60,7 +62,7 @@ export const CorrectTradingMemberSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',

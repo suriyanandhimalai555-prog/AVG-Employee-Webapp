@@ -91,7 +91,7 @@ export const GoldService = {
         `INSERT INTO gold_scheme_payments
            (member_id, month_number, paid_date, amount, payment_mode, proof_key, transaction_id, entered_by)
          VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`,
-        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', payload.firstPaymentProofKey || null, payload.firstPaymentTransactionId || null, enteredBy]
+        [member.id, payload.startDate, payload.monthlyAmount, payload.firstPaymentMode ?? 'cash', payload.firstPaymentProofKey?.length ? payload.firstPaymentProofKey : null, payload.firstPaymentTransactionId?.length ? payload.firstPaymentTransactionId : null, enteredBy]
       );
 
       // Credit referrer the configured % of monthly_amount as enrollment incentive.
@@ -290,7 +290,11 @@ export const GoldService = {
            (member_id, month_number, paid_date, amount, payment_mode, proof_key, transaction_id, notes, entered_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING *`,
-        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode, payload.proofKey || null, payload.transactionId || null, payload.notes || null, enteredBy]
+        [memberId, payload.monthNumber, payload.paidDate, payload.amount, payload.paymentMode,
+          payload.proofKey?.length ? payload.proofKey : null,
+          // transactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.transactionId?.length ? payload.transactionId : null,
+          payload.notes || null, enteredBy]
       );
 
       // Credit referrer the configured renewal % for month 2 onwards.
@@ -663,7 +667,8 @@ export const GoldService = {
       if (payload.amount      != null)  { fields.push(`amount = $${idx++}`);        vals.push(payload.amount); }
       if (payload.paymentMode != null)  { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
       if (payload.proofKey    != null)  { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
-      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
+      // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
       if (payload.notes !== undefined)  { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

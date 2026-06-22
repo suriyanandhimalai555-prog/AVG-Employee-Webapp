@@ -24,6 +24,7 @@ import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
 import { PhotoProof } from '../../components/money/PhotoProof';
+import { TransactionIdList } from '../../components/money/TransactionIdList';
 
 const STATUS_STYLES = {
   booked:       'text-blue-600 bg-blue-50',
@@ -42,14 +43,14 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
   const [recordAdvance, { isLoading }] = useRecordLandAdvanceMutation();
   const [form,  setForm]  = useState({ advanceAmount: '', advanceDate: getTodayISO(), advanceChannel: 'cash' });
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.advanceChannel !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.advanceChannel !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -61,7 +62,7 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
         advanceDate:     form.advanceDate,
         advanceChannel:  form.advanceChannel,
         advanceProofKey: proofKey.length ? proofKey : undefined,
-        advanceTransactionId: txnId.trim() || undefined,
+        advanceTransactionId: txnId.length ? txnId : undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -92,7 +93,7 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
             <PaymentModeSelect
               value={form.advanceChannel}
-              onChange={(val) => { setForm(f => ({ ...f, advanceChannel: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, advanceChannel: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -116,14 +117,14 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
     fullAmount: '', fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '', fullChannel: 'cash',
   });
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (form.fullChannel !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.fullChannel !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -137,7 +138,7 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
         loanAmount:      form.loanTaken ? Number(form.loanAmount) : undefined,
         fullChannel:     form.fullChannel,
         fullProofKey: proofKey.length ? proofKey : undefined,
-        fullTransactionId: txnId.trim() || undefined,
+        fullTransactionId: txnId.length ? txnId : undefined,
       }).unwrap();
       onSuccess();
     } catch (err) {
@@ -186,7 +187,7 @@ const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Mode *</p>
             <PaymentModeSelect
               value={form.fullChannel}
-              onChange={(val) => { setForm(f => ({ ...f, fullChannel: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, fullChannel: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -212,20 +213,20 @@ const BuybackPayoutModal = ({ booking, month, onClose, onSuccess }) => {
   const [paidChannel,  setPaidChannel]  = useState('cash');
   const [paidDate,     setPaidDate]     = useState(new Date().toISOString().split('T')[0]);
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (paidChannel !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (paidChannel !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
     try {
-      await markPayoutPaid({ id: booking.id, month, paidDate, paidChannel, paidProofKey: proofKey.length ? proofKey : undefined, paidTransactionId: txnId.trim() || undefined }).unwrap();
+      await markPayoutPaid({ id: booking.id, month, paidDate, paidChannel, paidProofKey: proofKey.length ? proofKey : undefined, paidTransactionId: txnId.length ? txnId : undefined }).unwrap();
       onSuccess();
     } catch (err) {
       setError(err?.data?.error?.message || 'Failed to mark payout paid.');
@@ -248,7 +249,7 @@ const BuybackPayoutModal = ({ booking, month, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold text-navy/40 mb-2">Payment Channel *</p>
             <PaymentModeSelect
               value={paidChannel}
-              onChange={(val) => { setPaidChannel(val); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+              onChange={(val) => { setPaidChannel(val); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
               variant="buttons"
             />
           </div>
@@ -439,18 +440,21 @@ export const LandBookingDetailPage = () => {
               </div>
             ))}
           </div>
-          {(booking.advance_proof_key || booking.full_proof_key) && (
+          {(booking.advance_proof_key || booking.full_proof_key ||
+            booking.advance_transaction_id || booking.full_transaction_id) && (
             <div className="mt-4 space-y-3">
-              {booking.advance_proof_key && (
+              {(booking.advance_proof_key || booking.advance_transaction_id) && (
                 <div>
                   <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Advance Receipt</p>
                   <PhotoProof photoKey={booking.advance_proof_key} />
+                  <TransactionIdList transactionId={booking.advance_transaction_id} />
                 </div>
               )}
-              {booking.full_proof_key && (
+              {(booking.full_proof_key || booking.full_transaction_id) && (
                 <div>
                   <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Full Payment Receipt</p>
                   <PhotoProof photoKey={booking.full_proof_key} />
+                  <TransactionIdList transactionId={booking.full_transaction_id} />
                 </div>
               )}
             </div>
@@ -545,7 +549,12 @@ export const LandBookingDetailPage = () => {
                         )}
                       </div>
                     </div>
-                    {p.status === 'paid' && <PhotoProof photoKey={p.paid_proof_key} />}
+                    {p.status === 'paid' && (
+                      <>
+                        <PhotoProof photoKey={p.paid_proof_key} />
+                        <TransactionIdList transactionId={p.paid_transaction_id} />
+                      </>
+                    )}
                   </div>
                 );
               })}

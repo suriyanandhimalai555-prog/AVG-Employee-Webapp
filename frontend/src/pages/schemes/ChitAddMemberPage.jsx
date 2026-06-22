@@ -35,7 +35,7 @@ export const ChitAddMemberPage = () => {
   const [paymentDate,  setPaymentDate]  = useState(getTodayISO());
   const [paymentMode,  setPaymentMode]  = useState('cash');
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState(null);
   const [result,       setResult]       = useState(null);
@@ -52,7 +52,7 @@ export const ChitAddMemberPage = () => {
     setPaymentDate(getTodayISO());
     setPaymentMode('cash');
     setProofKey([]);
-    setTxnId('');
+    setTxnId([]);
     setShowProofErr(false);
     setError(null);
     setResult(null);
@@ -62,7 +62,7 @@ export const ChitAddMemberPage = () => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer.'); return; }
-    if (paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -75,7 +75,7 @@ export const ChitAddMemberPage = () => {
         firstPaymentDate:      paymentDate,
         firstPaymentMode:      paymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
-        firstPaymentTransactionId: txnId.trim() || undefined,
+        firstPaymentTransactionId: txnId.length ? txnId : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -234,7 +234,7 @@ export const ChitAddMemberPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
-            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">

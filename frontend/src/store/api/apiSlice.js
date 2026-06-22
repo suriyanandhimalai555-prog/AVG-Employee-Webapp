@@ -735,6 +735,12 @@ export const apiSlice = createApi({
       invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary'],
     }),
 
+    undoGoldCoinDraw: builder.mutation({
+      query: ({ roomId, drawId, ...body }) => ({ url: `/gold-coin/rooms/${roomId}/draws/${drawId}`, method: 'DELETE', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary'],
+    }),
+
     combineGoldCoinRooms: builder.mutation({
       query: (data) => ({ url: '/gold-coin/rooms/combine', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
@@ -847,6 +853,12 @@ export const apiSlice = createApi({
 
     runLssDraw: builder.mutation({
       query: ({ id, ...body }) => ({ url: `/lss/rooms/${id}/draws`, method: 'POST', body }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary'],
+    }),
+
+    undoLssDraw: builder.mutation({
+      query: ({ roomId, drawId, ...body }) => ({ url: `/lss/rooms/${roomId}/draws/${drawId}`, method: 'DELETE', body }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary'],
     }),
@@ -1975,6 +1987,7 @@ export const {
   useRefundGoldCoinSlotMutation,
   useActivateGoldCoinRoomMutation,
   useRunGoldCoinDrawMutation,
+  useUndoGoldCoinDrawMutation,
   useCombineGoldCoinRoomsMutation,
   useRefundGoldCoinRoomMutation,
   useSendGoldCoinRoomToHeadBranchMutation,
@@ -1987,6 +2000,7 @@ export const {
   useRefundLssSlotMutation,
   useActivateLssRoomMutation,
   useRunLssDrawMutation,
+  useUndoLssDrawMutation,
   useCombineLssRoomsMutation,
   useRefundLssRoomMutation,
   useSendLssRoomToHeadBranchMutation,

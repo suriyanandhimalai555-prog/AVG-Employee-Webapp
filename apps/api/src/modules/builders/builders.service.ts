@@ -127,13 +127,14 @@ export const BuildersService = {
           pkg.houseWorth,
           payload.lumpSumDate,
           payload.lumpSumMode,
-          payload.lumpSumProofKey || null,
+          payload.lumpSumProofKey?.length ? payload.lumpSumProofKey : null,
           COOLING_DAYS,
           payload.referrerId || null,
           referrerName,
           payload.notes || null,
           enteredBy,
-          payload.lumpSumTransactionId || null,
+          // lumpSumTransactionId is TEXT[] — bind array directly; empty array → NULL
+          payload.lumpSumTransactionId?.length ? payload.lumpSumTransactionId : null,
         ]
       );
       const plan = insertResult.rows[0];
@@ -338,8 +339,9 @@ export const BuildersService = {
             payload.amount,
             payload.payoutDate,
             payload.paymentMode,
-            payload.proofKey || null,
-            payload.transactionId || null,
+            payload.proofKey?.length ? payload.proofKey : null,
+            // transactionId is TEXT[] — bind array directly; empty array → NULL
+            payload.transactionId?.length ? payload.transactionId : null,
             payload.notes || null,
             enteredBy,
           ]
@@ -684,7 +686,8 @@ export const BuildersService = {
       if (payload.lumpSumDate     != null) { fields.push(`lump_sum_date = $${idx++}`);      vals.push(payload.lumpSumDate); }
       if (payload.lumpSumMode     != null) { fields.push(`lump_sum_mode = $${idx++}`);      vals.push(payload.lumpSumMode); }
       if (payload.lumpSumProofKey != null) { fields.push(`lump_sum_proof_key = $${idx++}`); vals.push(payload.lumpSumProofKey); }
-      if (payload.lumpSumTransactionId !== undefined) { fields.push(`lump_sum_transaction_id = $${idx++}`); vals.push(payload.lumpSumTransactionId); }
+      // lumpSumTransactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.lumpSumTransactionId !== undefined) { fields.push(`lump_sum_transaction_id = $${idx++}`); vals.push(payload.lumpSumTransactionId?.length ? payload.lumpSumTransactionId : null); }
       if (payload.notes !== undefined)     { fields.push(`notes = $${idx++}`);               vals.push(payload.notes); }
 
       // Handle referrerId + denormalised name together
@@ -797,7 +800,8 @@ export const BuildersService = {
       if (payload.payoutDate  != null) { fields.push(`payout_date = $${idx++}`);   vals.push(payload.payoutDate); }
       if (payload.paymentMode != null) { fields.push(`payment_mode = $${idx++}`);  vals.push(payload.paymentMode); }
       if (payload.proofKey    != null) { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
-      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId); }
+      // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
+      if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
       if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

@@ -28,6 +28,7 @@ import { normalizeToE164 } from '../lib/phone';
 interface OutboxRow {
   id:              string;
   customer_id:     string;
+  event:           string;
   template_name:   string;
   template_params: Record<string, unknown>;
 }
@@ -37,41 +38,40 @@ interface CustomerRow {
   has_whatsapp: boolean;
 }
 
+// ── Message text builder ──────────────────────────────────────────────────────
+
+// TS: builds the plain-text body for each event type from the stored params snapshot
+function buildMessageText(event: string, params: Record<string, unknown>): string {
+  const name   = String(params.customerName ?? '');
+  const scheme = String(params.schemeName   ?? '');
+  const amount = params.amount !== undefined ? `₹${params.amount}` : '';
+  const date   = String(params.dateStr      ?? '');
+
+  if (event === 'renewal') {
+    const month = params.monthNumber !== undefined ? ` for month ${params.monthNumber}` : '';
+    return `Hi ${name}, we received your ${scheme} payment of ${amount}${month} on ${date}. Thank you! 🙏`;
+  }
+  // enrollment (default for all other schemes)
+  return `Hi ${name}, your enrollment in ${scheme} for ${amount} on ${date} is confirmed. Welcome to Agilavetri PrimeTech! 🎉`;
+}
+
 // ── Meta Cloud API sender ─────────────────────────────────────────────────────
 
 async function sendViaMetaCloudApi(
   phone: string,
-  templateName: string,
+  event: string,
   templateParams: Record<string, unknown>
 ): Promise<string> {
   const url = `https://graph.facebook.com/${env.WHATSAPP_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
-  // Build ordered components from the template_params snapshot.
-  // Parameters are positional: {{1}} = customerName, {{2}} = schemeName, etc.
-  // The ordering must match the approved template in Meta Business Manager.
-  const paramValues = [
-    templateParams.customerName,
-    templateParams.schemeName,
-    templateParams.amount !== undefined ? String(templateParams.amount) : undefined,
-    templateParams.monthNumber !== undefined ? String(templateParams.monthNumber) : undefined,
-    templateParams.dateStr,
-  ].filter((v): v is string => v !== undefined && v !== null);
-
-  const components = paramValues.length > 0
-    ? [{
-        type:       'body',
-        parameters: paramValues.map((value) => ({ type: 'text', text: String(value) })),
-      }]
-    : [];
-
+  // TS: send as free-form text message (no template required)
   const body = {
     messaging_product: 'whatsapp',
     to:                phone,
-    type:              'template',
-    template: {
-      name:     templateName,
-      language: { code: 'en' },
-      components,
+    type:              'text',
+    text: {
+      preview_url: false,
+      body:        buildMessageText(event, templateParams),
     },
   };
 
@@ -120,7 +120,7 @@ export async function processWhatsAppNotification(job: Job): Promise<void> {
       `UPDATE whatsapp_notifications
        SET status = 'sending', attempts = attempts + 1
        WHERE id = $1 AND status IN ('pending', 'failed')
-       RETURNING id, customer_id, template_name, template_params`,
+       RETURNING id, customer_id, event, template_name, template_params`,
       [outboxId]
     );
     if (claim.rows.length === 0) {
@@ -178,8 +178,8 @@ export async function processWhatsAppNotification(job: Job): Promise<void> {
     }
 
     // ── 6. Send via Meta Cloud API ────────────────────────────────────────────
-    console.log(`📱 Sending WhatsApp [${row.template_name}] → ${e164} (outbox ${outboxId})`);
-    const wamid = await sendViaMetaCloudApi(e164, row.template_name, row.template_params);
+    console.log(`📱 Sending WhatsApp [${row.event}] → ${e164} (outbox ${outboxId})`);
+    const wamid = await sendViaMetaCloudApi(e164, row.event, row.template_params);
 
     // ── 7. Mark sent ──────────────────────────────────────────────────────────
     await client.query(

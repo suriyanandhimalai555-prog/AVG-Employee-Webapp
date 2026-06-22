@@ -38,7 +38,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
     notes:       '',
   });
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [branchId, setBranchId]             = useState('');
   const [error, setError]                   = useState(null);
@@ -50,7 +50,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
     e.preventDefault();
     setError(null);
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -63,7 +63,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         amount:      parseFloat(form.amount),
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
-        transactionId: txnId.trim() || undefined,
+        transactionId: txnId.length ? txnId : undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
       }).unwrap();
@@ -159,7 +159,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
               <div className="relative">
                 <select
                   value={form.paymentMode}
-                  onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+                  onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
                   className={`${MODAL_INPUT_CLASS} appearance-none pr-8`}
                 >
                   {Object.entries(SCHEME_MODE_LABELS).map(([val, lbl]) => (

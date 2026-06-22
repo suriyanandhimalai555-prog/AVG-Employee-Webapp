@@ -24,7 +24,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 
 const WRITER_ROLES      = new Set(['branch_admin']);
-const VIEWER_ROLES      = new Set(['branch_admin', 'md', 'director', 'gm']);
+const VIEWER_ROLES      = new Set(['branch_admin', 'md', 'director', 'gm', 'management']);
 const HEAD_BRANCH_VIEW_ROLES = new Set(['md', 'director']);
 
 const STATUS_FILTERS = [

@@ -41,7 +41,7 @@ export const BuildersAddPlanPage = () => {
   const [customer,     setCustomer]   = useState(null);
   const [form,         setForm]       = useState(INITIAL_FORM);
   const [proofKey,     setProofKey]   = useState([]);
-  const [txnId,        setTxnId]      = useState('');
+  const [txnId,        setTxnId]      = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]      = useState('');
   const [done,         setDone]       = useState(null);  // { plan, customer }
@@ -88,7 +88,7 @@ export const BuildersAddPlanPage = () => {
     if (!form.packageNumber) { setError('Please select a package.'); return; }
     if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.lumpSumMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.lumpSumMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -101,7 +101,7 @@ export const BuildersAddPlanPage = () => {
         lumpSumDate:     form.lumpSumDate,
         lumpSumMode:     form.lumpSumMode,
         lumpSumProofKey: proofKey.length ? proofKey : undefined,
-        lumpSumTransactionId: txnId.trim() || undefined,
+        lumpSumTransactionId: txnId.length ? txnId : undefined,
         referrerId:      form.referrerId || undefined,
         notes:           form.notes || undefined,
         branchId:        isManagement ? branchId : undefined,
@@ -218,7 +218,7 @@ export const BuildersAddPlanPage = () => {
         <FormField label="Payment Mode">
           <PaymentModeSelect
             value={form.lumpSumMode}
-            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
             variant="buttons"
           />
         </FormField>

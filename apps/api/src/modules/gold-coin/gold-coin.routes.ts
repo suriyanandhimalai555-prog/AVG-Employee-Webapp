@@ -16,7 +16,7 @@
 //                                bm/abm/sales_officer (own referrals); client → 403
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
-import { ForbiddenError } from '../../shared/errors';
+import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { Role, GOLD_COIN_VIEWER_ROLES, REFERRER_ONLY_ROLES, hasRole, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
@@ -304,8 +304,8 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
         if (role === Role.BRANCH_ADMIN) {
           const branchId = await resolveBranchAdminBranchId(fastify.db, userId, jwtBranchId);
           summaryArg = { branchId };
-        } else if (role === Role.MD) {
-          // MD gets an org-wide summary (no branch filter)
+        } else if (role === Role.MD || role === Role.MANAGEMENT) {
+          // MD / Management get an org-wide summary (no branch filter)
           const data = await GoldCoinService.getBranchSummary(fastify.db, { branchIds: [] });
           return reply.send({ success: true, data });
         } else if (role === Role.DIRECTOR || role === Role.GM) {
@@ -393,6 +393,24 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
         if (rows.rows.length === 0) throw new Error('Slot not found');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, bodyBranchId);
         const data = await SlotsService.voidSlot(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── DELETE /gold-coin/rooms/:roomId/draws/:drawId — undo the latest draw ───
+  // Only the most-recent draw can be reversed (enforced in the service).
+  // Gated to MD / management; branch is resolved from the room row, not the caller.
+  fastify.delete('/rooms/:roomId/draws/:drawId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { roomId, drawId } = req.params as { roomId: string; drawId: string };
+        const rows = await fastify.db.query('SELECT branch_id FROM gold_coin_rooms WHERE id = $1', [roomId]);
+        if (rows.rows.length === 0) throw new NotFoundError('Room not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (req.body as any)?.branchId);
+        const data = await DrawsService.undoDraw(fastify.db, req.user.id, roomId, drawId, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

@@ -9,8 +9,9 @@ export const AddGoldMemberSchema = z.object({
   startDate:             z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   totalMonths:           z.number().int().min(1).max(60).default(12),
   firstPaymentMode:      z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  firstPaymentProofKey:  z.array(z.string()).optional(),
-  firstPaymentTransactionId: z.string().max(100).optional(),
+  firstPaymentProofKey:  z.array(z.string()).max(5).optional(),
+  // firstPaymentTransactionId is an array of up to 5 UPI/bank reference strings
+  firstPaymentTransactionId: z.array(z.string().max(100)).max(5).optional(),
   notes:                 z.string().max(1000).optional(),
   // Passed by management role only — ignored for branch_admin (branchId from JWT)
   branchId:              z.string().uuid().optional(),
@@ -22,7 +23,7 @@ export const AddGoldMemberSchema = z.object({
       path: ['firstPaymentProofKey'],
     });
   }
-  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentTransactionId?.trim()) {
+  if (data.firstPaymentMode !== 'cash' && !data.firstPaymentTransactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'firstPaymentTransactionId is required for gpay and bank_receipt payments',
@@ -58,8 +59,9 @@ export const AddGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   amount:       z.number().positive(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:     z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional(),
+  proofKey:     z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -70,7 +72,7 @@ export const AddGoldPaymentSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required for gpay and bank_receipt payments',
@@ -99,8 +101,9 @@ export const CorrectGoldPaymentSchema = z.object({
   paidDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   amount:       z.number().positive().optional(),
   paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:     z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional().nullable(),
+  proofKey:     z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -111,7 +114,7 @@ export const CorrectGoldPaymentSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',

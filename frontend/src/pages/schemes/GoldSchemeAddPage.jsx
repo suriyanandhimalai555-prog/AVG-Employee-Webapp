@@ -38,7 +38,7 @@ export const GoldSchemeAddPage = () => {
     notes:            '',
   });
   const [proofKey,    setProofKey]    = useState([]);
-  const [txnId,       setTxnId]       = useState('');
+  const [txnId,       setTxnId]       = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -55,7 +55,7 @@ export const GoldSchemeAddPage = () => {
       return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
-    if (form.firstPaymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.firstPaymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -70,7 +70,7 @@ export const GoldSchemeAddPage = () => {
         totalMonths:           parseInt(form.totalMonths, 10),
         firstPaymentMode:      form.firstPaymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
-        firstPaymentTransactionId: txnId.trim() || undefined,
+        firstPaymentTransactionId: txnId.length ? txnId : undefined,
         notes:                 form.notes.trim() || undefined,
         branchId:              isManagement ? branchId : undefined,
       }).unwrap();
@@ -211,7 +211,7 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
             variant="buttons"
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">

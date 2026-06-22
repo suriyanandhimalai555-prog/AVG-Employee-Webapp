@@ -16,6 +16,7 @@ import { TRADING_ROLE_LABELS } from '../../lib/schemeConstants';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { AddMemberSheet } from './components/AddMemberSheet';
 import { PhotoProof } from '../../components/money/PhotoProof';
+import { TransactionIdList } from '../../components/money/TransactionIdList';
 
 export const TradingAcademyPage = () => {
   const navigate = useNavigate();
@@ -143,6 +144,7 @@ export const TradingAcademyPage = () => {
                 </div>
               </div>
               <PhotoProof photoKey={m.proof_key} />
+              <TransactionIdList transactionId={m.transaction_id} />
             </div>
           ))}
 

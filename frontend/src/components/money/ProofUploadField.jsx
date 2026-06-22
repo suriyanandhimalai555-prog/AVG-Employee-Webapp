@@ -16,6 +16,7 @@ import { useGetMoneyUploadUrlMutation } from '../../store/api/apiSlice';
 import { useState } from 'react';
 
 const MAX_SIZE = 6 * 1024 * 1024; // 6 MB
+const MAX_IMAGES = 5;              // hard cap per payment event
 
 export const ProofUploadField = ({ mode, proofKey, onChange, showError = false }) => {
   // Normalise: accept string (legacy), string[], null, or undefined → always work with []
@@ -32,6 +33,11 @@ export const ProofUploadField = ({ mode, proofKey, onChange, showError = false }
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (keys.length >= MAX_IMAGES) {
+      setUploadErr(`Maximum ${MAX_IMAGES} images per payment.`);
+      e.target.value = '';
+      return;
+    }
     if (file.size > MAX_SIZE) {
       setUploadErr('File too large (max 6 MB).');
       e.target.value = '';
@@ -106,22 +112,24 @@ export const ProofUploadField = ({ mode, proofKey, onChange, showError = false }
             );
           })}
 
-          {/* Add another tile */}
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="w-20 h-20 rounded-xl border border-dashed border-indigo/30 flex flex-col items-center justify-center gap-1 text-indigo hover:bg-indigo/5 transition-colors tactile-press disabled:opacity-50"
-          >
-            {uploading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <>
-                <Plus size={18} className="opacity-60" />
-                <span className="text-[9px] font-bold">Add</span>
-              </>
-            )}
-          </button>
+          {/* Add another tile — hidden at MAX_IMAGES cap */}
+          {keys.length < MAX_IMAGES && (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="w-20 h-20 rounded-xl border border-dashed border-indigo/30 flex flex-col items-center justify-center gap-1 text-indigo hover:bg-indigo/5 transition-colors tactile-press disabled:opacity-50"
+            >
+              {uploading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <>
+                  <Plus size={18} className="opacity-60" />
+                  <span className="text-[9px] font-bold">Add</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -141,7 +149,7 @@ export const ProofUploadField = ({ mode, proofKey, onChange, showError = false }
             >
               <ImageIcon size={28} className="opacity-50" />
               <p className="text-xs font-bold tracking-wide">Upload Receipt / Screenshot</p>
-              <p className="text-[10px] text-navy/30">You can add multiple images</p>
+              <p className="text-[10px] text-navy/30">You can add up to {MAX_IMAGES} images</p>
             </button>
           )}
         </div>

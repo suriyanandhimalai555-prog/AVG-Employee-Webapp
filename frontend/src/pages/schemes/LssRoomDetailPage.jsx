@@ -17,6 +17,7 @@ import {
   useGetLssRoomQuery,
   useActivateLssRoomMutation,
   useRunLssDrawMutation,
+  useUndoLssDrawMutation,
   useSendLssRoomToHeadBranchMutation,
   useVoidLssRoomMutation,
   useRemoveLssSlotMutation,
@@ -30,6 +31,7 @@ import { SchemePageHeader } from './components/SchemePageHeader';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { isSchemeAdmin } from '../../lib/schemeAuth';
 import { PhotoProof } from '../../components/money/PhotoProof';
+import { TransactionIdList } from '../../components/money/TransactionIdList';
 
 const SLOTS_PER_ROOM = 20;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -175,6 +177,7 @@ export const LssRoomDetailPage = () => {
   const { data: room, isLoading, error } = useGetLssRoomQuery(id);
   const [activate,   { isLoading: activating }] = useActivateLssRoomMutation();
   const [runDraw,    { isLoading: drawing }]    = useRunLssDrawMutation();
+  const [undoDraw,   { isLoading: undoing }]    = useUndoLssDrawMutation();
   const [sendToHead, { isLoading: sending }]    = useSendLssRoomToHeadBranchMutation();
   const [voidRoom,   { isLoading: voiding }]   = useVoidLssRoomMutation();
   const [hideIneligible, setHideIneligible]     = useState(true);
@@ -273,6 +276,22 @@ export const LssRoomDetailPage = () => {
       );
     } catch (err) {
       window.alert(err?.data?.error?.message || 'Draw failed');
+    }
+  };
+
+  const onUndoDraw = async (draw) => {
+    const ok = window.confirm(
+      `Undo Draw #${draw.draw_number}?\n\n` +
+      `Slot ${draw.winning_slot_number} (${draw.winning_customer_name}) will return to "held".\n` +
+      `Payout of ${formatCurrency(parseFloat(draw.payout_amount))} will be removed.\n` +
+      `The draw row will be deleted and a new winner can be picked.`
+    );
+    if (!ok) return;
+    try {
+      await undoDraw({ roomId: id, drawId: draw.id, branchId: room.branch_id }).unwrap();
+      window.alert(`Draw #${draw.draw_number} has been undone.`);
+    } catch (err) {
+      window.alert(err?.data?.error?.message || 'Undo failed');
     }
   };
 
@@ -489,6 +508,7 @@ export const LssRoomDetailPage = () => {
                       <SlotAdminActions slot={s} branchId={room.branch_id} />
                     )}
                     <PhotoProof photoKey={s.proof_key} />
+                    <TransactionIdList transactionId={s.transaction_id} />
                   </div>
                 );
               })
@@ -501,22 +521,37 @@ export const LssRoomDetailPage = () => {
         <div className="px-4 mb-10">
           <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mb-3">Draw history</p>
           <div className="bg-white rounded-2xl card-shadow border border-navy/5 divide-y divide-navy/5 overflow-hidden">
-            {room.draws.map((d) => (
-              <div key={d.id} className="px-4 py-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-navy">
-                    Draw #{d.draw_number} · Slot {d.winning_slot_number}
-                  </p>
-                  <p className="text-[11px] text-navy/40">
-                    {d.winning_customer_name} ({d.customer_code})
-                  </p>
+            {room.draws.map((d, idx) => {
+              // Only the last draw in the list (highest draw_number) can be undone
+              const isLatest = idx === room.draws.length - 1;
+              return (
+                <div key={d.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-navy">
+                      Draw #{d.draw_number} · Slot {d.winning_slot_number}
+                    </p>
+                    <p className="text-[11px] text-navy/40">
+                      {d.winning_customer_name} ({d.customer_code})
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-violet-700">{formatCurrency(parseFloat(d.payout_amount))}</p>
+                      <p className="text-[11px] font-medium text-navy/50">{formatDate(d.draw_date)}</p>
+                    </div>
+                    {isAdmin && isLatest && (
+                      <button
+                        onClick={() => onUndoDraw(d)}
+                        disabled={undoing}
+                        className="text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg px-2 py-1 hover:bg-red-50 disabled:opacity-40 tactile-press"
+                      >
+                        Undo
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-violet-700">{formatCurrency(parseFloat(d.payout_amount))}</p>
-                  <p className="text-[11px] font-medium text-navy/50">{formatDate(d.draw_date)}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -54,9 +54,11 @@ import {
   useCorrectGoldCoinSlotMutation,
   useVoidGoldCoinSlotMutation,
   useDeleteGoldCoinSlotMutation,
+  useUndoGoldCoinDrawMutation,
   useCorrectLssSlotMutation,
   useVoidLssSlotMutation,
   useDeleteLssSlotMutation,
+  useUndoLssDrawMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
@@ -78,6 +80,7 @@ import { FormError } from './components/FormError';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
 import { PhotoProof } from '../../components/money/PhotoProof';
+import { TransactionIdList } from '../../components/money/TransactionIdList';
 
 // ─── Scheme list ──────────────────────────────────────────────────────────────
 
@@ -179,9 +182,11 @@ function useSchemeActions() {
   const [correctGC]        = useCorrectGoldCoinSlotMutation();
   const [voidGC]           = useVoidGoldCoinSlotMutation();
   const [deleteGC]         = useDeleteGoldCoinSlotMutation();
+  const [undoGCDraw]       = useUndoGoldCoinDrawMutation();
   const [correctLss]       = useCorrectLssSlotMutation();
   const [voidLss]          = useVoidLssSlotMutation();
   const [deleteLss]        = useDeleteLssSlotMutation();
+  const [undoLssDraw]      = useUndoLssDrawMutation();
   const [correctLand]      = useCorrectLandBookingMutation();
   const [voidLand]         = useVoidLandBookingMutation();
   const [deleteLand]       = useDeleteLandBookingMutation();
@@ -191,8 +196,8 @@ function useSchemeActions() {
     trading_academy:   { correct: correctTrading, void: voidTrading, delete: deleteTrading, entityKey: (e) => ({ id: e.id }) },
     builders_scheme:   { correct: correctBuilders, void: voidBuilders, delete: deleteBuilders, changeReward: changeRewardBuilders, chooseReward: chooseRewardBuilders, entityKey: (e) => ({ planId: e.id }) },
     agila_chit_scheme: { correct: correctChit,    void: voidChit,    delete: deleteChit,    entityKey: (e) => ({ groupId: e.group_id, memberId: e.id }) },
-    gold_coin_scheme:  { correct: correctGC,      void: voidGC,      delete: deleteGC,      entityKey: (e) => ({ id: e.id }) },
-    lss_scheme:        { correct: correctLss,     void: voidLss,     delete: deleteLss,     entityKey: (e) => ({ id: e.id }) },
+    gold_coin_scheme:  { correct: correctGC,  void: voidGC,  delete: deleteGC,  undoDraw: undoGCDraw,  entityKey: (e) => ({ id: e.id }) },
+    lss_scheme:        { correct: correctLss, void: voidLss, delete: deleteLss, undoDraw: undoLssDraw, entityKey: (e) => ({ id: e.id }) },
     land_scheme:       { correct: correctLand,    void: voidLand,    delete: deleteLand,    entityKey: (e) => ({ id: e.id }) },
   };
 }
@@ -289,13 +294,13 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
   const [busy,  setBusy]  = useState(false);
   const [error, setError] = useState('');
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState('');
+  const [txnId,        setTxnId]        = useState([]);
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.amount || !form.date) { setError('Amount and date are required.'); return; }
-    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
@@ -308,7 +313,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         date:        form.date,
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
-        transactionId: txnId.trim() || undefined,
+        transactionId: txnId.length ? txnId : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onClose();
@@ -358,7 +363,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
           <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
           <select
             value={form.paymentMode}
-            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
             className={`${IC} appearance-none`}
           >
             {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
@@ -708,12 +713,17 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
     notes:       payment.notes        || '',
   });
   const [proofKey,     setProofKey]     = useState([]);
-  const [txnId,        setTxnId]        = useState(payment.transaction_id || '');
+  // Normalize legacy scalar (pre-migration single string) → array for the new multi-id field
+  const [txnId,        setTxnId]        = useState(
+    Array.isArray(payment.transaction_id)
+      ? payment.transaction_id
+      : (payment.transaction_id ? [payment.transaction_id] : [])
+  );
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleCorrect = async (e) => {
     e.preventDefault();
-    if (form.paymentMode && form.paymentMode !== 'cash' && (!proofKey.length || !txnId.trim())) {
+    if (form.paymentMode && form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for non-cash payment corrections.');
       return;
@@ -725,7 +735,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
         [dateField]: form.date        || undefined,
         paymentMode: form.paymentMode || undefined,
         proofKey: proofKey.length ? proofKey : undefined,
-        transactionId: form.paymentMode && form.paymentMode !== 'cash' ? (txnId.trim() || undefined) : undefined,
+        transactionId: form.paymentMode && form.paymentMode !== 'cash' ? (txnId.length ? txnId : undefined) : undefined,
         notes:       form.notes       ?? undefined,
         branchId,
       }).unwrap();
@@ -764,6 +774,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
         </div>
       </div>
       <PhotoProof photoKey={payment.proof_key} />
+      <TransactionIdList transactionId={payment.transaction_id} />
 
       {editOpen && (
         <form onSubmit={handleCorrect} className="border-t border-navy/10 pt-2 space-y-2">
@@ -781,7 +792,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </div>
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
-            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId(''); setShowProofErr(false); }}
+            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
@@ -862,7 +873,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   const [error, setError] = useState('');
   const modeField = fields.find(f => f.type === 'mode');
   const [entryProofKey,     setEntryProofKey]     = useState([]);
-  const [entryTxnId,        setEntryTxnId]        = useState('');
+  const [entryTxnId,        setEntryTxnId]        = useState([]);
   const [showEntryProofErr, setShowEntryProofErr] = useState(false);
 
   const entityArgs = actions.entityKey(entry);
@@ -870,7 +881,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (modeField && form[modeField.key] && form[modeField.key] !== 'cash'
-        && (!entryProofKey.length || (modeField.txnField && !entryTxnId.trim()))) {
+        && (!entryProofKey.length || (modeField.txnField && !entryTxnId.length))) {
       setShowEntryProofErr(true);
       setError('Payment proof and transaction ID are required when changing mode to GPay/Bank.');
       return;
@@ -896,8 +907,8 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
       if (modeField && entryProofKey.length) {
         payload[modeField.proofField] = entryProofKey;
       }
-      if (modeField && modeField.txnField && entryTxnId.trim()) {
-        payload[modeField.txnField] = entryTxnId.trim();
+      if (modeField && modeField.txnField && entryTxnId.length) {
+        payload[modeField.txnField] = entryTxnId;
       }
       await actions.correct({ ...entityArgs, ...payload }).unwrap();
       onClose();
@@ -1456,17 +1467,30 @@ const SLOT_STATUS_STYLES = {
   voided:  'bg-gray-100 text-gray-400',
 };
 
-const SlotRow = ({ slot, branchId, schemeCode, slotActions }) => {
+const SlotRow = ({ slot, branchId, schemeCode, slotActions, roomId }) => {
   const [editOpen,   setEditOpen]   = useState(false);
   const [voidOpen,   setVoidOpen]   = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [undoOpen,   setUndoOpen]   = useState(false);
   const [actionError, setActionError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const isWon    = slot.status === 'won';
+  const isWon      = slot.status === 'won';
   const isInactive = slot.status === 'voided' || slot.status === 'refunded';
 
-  const closeAll = () => { setEditOpen(false); setVoidOpen(false); setDeleteOpen(false); setActionError(''); };
+  const closeAll = () => { setEditOpen(false); setVoidOpen(false); setDeleteOpen(false); setUndoOpen(false); setActionError(''); };
+
+  const handleUndoWin = async () => {
+    setBusy(true); setActionError('');
+    try {
+      // won_in_draw_id is the draw UUID that made this slot a winner
+      await slotActions.undoDraw({ roomId, drawId: slot.won_in_draw_id, branchId }).unwrap();
+      // RTK invalidates GoldCoinRoom / LssRoom → slot list refetches automatically
+      setUndoOpen(false);
+    } catch (err) {
+      setActionError(err?.data?.error?.message || 'Failed to undo win.');
+    } finally { setBusy(false); }
+  };
 
   const handleVoid = async () => {
     setBusy(true); setActionError('');
@@ -1512,6 +1536,14 @@ const SlotRow = ({ slot, branchId, schemeCode, slotActions }) => {
                 className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press hover:bg-red-50 hover:text-red-600"
                 aria-label="Void slot"><Trash2 size={10} /></button>
             </>
+          )}
+          {/* Undo win — shown for WON slots; reverses the draw so the slot returns to held */}
+          {isWon && !isInactive && (
+            <button type="button" onClick={() => { closeAll(); setUndoOpen(true); }}
+              className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 tactile-press hover:bg-amber-100 hover:text-amber-800"
+              aria-label="Undo win" title="Undo win — return slot to held">
+              <Undo2 size={10} />
+            </button>
           )}
           <button type="button"
             onClick={() => { closeAll(); setDeleteOpen(true); }}
@@ -1561,6 +1593,21 @@ const SlotRow = ({ slot, branchId, schemeCode, slotActions }) => {
           </div>
         </div>
       )}
+
+      {/* Undo win confirm panel — reverses the draw so the slot returns to 'held' */}
+      {undoOpen && (
+        <div className="border-t border-amber-100 pt-2 space-y-2">
+          <p className="text-[10px] text-amber-800 font-semibold">Undo this win? The slot returns to held and the draw is removed — you can then edit or re-pick a winner.</p>
+          {actionError && <FormError error={actionError} />}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleUndoWin} disabled={busy}
+              className="flex-1 py-2 rounded-xl bg-amber-500 text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {busy ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />} Confirm Undo Win
+            </button>
+            <button type="button" onClick={() => setUndoOpen(false)} className="px-3 py-2 rounded-xl bg-navy/5 text-navy/60 text-[10px] font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1575,7 +1622,7 @@ const GoldCoinRoomSlots = ({ roomId, expanded, branchId, slotActions }) => {
       {isFetching && <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-navy/30" /></div>}
       {!isFetching && slots.length === 0 && <p className="text-xs text-navy/40 text-center py-2">No slots in this room.</p>}
       {!isFetching && slots.map((slot) => (
-        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="gold_coin_scheme" slotActions={slotActions} />
+        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="gold_coin_scheme" slotActions={slotActions} roomId={roomId} />
       ))}
     </div>
   );
@@ -1590,7 +1637,7 @@ const LssRoomSlots = ({ roomId, expanded, branchId, slotActions }) => {
       {isFetching && <div className="flex justify-center py-3"><Loader2 size={16} className="animate-spin text-navy/30" /></div>}
       {!isFetching && slots.length === 0 && <p className="text-xs text-navy/40 text-center py-2">No slots in this room.</p>}
       {!isFetching && slots.map((slot) => (
-        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="lss_scheme" slotActions={slotActions} />
+        <SlotRow key={slot.id} slot={slot} branchId={branchId} schemeCode="lss_scheme" slotActions={slotActions} roomId={roomId} />
       ))}
     </div>
   );

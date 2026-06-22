@@ -9,8 +9,9 @@ export const CreateSlotSchema = z.object({
   amountPaid:  z.number().positive().max(10_000_000),
   quantity:    z.number().int().min(1).max(20).default(1),
   paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
-  proofKey:    z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional(),
+  proofKey:    z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional(),
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
   branchId:    z.string().uuid().optional(),
@@ -26,7 +27,7 @@ export const CreateSlotSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required for gpay and bank_receipt payments',
@@ -73,8 +74,9 @@ export const CorrectLssSlotSchema = z.object({
   referrerId:  z.string().uuid().optional().nullable(),
   notes:       z.string().max(500).optional().nullable(),
   paymentMode: z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  proofKey:    z.array(z.string()).optional(),
-  transactionId: z.string().max(100).optional().nullable(),
+  proofKey:    z.array(z.string()).max(5).optional(),
+  // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
+  transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   branchId:    z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
   if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey?.length) {
@@ -84,7 +86,7 @@ export const CorrectLssSlotSchema = z.object({
       path: ['proofKey'],
     });
   }
-  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.trim()) {
+  if (data.paymentMode && data.paymentMode !== 'cash' && !data.transactionId?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
