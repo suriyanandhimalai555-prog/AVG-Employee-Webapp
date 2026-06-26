@@ -1,9 +1,11 @@
 // apps/api/src/modules/branches/branch.service.ts
 // Performance: branches list is cached in Redis for 10 minutes.
-// Only the MD can create/modify branches — enforced at service level for defense-in-depth.
+// MD and Management can create/modify/deactivate branches — enforced at service level for defense-in-depth.
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
+// Role enum provides canonical string constants — avoids magic strings in guards.
+import { Role } from '../../shared/role-constants';
 import type { UpdateBranchLocationInput } from './branch.schema';
 // runInTransaction ensures setHeadBranch is atomic: clearing the old flag and
 // setting the new one never leave the DB with zero or two head branches.
@@ -74,8 +76,9 @@ export const BranchService = {
     requesterId: string,
     payload: { name: string; shiftStart?: string; shiftEnd?: string; timezone?: string }
   ): Promise<any> {
-    if (requesterRole !== 'md') {
-      throw new ForbiddenError('Only the MD can create new branches');
+    // Both MD and Management may create branches.
+    if (requesterRole !== Role.MD && requesterRole !== Role.MANAGEMENT) {
+      throw new ForbiddenError('Only MD or Management can create new branches');
     }
 
     // Derive a unique client_prefix from the branch name using the same DB function
@@ -128,8 +131,9 @@ export const BranchService = {
     requesterRole: string,
     branchId: string
   ): Promise<void> {
-    if (requesterRole !== 'md') {
-      throw new ForbiddenError('Only the MD can delete branches');
+    // Both MD and Management may deactivate branches.
+    if (requesterRole !== Role.MD && requesterRole !== Role.MANAGEMENT) {
+      throw new ForbiddenError('Only MD or Management can deactivate branches');
     }
 
     const result = await db.query(
@@ -153,8 +157,9 @@ export const BranchService = {
     branchId: string,
     payload: { name?: string; gmId?: string | null; adminId?: string | null; shiftStart?: string; shiftEnd?: string; isActive?: boolean }
   ): Promise<any> {
-    if (requesterRole !== 'md') {
-      throw new ForbiddenError('Only the MD can update branches');
+    // Both MD and Management may update branch details.
+    if (requesterRole !== Role.MD && requesterRole !== Role.MANAGEMENT) {
+      throw new ForbiddenError('Only MD or Management can update branches');
     }
 
     // Build dynamic SET clause

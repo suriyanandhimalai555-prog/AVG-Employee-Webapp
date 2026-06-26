@@ -29,6 +29,7 @@ import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 const WRITER_ROLES = new Set(['branch_admin', 'management', 'md', 'director']);
@@ -57,6 +58,7 @@ export const GoldCoinAddSlotPage = () => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -96,6 +98,14 @@ export const GoldCoinAddSlotPage = () => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - perSlot) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the per-slot price.');
+      return;
+    }
     try {
       const res = await addSlot({
         packageId:   form.packageId,
@@ -105,6 +115,8 @@ export const GoldCoinAddSlotPage = () => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
+        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
@@ -294,10 +306,20 @@ export const GoldCoinAddSlotPage = () => {
         <FormField label="Payment mode" required>
           <PaymentModeSelect
             value={form.paymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
+            includeSplit
           />
         </FormField>
+
+        <CashBankSplitField
+          mode={form.paymentMode}
+          cashAmount={split.cashAmount}
+          bankAmount={split.bankAmount}
+          onChange={setSplit}
+          expectedTotal={perSlot || undefined}
+          showError={showProofErr}
+        />
 
         <ProofUploadField
           mode={form.paymentMode}

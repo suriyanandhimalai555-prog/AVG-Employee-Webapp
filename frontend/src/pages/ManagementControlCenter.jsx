@@ -18,7 +18,7 @@ import {
   Settings2, IndianRupee, Building2, Gem, Coins,
   Layers, Landmark, Edit2, Check, X, Loader2,
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
-  MapPin, Navigation, MessageCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -48,12 +48,10 @@ import {
   useUpdateGoldCoinEligibilityBypassSettingMutation,
   useGetBranchesQuery,
   useSetHeadBranchMutation,
-  useSetBranchLocationMutation,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
 import { CommissionPanel } from './schemes/components/CommissionPanel';
-import { useGeolocation } from '../hooks/useGeolocation';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,8 +65,7 @@ const TABS = [
   { key: 'lss',         label: 'LSS',            Icon: Layers,       roles: null },
   { key: 'land',        label: 'Land',           Icon: Landmark,     roles: null },
   { key: 'corrections', label: 'Corrections',   Icon: ShieldAlert,  roles: null },
-  // Branches tab: only Management may set geofence coordinates
-  { key: 'branches',    label: 'Branches',       Icon: MapPin,       roles: new Set(['management']) },
+  // Branches tab removed — branch management + geofence lives at /branches (ManagementBranches page)
 ];
 
 // Scheme codes for the commission tab (maps to projects.code)
@@ -704,246 +701,6 @@ const LandTab = ({ navigate }) => {
   );
 };
 
-// ─── Branches tab (Management only) ───────────────────────────────────────────
-// Lets Management configure the geofence lat/lon and radius for every branch.
-// "Use my location" button fills coordinates directly from the device (handy
-// when Management is physically standing at the branch).
-
-const BranchLocationRow = ({ branch }) => {
-  const [setBranchLocation, { isLoading: saving }] = useSetBranchLocationMutation();
-  const geo = useGeolocation();
-  const [editing, setEditing]   = useState(false);
-  const [lat,     setLat]       = useState('');
-  const [lng,     setLng]       = useState('');
-  const [radius,  setRadius]    = useState('');
-  const [gpsMsg,  setGpsMsg]    = useState(''); // '' | 'fetching' | 'ready' | 'blocked'
-  const [err,     setErr]       = useState('');
-  const [saved,   setSaved]     = useState(false);
-
-  const hasCoords = branch.latitude != null && branch.longitude != null;
-
-  // Sync hook state → local gpsMsg + auto-fill form fields when GPS resolves.
-  useEffect(() => {
-    if (geo.status === 'fetching') setGpsMsg('fetching');
-    else if (geo.status === 'ready' && geo.coords) {
-      setLat(geo.coords.lat.toFixed(6));
-      setLng(geo.coords.lng.toFixed(6));
-      setGpsMsg('ready');
-    } else if (geo.status === 'error') {
-      setGpsMsg('blocked');
-    }
-  }, [geo.status, geo.coords]);
-
-  const startEdit = () => {
-    setLat(hasCoords ? String(parseFloat(branch.latitude)) : '');
-    setLng(hasCoords ? String(parseFloat(branch.longitude)) : '');
-    setRadius(branch.geofence_radius_m != null ? String(branch.geofence_radius_m) : '150');
-    setErr('');
-    setSaved(false);
-    setEditing(true);
-  };
-
-  const cancelEdit = () => { setEditing(false); setErr(''); setGpsMsg(''); };
-
-  // Fill lat/lng from the device's GPS (useful when standing at the branch).
-  // Delegates to the shared useGeolocation hook — no inline navigator calls.
-  const useMyLocation = () => {
-    setGpsMsg('');
-    geo.request();
-  };
-
-  const save = async () => {
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-    const parsedRadius = parseInt(radius, 10);
-    if (isNaN(parsedLat) || parsedLat < -90  || parsedLat > 90)  { setErr('Latitude must be between -90 and 90'); return; }
-    if (isNaN(parsedLng) || parsedLng < -180 || parsedLng > 180) { setErr('Longitude must be between -180 and 180'); return; }
-    if (isNaN(parsedRadius) || parsedRadius < 20 || parsedRadius > 5000) { setErr('Radius must be 20 – 5000 m'); return; }
-    setErr('');
-    try {
-      await setBranchLocation({ id: branch.id, latitude: parsedLat, longitude: parsedLng, geofenceRadiusM: parsedRadius }).unwrap();
-      setSaved(true);
-      setEditing(false);
-      setTimeout(() => setSaved(false), 2500);
-    } catch (e) {
-      setErr(e?.data?.error?.message || 'Save failed');
-    }
-  };
-
-  const clearGeofence = async () => {
-    if (!window.confirm(`Remove the geofence for "${branch.name}"? Check-in will become unrestricted for this branch.`)) return;
-    try {
-      await setBranchLocation({ id: branch.id, latitude: null, longitude: null, geofenceRadiusM: null }).unwrap();
-    } catch (e) {
-      setErr(e?.data?.error?.message || 'Clear failed');
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-indigo/5 flex items-center justify-center flex-shrink-0">
-            <Building2 size={14} className="text-indigo" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-navy">{branch.name}</p>
-            {hasCoords ? (
-              <p className="text-[10px] font-mono text-emerald-600 mt-0.5">
-                {parseFloat(branch.latitude).toFixed(5)}, {parseFloat(branch.longitude).toFixed(5)} · {branch.geofence_radius_m ?? 150} m
-              </p>
-            ) : (
-              <p className="text-[10px] text-navy/30 mt-0.5 italic">No geofence set — check-in unrestricted</p>
-            )}
-          </div>
-        </div>
-        {!editing && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={startEdit}
-              className="w-7 h-7 rounded-lg bg-navy/5 text-navy/40 hover:text-navy flex items-center justify-center tactile-press"
-              title="Set location"
-            >
-              <MapPin size={12} />
-            </button>
-            {hasCoords && (
-              <button
-                type="button"
-                onClick={clearGeofence}
-                className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:text-red-600 flex items-center justify-center tactile-press"
-                title="Clear geofence"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )}
-        {saved && !editing && (
-          <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-            <Check size={11} /> Saved
-          </span>
-        )}
-      </div>
-
-      {editing && (
-        <div className="space-y-3 pt-2 border-t border-navy/5">
-          {/* GPS fill button */}
-          <button
-            type="button"
-            onClick={useMyLocation}
-            disabled={gpsMsg === 'fetching'}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-indigo/20 bg-indigo/5 text-xs font-semibold text-indigo tactile-press disabled:opacity-50"
-          >
-            {gpsMsg === 'fetching'
-              ? <Loader2 size={12} className="animate-spin" />
-              : <Navigation size={12} />}
-            {gpsMsg === 'fetching' ? 'Getting location…' : 'Use my current location'}
-          </button>
-          {gpsMsg === 'blocked' && (
-            <p className="text-[10px] text-amber-600 font-medium">Location access blocked — enable in browser settings or enter coords manually.</p>
-          )}
-          {gpsMsg === 'ready' && (
-            <p className="text-[10px] text-emerald-600 font-medium">✓ Coordinates filled from GPS</p>
-          )}
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1">Latitude</label>
-              <input
-                type="number"
-                value={lat}
-                onChange={e => setLat(e.target.value)}
-                step="0.000001"
-                placeholder="e.g. 13.082680"
-                className="w-full px-3 py-2 text-xs font-medium text-navy rounded-xl border border-navy/20 outline-none focus:ring-2 ring-indigo/20"
-              />
-            </div>
-            <div>
-              <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1">Longitude</label>
-              <input
-                type="number"
-                value={lng}
-                onChange={e => setLng(e.target.value)}
-                step="0.000001"
-                placeholder="e.g. 80.270721"
-                className="w-full px-3 py-2 text-xs font-medium text-navy rounded-xl border border-navy/20 outline-none focus:ring-2 ring-indigo/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1">Geofence radius (metres)</label>
-            <input
-              type="number"
-              value={radius}
-              onChange={e => setRadius(e.target.value)}
-              min={20}
-              max={5000}
-              placeholder="150"
-              className="w-full px-3 py-2 text-xs font-medium text-navy rounded-xl border border-navy/20 outline-none focus:ring-2 ring-indigo/20"
-            />
-            <p className="text-[9px] text-navy/30 mt-1">
-              Employees must be within this radius to check in as office. Default 150 m (recommended — accommodates browser GPS jitter).
-            </p>
-          </div>
-
-          {err && <p className="text-[10px] text-red-500 font-medium">{err}</p>}
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={save}
-              className="flex-1 py-2.5 rounded-xl bg-stone-800 text-white text-xs font-bold tactile-press flex items-center justify-center gap-1 disabled:opacity-50"
-            >
-              <Check size={12} /> Save
-            </button>
-            <button
-              type="button"
-              onClick={cancelEdit}
-              className="flex-1 py-2.5 rounded-xl bg-navy/5 text-navy/50 text-xs font-bold tactile-press"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const BranchesTab = () => {
-  const { data: branches = [], isLoading } = useGetBranchesQuery();
-
-  return (
-    <div className="space-y-3">
-      <div className="bg-indigo/5 border border-indigo/10 rounded-2xl p-3 flex items-start gap-2.5">
-        <MapPin size={14} className="text-indigo flex-shrink-0 mt-0.5" />
-        <p className="text-[10px] text-navy/60 leading-relaxed">
-          Set the GPS coordinates and geofence radius for each branch. Employees can only mark
-          <strong> office attendance</strong> when they are within the radius. Branches with no
-          coordinates set are unrestricted (existing behaviour). Field check-in is never geofenced.
-        </p>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-8"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
-      ) : branches.length === 0 ? (
-        <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
-          <Building2 size={28} className="text-navy/10 mx-auto mb-2" />
-          <p className="text-xs text-navy/40">No branches found.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {branches.map(branch => (
-            <BranchLocationRow key={branch.id} branch={branch} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 // ─── Head branch selector (Management only) ───────────────────────────────────
@@ -1326,7 +1083,6 @@ export const ManagementControlCenter = () => {
         {activeTab === 'goldcoin'    && <GoldCoinTab />}
         {activeTab === 'lss'         && <LssTab />}
         {activeTab === 'land'        && <LandTab navigate={navigate} />}
-        {activeTab === 'branches'    && user?.role === 'management' && <BranchesTab />}
         {activeTab === 'corrections' && (
           <div className="py-4">
             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-4">

@@ -34,7 +34,9 @@ export const SetHeadBranchSchema = z.object({
 export const UpdateBranchLocationSchema = z.object({
   latitude:        z.number().min(-90).max(90).nullable(),
   longitude:       z.number().min(-180).max(180).nullable(),
-  geofenceRadiusM: z.number().int().min(20).max(5000).optional(),
+  // nullable() so the clear-geofence path can send null; optional() so omitting it
+  // leaves the existing stored radius unchanged (handled by COALESCE in the service).
+  geofenceRadiusM: z.number().int().min(20).max(5000).nullable().optional(),
 });
 
 export type CreateBranchInput          = z.infer<typeof CreateBranchSchema>;

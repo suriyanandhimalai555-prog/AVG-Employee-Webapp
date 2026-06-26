@@ -20,6 +20,7 @@ import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 
 export const ChitAddMemberPage = () => {
   const user     = useSelector(selectCurrentUser);
@@ -36,6 +37,7 @@ export const ChitAddMemberPage = () => {
   const [paymentMode,  setPaymentMode]  = useState('cash');
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState(null);
   const [result,       setResult]       = useState(null);
@@ -67,6 +69,14 @@ export const ChitAddMemberPage = () => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - fullAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the monthly amount.');
+      return;
+    }
     try {
       const res = await addMember({
         groupId,
@@ -76,6 +86,8 @@ export const ChitAddMemberPage = () => {
         firstPaymentMode:      paymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
         firstPaymentTransactionId: txnId.length ? txnId : undefined,
+        firstPaymentCashAmount: paymentMode === 'cash_bank' ? splitCash : undefined,
+        firstPaymentBankAmount: paymentMode === 'cash_bank' ? splitBank : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -234,13 +246,23 @@ export const ChitAddMemberPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
-            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
+            includeSplit
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
             Month 1 ({formatCurrency(fullAmount)}) is recorded automatically on save.
           </p>
         </FormField>
+
+        <CashBankSplitField
+          mode={paymentMode}
+          cashAmount={split.cashAmount}
+          bankAmount={split.bankAmount}
+          onChange={setSplit}
+          expectedTotal={fullAmount || undefined}
+          showError={showProofErr}
+        />
 
         <ProofUploadField
           mode={paymentMode}

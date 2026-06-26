@@ -31,10 +31,15 @@ export const CreateBuildersPlanSchema = z.object({
   customerId:      z.string().uuid(),
   packageNumber:   z.number().int().min(1).max(6),
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
-  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
   lumpSumProofKey: z.array(z.string()).max(5).optional(),
   // lumpSumTransactionId is an array of up to 5 UPI/bank reference strings
   lumpSumTransactionId: z.array(z.string().max(100)).max(5).optional(),
+  // cash_bank split: how the lump sum divides between cash and bank. The lump-sum
+  // amount is the package's investmentAmount (derived server-side), so the sum is
+  // validated in the service (not here).
+  lumpSumCashAmount: z.number().positive().optional(),
+  lumpSumBankAmount: z.number().positive().optional(),
   referrerId:      z.string().uuid().optional(),
   notes:           z.string().max(1000).optional(),
   branchId:        z.string().uuid().optional(),
@@ -53,16 +58,27 @@ export const CreateBuildersPlanSchema = z.object({
       path: ['lumpSumTransactionId'],
     });
   }
+  // cash_bank: both split amounts required; sum is verified server-side against investmentAmount
+  if (data.lumpSumMode === 'cash_bank' && (!data.lumpSumCashAmount || !data.lumpSumBankAmount)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumCashAmount and lumpSumBankAmount are required for cash_bank payments',
+      path: ['lumpSumCashAmount'],
+    });
+  }
 });
 
 export const RecordBuildersPayoutSchema = z.object({
   monthNumber:  z.number().int().min(1).max(60),
   amount:       z.number().positive(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
-  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).default('cash'),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
   proofKey:     z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional(),
+  // cash_bank split: how this payout's amount divides between cash and bank
+  cashAmount:   z.number().positive().optional(),
+  bankAmount:   z.number().positive().optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -79,6 +95,22 @@ export const RecordBuildersPayoutSchema = z.object({
       message: 'transactionId is required for gpay and bank_receipt payments',
       path: ['transactionId'],
     });
+  }
+  // cash_bank: both split amounts required and must sum to the payout amount
+  if (data.paymentMode === 'cash_bank') {
+    if (!data.cashAmount || !data.bankAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount and bankAmount are required for cash_bank payments',
+        path: ['cashAmount'],
+      });
+    } else if (Math.abs(data.cashAmount + data.bankAmount - data.amount) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount + bankAmount must equal amount',
+        path: ['bankAmount'],
+      });
+    }
   }
 });
 
@@ -129,10 +161,13 @@ export const CorrectBuildersPlanSchema = z.object({
   customerId:      z.string().uuid().optional(),
   referrerId:      z.string().uuid().optional().nullable(),
   lumpSumDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  lumpSumMode:     z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).optional(),
   lumpSumProofKey: z.array(z.string()).max(5).optional(),
   // lumpSumTransactionId is an array of up to 5 UPI/bank reference strings
   lumpSumTransactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
+  // cash_bank split amounts (nullable so a correction can clear them)
+  lumpSumCashAmount: z.number().positive().optional().nullable(),
+  lumpSumBankAmount: z.number().positive().optional().nullable(),
   notes:           z.string().max(1000).optional().nullable(),
   branchId:        z.string().uuid().optional(),  // management must supply; MD optional
 }).superRefine((data, ctx) => {
@@ -150,16 +185,27 @@ export const CorrectBuildersPlanSchema = z.object({
       path: ['lumpSumTransactionId'],
     });
   }
+  // cash_bank: both split amounts required; sum is verified server-side against investmentAmount
+  if (data.lumpSumMode === 'cash_bank' && (!data.lumpSumCashAmount || !data.lumpSumBankAmount)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'lumpSumCashAmount and lumpSumBankAmount are required when setting lumpSumMode to cash_bank',
+      path: ['lumpSumCashAmount'],
+    });
+  }
 });
 
 // Correct an existing payout row.
 export const CorrectBuildersPayoutSchema = z.object({
   amount:       z.number().positive().optional(),
   payoutDate:   z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).optional(),
   proofKey:     z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
+  // cash_bank split amounts (nullable so a correction can clear them)
+  cashAmount:   z.number().positive().optional().nullable(),
+  bankAmount:   z.number().positive().optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -176,6 +222,23 @@ export const CorrectBuildersPayoutSchema = z.object({
       message: 'transactionId is required when setting paymentMode to gpay or bank_receipt',
       path: ['transactionId'],
     });
+  }
+  // cash_bank: both split amounts required; when amount is also supplied, verify the sum here
+  // (a clean 400). When amount is omitted, the DB CHECK enforces the sum against the row.
+  if (data.paymentMode === 'cash_bank') {
+    if (!data.cashAmount || !data.bankAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount and bankAmount are required when setting paymentMode to cash_bank',
+        path: ['cashAmount'],
+      });
+    } else if (data.amount != null && Math.abs(data.cashAmount + data.bankAmount - data.amount) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount + bankAmount must equal amount',
+        path: ['bankAmount'],
+      });
+    }
   }
 });
 

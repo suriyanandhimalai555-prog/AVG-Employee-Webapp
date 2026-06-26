@@ -1,10 +1,14 @@
 // Shared payment mode selector used across scheme forms.
-// variant="buttons" → 3-button toggle grid (GoldSchemeAddPage style)
+// variant="buttons" → toggle grid (GoldSchemeAddPage style)
 // variant="dropdown" → <select> with ChevronDown (modal/sheet style)
+// includeSplit=true adds the "Cash + Bank" split mode (opt-in: schemes that don't
+// support a split — e.g. Land channels — leave it off and keep the base 3 modes).
 import { ChevronDown } from 'lucide-react';
-import { SCHEME_PAYMENT_MODES } from '../../../lib/schemeConstants';
+import { SCHEME_PAYMENT_MODES, SCHEME_PAYMENT_MODES_WITH_SPLIT } from '../../../lib/schemeConstants';
 
-export const PaymentModeSelect = ({ value, onChange, variant = 'buttons', className = '' }) => {
+export const PaymentModeSelect = ({ value, onChange, variant = 'buttons', includeSplit = false, className = '' }) => {
+  const modes = includeSplit ? SCHEME_PAYMENT_MODES_WITH_SPLIT : SCHEME_PAYMENT_MODES;
+
   if (variant === 'dropdown') {
     return (
       <div className="relative">
@@ -13,7 +17,7 @@ export const PaymentModeSelect = ({ value, onChange, variant = 'buttons', classN
           onChange={onChange}
           className={`appearance-none pr-8 ${className}`}
         >
-          {SCHEME_PAYMENT_MODES.map(({ value: v, label }) => (
+          {modes.map(({ value: v, label }) => (
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
@@ -22,9 +26,10 @@ export const PaymentModeSelect = ({ value, onChange, variant = 'buttons', classN
     );
   }
 
+  // 4 modes wrap to a 2×2 grid; the base 3 stay on one row.
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {SCHEME_PAYMENT_MODES.map(({ value: v, label }) => (
+    <div className={`grid ${modes.length > 3 ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
+      {modes.map(({ value: v, label }) => (
         <button
           key={v}
           type="button"

@@ -11,6 +11,7 @@ import { FormError } from './FormError';
 import { SuccessConfirmation } from './SuccessConfirmation';
 import { ProofUploadField } from '../../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../../components/money/CashBankSplitField';
 
 // Trading Academy forms use focus:border-indigo (not ring-indigo/20) — kept local
 const SHEET_INPUT_CLASS =
@@ -29,6 +30,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
@@ -45,6 +47,14 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the enrollment amount.');
+      return;
+    }
     try {
       const res = await addMember({
         customerId:     customer.id,
@@ -54,6 +64,8 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         paymentMode:    form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
+        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
         notes:          form.notes || undefined,
         branchId:       branchId || undefined,
       }).unwrap();
@@ -160,17 +172,27 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <div className="relative">
             <select
               value={form.paymentMode}
-              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
               className={`${SHEET_INPUT_CLASS} appearance-none pr-8`}
             >
               <option value="cash">Cash</option>
               <option value="gpay">GPay</option>
               <option value="bank_receipt">Bank</option>
+              <option value="cash_bank">Cash + Bank</option>
             </select>
             <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-navy/40 pointer-events-none" aria-hidden="true" />
           </div>
         </div>
       </div>
+
+      <CashBankSplitField
+        mode={form.paymentMode}
+        cashAmount={split.cashAmount}
+        bankAmount={split.bankAmount}
+        onChange={setSplit}
+        expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
+        showError={showProofErr}
+      />
 
       <ProofUploadField
         mode={form.paymentMode}

@@ -103,63 +103,75 @@ export const AttendanceService = {
     }
 
     // Step 3: Geofence check — office mode only.
-    // Skip when: no branch resolved, or the branch has no coordinates configured yet
-    // (null lat/lon = geofence not set up = allow), or the role is director/gm.
-    // Directors and GMs oversee multiple branches; selecting one with LIMIT 1 is
-    // nondeterministic and would produce random 403s when they check in from a
-    // legitimate location. They are exempt from geofencing entirely.
+    // Skip when: no branch resolved, or the role is director/gm (multi-branch exempt).
+    // Branches with no coordinates configured (null lat/lon) are unrestricted — skip silently.
     // Client-supplied checkInAccuracy widens the allowed radius by up to 100 m so that
     // a device with coarse GPS (e.g. 80 m accuracy) is not unfairly rejected.
     // This check runs BEFORE the Redis dupe key is set so a rejected attempt does not
     // consume the day's check-in slot.
+    //
+    // Fail-closed design: Redis is a cache optimisation only. If Redis is unavailable,
+    // we fall through to the DB query which is the authoritative source. Only a genuine
+    // DB error will bubble up (500) — it will NOT silently skip enforcement.
     if (payload.mode === 'office' && resolvedBranchId && role !== 'director' && role !== 'gm') {
+      // TS: latitude/longitude come back from pg as DECIMAL strings, not numbers
+      type GeoRow = { latitude: string | null; longitude: string | null; geofence_radius_m: number };
+      const geoKey = `geo:${resolvedBranchId}`;
+      let geoRow: GeoRow | null = null;
+
+      // Cache read is best-effort — a Redis hiccup falls through to the DB read below.
+      // Never let a cache failure skip enforcement for a branch that has coordinates set.
       try {
-        // TS: Redis-first cache for geofence data — branch coords change rarely;
-        // avoids a DB round-trip on every office check-in. TTL matches branch cache (10 min).
-        // Cache is busted by BranchService.setBranchLocation whenever coords change.
-        const geoKey = `geo:${resolvedBranchId}`;
-        let geoRow: { latitude: string | null; longitude: string | null; geofence_radius_m: number } | null = null;
-
         const cached = await redis.get(geoKey);
-        if (cached) {
-          geoRow = JSON.parse(cached);
-        } else {
-          const branchGeo = await db.query(
-            `SELECT latitude, longitude, geofence_radius_m FROM branches WHERE id = $1`,
-            [resolvedBranchId]
-          );
-          if (branchGeo.rows.length > 0) {
-            geoRow = branchGeo.rows[0];
-            // TS: only cache when the row exists; a missing branch is an error path, not cacheable
-            await redis.set(geoKey, JSON.stringify(geoRow), 'EX', 600);
-          }
-        }
+        if (cached) geoRow = JSON.parse(cached) as GeoRow;
+      } catch {
+        // TS: Redis unreachable or returned malformed JSON — fall through to DB
+        console.warn(`⚠️  Geofence cache unavailable for branch ${resolvedBranchId} — falling back to DB`);
+      }
 
-        if (geoRow) {
-          const { latitude, longitude, geofence_radius_m } = geoRow;
-          // TS: only enforce when both coordinates are configured (non-null)
-          if (latitude !== null && longitude !== null && payload.checkInLat !== undefined && payload.checkInLng !== undefined) {
-            const distMeters = haversineMeters(
-              parseFloat(latitude),
-              parseFloat(longitude),
-              payload.checkInLat,
-              payload.checkInLng,
+      // DB is authoritative. Runs whenever cache missed or cache read errored.
+      // NOT wrapped in a swallow-all catch — a real DB failure surfaces as a 500,
+      // not as a silent "allow." This is the correct posture for a security gate.
+      if (!geoRow) {
+        const branchGeo = await db.query(
+          `SELECT latitude, longitude, geofence_radius_m FROM branches WHERE id = $1`,
+          [resolvedBranchId]
+        );
+        if (branchGeo.rows.length > 0) {
+          geoRow = branchGeo.rows[0] as GeoRow;
+          // TS: write-back to cache is best-effort; a write failure never affects enforcement
+          redis.set(geoKey, JSON.stringify(geoRow), 'EX', 600).catch((e: unknown) =>
+            console.warn('⚠️  Geofence cache write failed (non-critical):', e)
+          );
+        }
+      }
+
+      if (geoRow) {
+        const { latitude, longitude, geofence_radius_m } = geoRow;
+        // TS: only enforce when both coordinates are configured (null = branch is unrestricted)
+        if (latitude !== null && longitude !== null && payload.checkInLat !== undefined && payload.checkInLng !== undefined) {
+          const distMeters = haversineMeters(
+            parseFloat(latitude),
+            parseFloat(longitude),
+            payload.checkInLat,
+            payload.checkInLng,
+          );
+          // TS: cap the client-supplied accuracy at 100 m to prevent spoofing the tolerance
+          const accuracyTolerance = Math.min(payload.checkInAccuracy ?? 0, 100);
+          const allowedMeters = (geofence_radius_m ?? 150) + accuracyTolerance;
+          const blocked = distMeters > allowedMeters;
+
+          // Observability: log every geofence decision so "why was this allowed?" is answerable in logs
+          console.info(
+            `[geofence] userId=${userId} branch=${resolvedBranchId} dist=${Math.round(distMeters)}m limit=${Math.round(allowedMeters)}m result=${blocked ? 'BLOCKED' : 'OK'}`
+          );
+
+          if (blocked) {
+            throw new ForbiddenError(
+              `You must be at your branch to check in. You appear to be ~${Math.round(distMeters)} m away (limit: ${Math.round(allowedMeters)} m).`
             );
-            // TS: cap the client-supplied accuracy at 100 m to prevent spoofing the tolerance
-            const accuracyTolerance = Math.min(payload.checkInAccuracy ?? 0, 100);
-            const allowedMeters = (geofence_radius_m ?? 150) + accuracyTolerance;
-            if (distMeters > allowedMeters) {
-              throw new ForbiddenError(
-                `You must be at your branch to check in. You appear to be ~${Math.round(distMeters)} m away (limit: ${Math.round(allowedMeters)} m).`
-              );
-            }
           }
         }
-      } catch (err) {
-        // Re-throw ForbiddenError as-is; swallow unexpected DB/Redis errors so a geofence
-        // cache or query failure never silently blocks all check-ins for a branch.
-        if (err instanceof ForbiddenError) throw err;
-        console.error('⚠️  Geofence check failed — skipping enforcement:', err);
       }
     }
 

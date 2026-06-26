@@ -25,6 +25,7 @@ import { CustomerPicker } from '../../components/CustomerPicker';
 import { BranchPicker } from '../../components/BranchPicker';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 
 const INITIAL_FORM = {
   packageNumber: '',
@@ -42,6 +43,7 @@ export const BuildersAddPlanPage = () => {
   const [form,         setForm]       = useState(INITIAL_FORM);
   const [proofKey,     setProofKey]   = useState([]);
   const [txnId,        setTxnId]      = useState([]);
+  const [split,        setSplit]      = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]      = useState('');
   const [done,         setDone]       = useState(null);  // { plan, customer }
@@ -93,6 +95,15 @@ export const BuildersAddPlanPage = () => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    const investAmt = selectedPkg?.investmentAmount ?? 0;
+    if (form.lumpSumMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - investAmt) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the investment amount.');
+      return;
+    }
 
     try {
       const res = await createPlan({
@@ -102,6 +113,8 @@ export const BuildersAddPlanPage = () => {
         lumpSumMode:     form.lumpSumMode,
         lumpSumProofKey: proofKey.length ? proofKey : undefined,
         lumpSumTransactionId: txnId.length ? txnId : undefined,
+        lumpSumCashAmount: form.lumpSumMode === 'cash_bank' ? splitCash : undefined,
+        lumpSumBankAmount: form.lumpSumMode === 'cash_bank' ? splitBank : undefined,
         referrerId:      form.referrerId || undefined,
         notes:           form.notes || undefined,
         branchId:        isManagement ? branchId : undefined,
@@ -218,10 +231,20 @@ export const BuildersAddPlanPage = () => {
         <FormField label="Payment Mode">
           <PaymentModeSelect
             value={form.lumpSumMode}
-            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
+            includeSplit
           />
         </FormField>
+
+        <CashBankSplitField
+          mode={form.lumpSumMode}
+          cashAmount={split.cashAmount}
+          bankAmount={split.bankAmount}
+          onChange={setSplit}
+          expectedTotal={selectedPkg?.investmentAmount || undefined}
+          showError={showProofErr}
+        />
 
         <ProofUploadField
           mode={form.lumpSumMode}

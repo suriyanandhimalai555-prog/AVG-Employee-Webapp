@@ -16,6 +16,7 @@ import { FormError } from './components/FormError';
 import { PaymentModeSelect } from './components/PaymentModeSelect';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 import { SuccessConfirmation } from './components/SuccessConfirmation';
 
 export const GoldSchemeAddPage = () => {
@@ -39,6 +40,7 @@ export const GoldSchemeAddPage = () => {
   });
   const [proofKey,    setProofKey]    = useState([]);
   const [txnId,       setTxnId]       = useState([]);
+  const [split,       setSplit]       = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -60,6 +62,14 @@ export const GoldSchemeAddPage = () => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.firstPaymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.monthlyAmount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the monthly amount.');
+      return;
+    }
     try {
       const res = await addMember({
         chitNumber:            form.chitNumber.trim(),
@@ -71,6 +81,8 @@ export const GoldSchemeAddPage = () => {
         firstPaymentMode:      form.firstPaymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
         firstPaymentTransactionId: txnId.length ? txnId : undefined,
+        firstPaymentCashAmount: form.firstPaymentMode === 'cash_bank' ? splitCash : undefined,
+        firstPaymentBankAmount: form.firstPaymentMode === 'cash_bank' ? splitBank : undefined,
         notes:                 form.notes.trim() || undefined,
         branchId:              isManagement ? branchId : undefined,
       }).unwrap();
@@ -211,13 +223,23 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
+            includeSplit
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
             Month 1 will be recorded automatically when you save.
           </p>
         </FormField>
+
+        <CashBankSplitField
+          mode={form.firstPaymentMode}
+          cashAmount={split.cashAmount}
+          bankAmount={split.bankAmount}
+          onChange={setSplit}
+          expectedTotal={form.monthlyAmount ? parseFloat(form.monthlyAmount) : undefined}
+          showError={showProofErr}
+        />
 
         <ProofUploadField
           mode={form.firstPaymentMode}

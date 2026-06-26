@@ -62,10 +62,12 @@ export const useNavTabs = () => {
   // Management gets a dedicated Control Center tab for scheme configuration
   const managementTabs = role === 'management' ? [CONTROL_CENTER_TAB] : [];
   const showSchemes = role === 'md' || role === 'director';
+  // MD_TAB is the shared Branches tab — MD gets the classic page, management gets
+  // the new full-featured page (role-dispatched inside BranchesRoute in App.jsx).
   const tabs = [
     ...baseTabs,
     ...(showSchemes ? [SCHEMES_TAB] : []),
-    ...(role === 'md' ? [MD_TAB] : []),
+    ...(role === 'md' || role === 'management' ? [MD_TAB] : []),
     ...managementTabs,
   ];
   const activeTab = getActiveTab(location.pathname);

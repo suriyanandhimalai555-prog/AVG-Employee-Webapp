@@ -104,6 +104,13 @@ export const BuildersService = {
       referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
     }
 
+    // cash_bank split must sum to the package investment amount (validated here since the
+    // lump-sum amount is derived from the package, not the request payload)
+    if (payload.lumpSumMode === 'cash_bank' &&
+        Math.abs((payload.lumpSumCashAmount ?? 0) + (payload.lumpSumBankAmount ?? 0) - pkg.investmentAmount) > 0.01) {
+      throw new ValidationError('lumpSumCashAmount + lumpSumBankAmount must equal the package investment amount');
+    }
+
     const result = await runInTransaction(db, async (client: PoolClient) => {
       const insertResult = await client.query(
         `INSERT INTO builders_plans
@@ -111,11 +118,12 @@ export const BuildersService = {
             investment_amount, monthly_payout, cash_final_monthly, house_worth,
             lump_sum_date, lump_sum_mode, lump_sum_proof_key,
             cooling_end_date, payout_start_date,
-            referrer_id, referrer_name, notes, entered_by, lump_sum_transaction_id)
+            referrer_id, referrer_name, notes, entered_by, lump_sum_transaction_id,
+            lump_sum_cash_amount, lump_sum_bank_amount)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                  ($8::date + $11 * INTERVAL '1 day'),
                  ($8::date + $11 * INTERVAL '1 day'),
-                 $12, $13, $14, $15, $16)
+                 $12, $13, $14, $15, $16, $17, $18)
          RETURNING *`,
         [
           branchId,
@@ -135,6 +143,9 @@ export const BuildersService = {
           enteredBy,
           // lumpSumTransactionId is TEXT[] — bind array directly; empty array → NULL
           payload.lumpSumTransactionId?.length ? payload.lumpSumTransactionId : null,
+          // cash_bank split amounts — null unless mode is cash_bank
+          payload.lumpSumMode === 'cash_bank' ? payload.lumpSumCashAmount : null,
+          payload.lumpSumMode === 'cash_bank' ? payload.lumpSumBankAmount : null,
         ]
       );
       const plan = insertResult.rows[0];
@@ -330,8 +341,8 @@ export const BuildersService = {
       try {
         const insertResult = await client.query(
           `INSERT INTO builders_payouts
-             (plan_id, month_number, amount, payout_date, payment_mode, proof_key, transaction_id, notes, entered_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             (plan_id, month_number, amount, payout_date, payment_mode, proof_key, transaction_id, cash_amount, bank_amount, notes, entered_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING *`,
           [
             planId,
@@ -342,6 +353,9 @@ export const BuildersService = {
             payload.proofKey?.length ? payload.proofKey : null,
             // transactionId is TEXT[] — bind array directly; empty array → NULL
             payload.transactionId?.length ? payload.transactionId : null,
+            // cash_bank split amounts — null unless mode is cash_bank
+            payload.paymentMode === 'cash_bank' ? payload.cashAmount : null,
+            payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
             payload.notes || null,
             enteredBy,
           ]
@@ -688,6 +702,14 @@ export const BuildersService = {
       if (payload.lumpSumProofKey != null) { fields.push(`lump_sum_proof_key = $${idx++}`); vals.push(payload.lumpSumProofKey); }
       // lumpSumTransactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
       if (payload.lumpSumTransactionId !== undefined) { fields.push(`lump_sum_transaction_id = $${idx++}`); vals.push(payload.lumpSumTransactionId?.length ? payload.lumpSumTransactionId : null); }
+      // cash_bank split: set when correcting to cash_bank, clear when switching to another mode
+      if (payload.lumpSumMode === 'cash_bank') {
+        if (payload.lumpSumCashAmount != null) { fields.push(`lump_sum_cash_amount = $${idx++}`); vals.push(payload.lumpSumCashAmount); }
+        if (payload.lumpSumBankAmount != null) { fields.push(`lump_sum_bank_amount = $${idx++}`); vals.push(payload.lumpSumBankAmount); }
+      } else if (payload.lumpSumMode != null) {
+        fields.push(`lump_sum_cash_amount = NULL`);
+        fields.push(`lump_sum_bank_amount = NULL`);
+      }
       if (payload.notes !== undefined)     { fields.push(`notes = $${idx++}`);               vals.push(payload.notes); }
 
       // Handle referrerId + denormalised name together
@@ -802,6 +824,14 @@ export const BuildersService = {
       if (payload.proofKey    != null) { fields.push(`proof_key = $${idx++}`);     vals.push(payload.proofKey); }
       // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
       if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
+      // cash_bank split: set when correcting to cash_bank, clear when switching to another mode
+      if (payload.paymentMode === 'cash_bank') {
+        if (payload.cashAmount != null) { fields.push(`cash_amount = $${idx++}`); vals.push(payload.cashAmount); }
+        if (payload.bankAmount != null) { fields.push(`bank_amount = $${idx++}`); vals.push(payload.bankAmount); }
+      } else if (payload.paymentMode != null) {
+        fields.push(`cash_amount = NULL`);
+        fields.push(`bank_amount = NULL`);
+      }
       if (payload.notes !== undefined) { fields.push(`notes = $${idx++}`);         vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 

@@ -13,6 +13,7 @@ import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { SCHEME_MODE_LABELS, SCHEME_MODE_STYLES, getTodayISO } from '../../../lib/schemeConstants';
 import { ProofUploadField } from '../../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../../components/money/CashBankSplitField';
 import { FormError } from './FormError';
 
 const MODAL_INPUT_CLASS =
@@ -39,6 +40,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [branchId, setBranchId]             = useState('');
   const [error, setError]                   = useState(null);
@@ -55,6 +57,14 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
     try {
       await addPayment({
         memberId:    member.id,
@@ -64,6 +74,8 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
+        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
       }).unwrap();
@@ -159,7 +171,7 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
               <div className="relative">
                 <select
                   value={form.paymentMode}
-                  onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+                  onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
                   className={`${MODAL_INPUT_CLASS} appearance-none pr-8`}
                 >
                   {Object.entries(SCHEME_MODE_LABELS).map(([val, lbl]) => (
@@ -169,6 +181,15 @@ export const AddPaymentModal = ({ member, payments, onClose, onSuccess }) => {
               </div>
             </div>
           </div>
+
+          <CashBankSplitField
+            mode={form.paymentMode}
+            cashAmount={split.cashAmount}
+            bankAmount={split.bankAmount}
+            onChange={setSplit}
+            expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
+            showError={showProofErr}
+          />
 
           <ProofUploadField
             mode={form.paymentMode}

@@ -79,6 +79,7 @@ import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormError } from './components/FormError';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
 
@@ -113,14 +114,14 @@ const SCHEME_FIELDS = {
     { key: 'enrolledBy',      label: 'Enrolled by',    type: 'referrer', entryKey: 'enrolled_by' },
     { key: 'amount',          label: 'Amount',         type: 'number',   entryKey: 'amount' },
     { key: 'enrollmentDate',  label: 'Enrollment Date',type: 'date',     entryKey: 'enrollment_date' },
-    { key: 'paymentMode',     label: 'Payment Mode',   type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId' },
+    { key: 'paymentMode',     label: 'Payment Mode',   type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId', cashField: 'cashAmount', bankField: 'bankAmount', cashEntryKey: 'cash_amount', bankEntryKey: 'bank_amount', amountFormKey: 'amount', amountEntryKey: 'amount' },
     { key: 'notes',           label: 'Notes',          type: 'textarea', entryKey: 'notes' },
   ],
   builders_scheme: [
     { key: 'customerId',   label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',   label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
     { key: 'lumpSumDate',  label: 'Lump Sum Date',type: 'date',    entryKey: 'lump_sum_date' },
-    { key: 'lumpSumMode',  label: 'Payment Mode',type: 'mode',     entryKey: 'lump_sum_mode', proofField: 'lumpSumProofKey', txnField: 'lumpSumTransactionId' },
+    { key: 'lumpSumMode',  label: 'Payment Mode',type: 'mode',     entryKey: 'lump_sum_mode', proofField: 'lumpSumProofKey', txnField: 'lumpSumTransactionId', cashField: 'lumpSumCashAmount', bankField: 'lumpSumBankAmount', cashEntryKey: 'lump_sum_cash_amount', bankEntryKey: 'lump_sum_bank_amount', amountEntryKey: 'investment_amount' },
     { key: 'notes',        label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   agila_chit_scheme: [
@@ -131,13 +132,13 @@ const SCHEME_FIELDS = {
   gold_coin_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
-    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId' },
+    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId', cashField: 'cashAmount', bankField: 'bankAmount', cashEntryKey: 'cash_amount', bankEntryKey: 'bank_amount', amountEntryKey: 'amount_paid' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   lss_scheme: [
     { key: 'customerId',  label: 'Customer',    type: 'customer', entryKey: null },
     { key: 'referrerId',  label: 'Referred by', type: 'referrer', entryKey: 'referrer_id' },
-    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId' },
+    { key: 'paymentMode', label: 'Payment Mode',type: 'mode',     entryKey: 'payment_mode', proofField: 'proofKey', txnField: 'transactionId', cashField: 'cashAmount', bankField: 'bankAmount', cashEntryKey: 'cash_amount', bankEntryKey: 'bank_amount', amountEntryKey: 'amount_paid' },
     { key: 'notes',       label: 'Notes',       type: 'textarea', entryKey: 'notes' },
   ],
   land_scheme: [
@@ -157,8 +158,8 @@ const SCHEME_FIELDS = {
   ],
 };
 
-const SCHEME_PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt'];
-const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt' };
+const SCHEME_PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt', 'cash_bank'];
+const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt', cash_bank: 'Cash + Bank' };
 const LAND_PAYMENT_MODES = ['full_payment', 'advance_full_payment'];
 const LAND_MODE_LABEL = { full_payment: 'Full Payment', advance_full_payment: 'Advance + Full Payment' };
 
@@ -295,6 +296,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
   const [error, setError] = useState('');
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -303,6 +305,14 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
     if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
+      return;
+    }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
     setBusy(true); setError('');
@@ -314,6 +324,8 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
+        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onClose();
@@ -363,13 +375,21 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
           <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
           <select
             value={form.paymentMode}
-            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
             className={`${IC} appearance-none`}
           >
             {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
           </select>
         </div>
       </div>
+      <CashBankSplitField
+        mode={form.paymentMode}
+        cashAmount={split.cashAmount}
+        bankAmount={split.bankAmount}
+        onChange={setSplit}
+        expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
+        showError={showProofErr}
+      />
       <ProofUploadField
         mode={form.paymentMode}
         proofKey={proofKey}
@@ -719,6 +739,11 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
       ? payment.transaction_id
       : (payment.transaction_id ? [payment.transaction_id] : [])
   );
+  // Pre-fill the cash_bank split from the existing row so an unrelated edit keeps it valid
+  const [split,        setSplit]        = useState({
+    cashAmount: payment.cash_amount != null ? String(payment.cash_amount) : '',
+    bankAmount: payment.bank_amount != null ? String(payment.bank_amount) : '',
+  });
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleCorrect = async (e) => {
@@ -726,6 +751,14 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
     if (form.paymentMode && form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for non-cash payment corrections.');
+      return;
+    }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (form.paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
     setBusy(true); setError('');
@@ -736,6 +769,8 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
         paymentMode: form.paymentMode || undefined,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: form.paymentMode && form.paymentMode !== 'cash' ? (txnId.length ? txnId : undefined) : undefined,
+        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
         notes:       form.notes       ?? undefined,
         branchId,
       }).unwrap();
@@ -792,11 +827,19 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </div>
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
-            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
           </div>
+          <CashBankSplitField
+            mode={form.paymentMode}
+            cashAmount={split.cashAmount}
+            bankAmount={split.bankAmount}
+            onChange={setSplit}
+            expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
+            showError={showProofErr}
+          />
           <ProofUploadField
             mode={form.paymentMode}
             proofKey={proofKey}
@@ -874,9 +917,22 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   const modeField = fields.find(f => f.type === 'mode');
   const [entryProofKey,     setEntryProofKey]     = useState([]);
   const [entryTxnId,        setEntryTxnId]        = useState([]);
+  // Pre-fill the cash_bank split from the existing entry so unrelated edits keep it valid
+  const [entrySplit,        setEntrySplit]        = useState(() => ({
+    cashAmount: modeField && entry[modeField.cashEntryKey] != null ? String(entry[modeField.cashEntryKey]) : '',
+    bankAmount: modeField && entry[modeField.bankEntryKey] != null ? String(entry[modeField.bankEntryKey]) : '',
+  }));
   const [showEntryProofErr, setShowEntryProofErr] = useState(false);
 
   const entityArgs = actions.entityKey(entry);
+
+  // Expected total the cash_bank split must equal: the live editable amount when present
+  // (trading), otherwise the entry's fixed amount column (slots / builders lump sum).
+  const entryExpectedTotal = modeField
+    ? (modeField.amountFormKey && form[modeField.amountFormKey] !== ''
+        ? parseFloat(form[modeField.amountFormKey])
+        : (entry[modeField.amountEntryKey] != null ? parseFloat(entry[modeField.amountEntryKey]) : undefined))
+    : undefined;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -886,9 +942,22 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
       setError('Payment proof and transaction ID are required when changing mode to GPay/Bank.');
       return;
     }
+    const splitCash = parseFloat(entrySplit.cashAmount) || 0;
+    const splitBank = parseFloat(entrySplit.bankAmount) || 0;
+    if (modeField && form[modeField.key] === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 ||
+         (entryExpectedTotal != null && Math.abs(splitCash + splitBank - entryExpectedTotal) > 0.01))) {
+      setShowEntryProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the entry amount.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       const payload = { branchId };
+      if (modeField && form[modeField.key] === 'cash_bank') {
+        payload[modeField.cashField] = splitCash;
+        payload[modeField.bankField] = splitBank;
+      }
       fields.forEach((field) => {
         const val = form[field.key];
         if (field.type === 'customer') {
@@ -965,10 +1034,20 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
               className={IC} />
           )}
           {field.type === 'mode' && (
-            <select value={form[field.key]} onChange={(e) => { setForm((f) => ({ ...f, [field.key]: e.target.value })); setEntryProofKey([]); setEntryTxnId(''); setShowEntryProofErr(false); }}
+            <select value={form[field.key]} onChange={(e) => { setForm((f) => ({ ...f, [field.key]: e.target.value })); setEntryProofKey([]); setEntryTxnId(''); setEntrySplit({ cashAmount: '', bankAmount: '' }); setShowEntryProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
+          )}
+          {field.type === 'mode' && (
+            <CashBankSplitField
+              mode={form[field.key]}
+              cashAmount={entrySplit.cashAmount}
+              bankAmount={entrySplit.bankAmount}
+              onChange={setEntrySplit}
+              expectedTotal={entryExpectedTotal}
+              showError={showEntryProofErr}
+            />
           )}
           {field.type === 'mode' && form[field.key] && form[field.key] !== 'cash' && (
             <ProofUploadField

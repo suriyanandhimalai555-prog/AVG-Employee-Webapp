@@ -238,9 +238,15 @@ export const GoldMemberDetailPage = () => {
                         </span>
                       </td>
                     </tr>
-                    {(p.proof_key || p.transaction_id) && (
+                    {(p.proof_key || p.transaction_id || p.payment_mode === 'cash_bank') && (
                       <tr key={`${p.id}-proof`} className="border-b border-navy/5">
                         <td colSpan={4} className="px-4 pb-3 space-y-2">
+                          {p.payment_mode === 'cash_bank' && (
+                            <p className="text-[10px] font-medium text-navy/50">
+                              Cash <span className="font-bold text-amber-600">{formatCurrency(p.cash_amount)}</span>
+                              {' · '}Bank <span className="font-bold text-emerald-600">{formatCurrency(p.bank_amount)}</span>
+                            </p>
+                          )}
                           <PhotoProof photoKey={p.proof_key} />
                           <TransactionIdList transactionId={p.transaction_id} />
                         </td>

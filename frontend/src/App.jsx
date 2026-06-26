@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
-import { selectIsAuthenticated, clearCredentials } from './store/slices/authSlice';
+import { selectIsAuthenticated, selectCurrentUser, clearCredentials } from './store/slices/authSlice';
 import { useGetMeQuery } from './store/api/apiSlice';
 
 import { Layout } from './components/layout/Layout';
@@ -66,6 +66,7 @@ const SchemeBranchListPage     = lazy(() => import('./pages/SchemeBranchListPage
 const SchemeCorrectionsPage    = lazy(() => import('./pages/schemes/SchemeCorrectionsPage').then(m => ({ default: m.SchemeCorrectionsPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
 const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
+const ManagementBranches       = lazy(() => import('./pages/ManagementBranches').then(m => ({ default: m.ManagementBranches })));
 const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
 const BranchDetailPage         = lazy(() => import('./pages/BranchDetailPage').then(m => ({ default: m.BranchDetailPage })));
 const EmployeeCalendarPage     = lazy(() => import('./pages/EmployeeCalendarPage').then(m => ({ default: m.EmployeeCalendarPage })));
@@ -76,6 +77,14 @@ const RouteFallback = () => (
     <span className="sr-only">Loading</span>
   </div>
 );
+
+// BranchesRoute — sends management to the full-featured ManagementBranches page
+// (create + edit + deactivate + geofence location) while MD keeps the original
+// BranchManagement page unchanged.
+function BranchesRoute() {
+  const role = useSelector(selectCurrentUser)?.role;
+  return role === 'management' ? <ManagementBranches /> : <BranchManagement />;
+}
 
 function ProtectedLayout() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
@@ -125,7 +134,7 @@ function App() {
         <Route path="/alerts"                    element={<AlertsTab />} />
         <Route path="/schemes"                   element={<SchemesOverviewPage />} />
         <Route path="/schemes/:code"             element={<SchemeBranchListPage />} />
-        <Route path="/branches"                  element={<BranchManagement />} />
+        <Route path="/branches"                  element={<BranchesRoute />} />
         <Route path="/branches/:branchId"        element={<BranchDetailPage />} />
 
         {/* Staff management */}

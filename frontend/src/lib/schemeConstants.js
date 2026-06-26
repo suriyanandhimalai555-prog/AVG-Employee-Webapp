@@ -16,16 +16,25 @@ export const SCHEME_PAYMENT_MODES = [
   { value: 'bank_receipt', label: 'Bank' },
 ];
 
+// Split-inclusive list — used only by forms that opt in (PaymentModeSelect includeSplit).
+// Kept separate so schemes that do NOT support a split (e.g. Land channels) keep 3 modes.
+export const SCHEME_PAYMENT_MODES_WITH_SPLIT = [
+  ...SCHEME_PAYMENT_MODES,
+  { value: 'cash_bank',    label: 'Cash + Bank' },
+];
+
 export const SCHEME_MODE_LABELS = {
   cash:         'Cash',
   gpay:         'GPay',
   bank_receipt: 'Bank',
+  cash_bank:    'Cash + Bank',
 };
 
 export const SCHEME_MODE_STYLES = {
   cash:         'text-amber-600 bg-amber-50',
   gpay:         'text-indigo bg-indigo/10',
   bank_receipt: 'text-emerald-600 bg-emerald-50',
+  cash_bank:    'text-violet-600 bg-violet-50',
 };
 
 // ─── Gold scheme member statuses ──────────────────────────────────────────────

@@ -22,6 +22,7 @@ import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../../lib/schemeConstants';
 import { ProofUploadField } from '../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../components/money/TransactionIdField';
+import { CashBankSplitField } from '../../components/money/CashBankSplitField';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -85,6 +86,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
   const [paymentMode,   setPaymentMode]   = useState('cash');
   const [proofKey,      setProofKey]      = useState([]);
   const [txnId,         setTxnId]         = useState([]);
+  const [split,         setSplit]         = useState({ cashAmount: '', bankAmount: '' });
   const [showProofErr,  setShowProofErr]  = useState(false);
   const [notes,         setNotes]         = useState('');
   const [error,         setError]         = useState(null);
@@ -109,8 +111,16 @@ function PaymentModal({ member, group, onClose, groupId }) {
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
       return;
     }
+    const splitCash = parseFloat(split.cashAmount) || 0;
+    const splitBank = parseFloat(split.bankAmount) || 0;
+    if (paymentMode === 'cash_bank' &&
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
     try {
-      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, transactionId: txnId.length ? txnId : undefined, notes: notes.trim() || undefined }).unwrap();
+      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, transactionId: txnId.length ? txnId : undefined, cashAmount: paymentMode === 'cash_bank' ? splitCash : undefined, bankAmount: paymentMode === 'cash_bank' ? splitBank : undefined, notes: notes.trim() || undefined }).unwrap();
       onClose();
     } catch (err) { setError(err?.data?.error?.message || 'Failed to record payment.'); }
   };
@@ -175,10 +185,20 @@ function PaymentModal({ member, group, onClose, groupId }) {
             <FormField label="Mode" required>
               <PaymentModeSelect
                 value={paymentMode}
-                onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setShowProofErr(false); }}
+                onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
                 variant="buttons"
+                includeSplit
               />
             </FormField>
+
+            <CashBankSplitField
+              mode={paymentMode}
+              cashAmount={split.cashAmount}
+              bankAmount={split.bankAmount}
+              onChange={setSplit}
+              expectedTotal={amount ? parseFloat(amount) : undefined}
+              showError={showProofErr}
+            />
 
             <ProofUploadField
               mode={paymentMode}
