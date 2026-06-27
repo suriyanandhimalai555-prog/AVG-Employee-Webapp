@@ -312,11 +312,16 @@ export const PendingEnrollmentsService = {
   },
 
   // ─── LIST / GET ─────────────────────────────────────────────────────────────
-  async list(db: Pool, branchId: string, query: ListPendingEnrollmentsQuery): Promise<{ data: any[]; total: number }> {
+  async list(db: Pool, branchId: string, query: ListPendingEnrollmentsQuery): Promise<{ data: any[]; total: number; summary: any }> {
     const params: any[] = [branchId];
     let where = 'WHERE pe.branch_id = $1';
     if (query.schemeCode) { params.push(query.schemeCode); where += ` AND pe.scheme_code = $${params.length}`; }
     if (query.status)     { params.push(query.status);     where += ` AND pe.status = $${params.length}`; }
+    if (query.search)     { params.push(`%${query.search}%`); where += ` AND (c.name ILIKE $${params.length} OR c.customer_code ILIKE $${params.length})`; }
+    // Date range filters on the enrollment/deposit date (created_at); end is inclusive.
+    if (query.startDate)  { params.push(query.startDate); where += ` AND pe.created_at >= $${params.length}::date`; }
+    if (query.endDate)    { params.push(query.endDate);   where += ` AND pe.created_at < ($${params.length}::date + INTERVAL '1 day')`; }
+
     const offset = (query.page - 1) * query.limit;
     const data = await db.query(
       `SELECT pe.*, c.name AS customer_name, c.customer_code,
@@ -328,8 +333,27 @@ export const PendingEnrollmentsService = {
        LIMIT ${query.limit} OFFSET ${offset}`,
       params,
     );
-    const count = await db.query(`SELECT COUNT(*)::int AS total FROM pending_enrollments pe ${where}`, params);
-    return { data: data.rows, total: count.rows[0].total };
+    // Per-scheme aggregate over the SAME filter set (respects status/scheme/search/date).
+    const agg = await db.query(
+      `SELECT pe.scheme_code,
+              COUNT(*)::int AS count,
+              COALESCE(SUM(pe.amount_paid), 0) AS collected,
+              COALESCE(SUM(pe.required_amount - pe.amount_paid), 0) AS remaining
+       FROM pending_enrollments pe
+       JOIN customers c ON c.id = pe.customer_id
+       ${where}
+       GROUP BY pe.scheme_code`,
+      params,
+    );
+    const byScheme = agg.rows.map((r: any) => ({
+      schemeCode: r.scheme_code, count: r.count, collected: Number(r.collected), remaining: Number(r.remaining),
+    }));
+    const summary = byScheme.reduce(
+      (acc, s) => ({ count: acc.count + s.count, collected: acc.collected + s.collected, remaining: acc.remaining + s.remaining, byScheme }),
+      { count: 0, collected: 0, remaining: 0, byScheme },
+    );
+    const total = summary.count;
+    return { data: data.rows, total, summary };
   },
 
   async get(db: Pool, branchId: string, pendingId: string): Promise<any> {

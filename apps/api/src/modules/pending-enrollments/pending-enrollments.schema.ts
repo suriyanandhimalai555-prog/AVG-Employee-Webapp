@@ -68,6 +68,9 @@ export const ListPendingEnrollmentsQuerySchema = z.object({
   schemeCode: z.enum(IN_SCOPE_SCHEMES).optional(),
   status:     z.enum(['collecting', 'completed', 'cancelled', 'completion_failed']).optional(),
   branchId:   z.string().uuid().optional(),
+  search:     z.string().max(100).optional(),
+  startDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page:       z.coerce.number().min(1).default(1),
   limit:      z.coerce.number().min(1).max(200).default(50),
 });

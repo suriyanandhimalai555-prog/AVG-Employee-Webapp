@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetPendingEnrollmentsQuery } from '../../store/api/apiSlice';
 import { needsBranchSelection } from '../../lib/schemeAuth';
@@ -20,6 +20,8 @@ const STATUS_TABS = [
   { key: 'cancelled',         label: 'Cancelled' },
 ];
 
+const DATE_INPUT = 'flex-1 px-3 py-2 bg-white rounded-xl border border-navy/10 text-xs font-medium text-navy outline-none focus:ring-2 ring-indigo/20';
+
 export const PendingEnrollmentsListPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -33,13 +35,32 @@ export const PendingEnrollmentsListPage = () => {
 
   const [status, setStatus] = useState('collecting');
   const [branchId, setBranchId] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Debounce the search box so we don't refetch on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const skip = isManagement && !branchId;
   const { data, isLoading } = useGetPendingEnrollmentsQuery(
-    { status, ...(schemeFilter ? { schemeCode: schemeFilter } : {}), ...(isManagement && branchId ? { branchId } : {}) },
+    {
+      status,
+      ...(schemeFilter ? { schemeCode: schemeFilter } : {}),
+      ...(isManagement && branchId ? { branchId } : {}),
+      ...(search ? { search } : {}),
+      ...(dateFrom ? { startDate: dateFrom } : {}),
+      ...(dateTo ? { endDate: dateTo } : {}),
+    },
     { skip },
   );
-  const rows = data?.data || [];
+  const rows    = data?.data || [];
+  const summary = data?.summary;
+  const hasDateFilter = !!(dateFrom || dateTo);
 
   return (
     <SchemePageWrapper>
@@ -53,6 +74,57 @@ export const PendingEnrollmentsListPage = () => {
         {isManagement && (
           <BranchPicker value={branchId} onChange={setBranchId} />
         )}
+
+        {/* Summary — how much is pending (per scheme) */}
+        {summary && summary.count > 0 && (
+          <div className="bg-white rounded-2xl border border-navy/5 card-shadow p-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-navy/40">Outstanding</span>
+              <span className="text-[10px] font-medium text-navy/40">{summary.count} pending</span>
+            </div>
+            <p className="text-2xl font-bold text-orange-600 mt-0.5">{formatCurrency(summary.remaining)}</p>
+            <p className="text-[10px] font-medium text-navy/40">{formatCurrency(summary.collected)} collected so far</p>
+
+            {!schemeFilter && summary.byScheme?.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-navy/5">
+                {summary.byScheme.map((s) => {
+                  const meta = SOURCE_META[s.schemeCode] || SOURCE_META.other;
+                  return (
+                    <span key={s.schemeCode} className={`px-2 py-1 rounded-lg text-[10px] font-bold ${meta.bg} ${meta.color}`}>
+                      {meta.label} {formatCurrency(s.remaining)} ({s.count})
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" aria-hidden="true" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search customer name or code…"
+            className="w-full pl-10 pr-4 py-3 bg-white rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 card-shadow"
+          />
+        </div>
+
+        {/* Date range */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-navy/40">From</span>
+          <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className={DATE_INPUT} />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-navy/40">To</span>
+          <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className={DATE_INPUT} />
+          {hasDateFilter && (
+            <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }}
+              className="w-7 h-7 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 hover:text-navy/70 tactile-press flex-shrink-0" aria-label="Clear dates">
+              <X size={13} />
+            </button>
+          )}
+        </div>
 
         {/* Status tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1">

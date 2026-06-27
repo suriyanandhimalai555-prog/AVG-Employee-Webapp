@@ -1904,7 +1904,7 @@ export const apiSlice = createApi({
     // Completion may start a real scheme entity, so invalidate the broad scheme tags too.
     getPendingEnrollments: builder.query({
       query: (params = {}) => ({ url: '/pending-enrollments', params }),
-      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      transformResponse: (response) => ({ data: response.data, total: response.total, summary: response.summary }),
       providesTags: ['PendingEnrollments'],
     }),
     getPendingEnrollment: builder.query({
