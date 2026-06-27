@@ -7,7 +7,9 @@ import {
   useGetBuildersPackagesQuery,
   useCreateBuildersPlanMutation,
   useGetGoldEmployeesQuery,
+  useCreatePendingEnrollmentMutation,
 } from '../../store/api/apiSlice';
+import { DepositToggle } from './components/DepositToggle';
 import { formatCurrency } from '../../lib/formatters';
 import {
   SCHEME_INPUT_CLASS,
@@ -53,6 +55,9 @@ export const BuildersAddPlanPage = () => {
   const { data: packages } = useGetBuildersPackagesQuery();
   const { data: employees } = useGetGoldEmployeesQuery();
   const [createPlan, { isLoading }] = useCreateBuildersPlanMutation();
+  const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
+  const [payMode, setPayMode] = useState('full');
+  const [deposit, setDeposit] = useState('');
 
   // Derive package preview from selected package number
   const selectedPkg = form.packageNumber ? packages?.[form.packageNumber] : null;
@@ -90,6 +95,10 @@ export const BuildersAddPlanPage = () => {
     if (!form.packageNumber) { setError('Please select a package.'); return; }
     if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+    const investAmt = selectedPkg?.investmentAmount ?? 0;
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : investAmt;
+    if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
+    if (payMode === 'deposit' && payAmount > investAmt + 0.01) { setError('Deposit cannot exceed the investment amount.'); return; }
     if (form.lumpSumMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
@@ -97,15 +106,32 @@ export const BuildersAddPlanPage = () => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
-    const investAmt = selectedPkg?.investmentAmount ?? 0;
     if (form.lumpSumMode === 'cash_bank' &&
-        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - investAmt) > 0.01)) {
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
-      setError('Cash + bank amounts must be filled and equal the investment amount.');
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
 
     try {
+      if (payMode === 'deposit') {
+        const res = await createPending({
+          schemeCode: 'builders_scheme',
+          customerId: customer.id,
+          referrerId: form.referrerId,
+          branchId:   isManagement ? branchId : undefined,
+          payload: { packageNumber: Number(form.packageNumber), notes: form.notes || undefined },
+          firstPayment: {
+            amount: payAmount, paymentMode: form.lumpSumMode, paidDate: form.lumpSumDate,
+            proofKey: proofKey.length ? proofKey : undefined,
+            transactionId: txnId.length ? txnId : undefined,
+            cashAmount: form.lumpSumMode === 'cash_bank' ? splitCash : undefined,
+            bankAmount: form.lumpSumMode === 'cash_bank' ? splitBank : undefined,
+          },
+        }).unwrap();
+        navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
+        return;
+      }
       const res = await createPlan({
         customerId:      customer.id,
         packageNumber:   Number(form.packageNumber),
@@ -227,6 +253,15 @@ export const BuildersAddPlanPage = () => {
           />
         </FormField>
 
+        {/* Full payment vs deposit */}
+        <FormField label="Payment plan" required>
+          <DepositToggle
+            mode={payMode} onModeChange={setPayMode}
+            deposit={deposit} onDepositChange={setDeposit}
+            required={selectedPkg?.investmentAmount || 0}
+          />
+        </FormField>
+
         {/* Payment mode */}
         <FormField label="Payment Mode">
           <PaymentModeSelect
@@ -242,7 +277,7 @@ export const BuildersAddPlanPage = () => {
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
           onChange={setSplit}
-          expectedTotal={selectedPkg?.investmentAmount || undefined}
+          expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : selectedPkg?.investmentAmount) || undefined}
           showError={showProofErr}
         />
 
@@ -292,10 +327,12 @@ export const BuildersAddPlanPage = () => {
 
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || creatingPending}
           className="w-full py-4 rounded-2xl bg-sky-600 text-white text-sm font-bold shadow-md disabled:opacity-50 tactile-press"
         >
-          {isLoading ? 'Enrolling…' : 'Enroll Plan'}
+          {(isLoading || creatingPending)
+            ? (payMode === 'deposit' ? 'Saving deposit…' : 'Enrolling…')
+            : (payMode === 'deposit' ? 'Save Deposit' : 'Enroll Plan')}
         </button>
       </form>
     </SchemePageWrapper>

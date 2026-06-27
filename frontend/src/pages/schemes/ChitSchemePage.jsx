@@ -8,6 +8,7 @@ import { REFERRER_ROLES } from '../../lib/schemeConstants';
 import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 
 const PACKAGES = {
   1: { label: 'Pkg 1', amount: '₹5,000',  color: 'text-violet-700 bg-violet-50' },
@@ -114,6 +115,8 @@ export const ChitSchemePage = () => {
         subtitle={isReferrerView ? 'Chit groups you referred into' : '20 members · 20 months · monthly winner'}
         action={rightAction}
       />
+
+      <SchemePendingBanner schemeCode="agila_chit_scheme" />
 
       {/* Summary strip */}
       {summary && (

@@ -142,7 +142,16 @@ export const SOURCE_META = {
   agila_chit_scheme: { label: 'Agila Chit',       color: 'text-violet-700',   bg: 'bg-violet-100',   Icon: Wallet },
   builders_scheme:   { label: 'Builders',         color: 'text-sky-600',      bg: 'bg-sky-100',      Icon: Building2 },
   land_scheme:       { label: 'Land Sales',        color: 'text-stone-600',    bg: 'bg-stone-100',    Icon: Landmark },
+  pending_enrollment: { label: 'Pending Enrollments', color: 'text-orange-600',  bg: 'bg-orange-100',   Icon: Wallet },
   other:            { label: 'Other',            color: 'text-navy/60',      bg: 'bg-navy/5',       Icon: MoreHorizontal },
+};
+
+// Status chip styles for pending enrollments (awaiting balance → started / cancelled / failed).
+export const PENDING_ENROLLMENT_STATUS_STYLES = {
+  collecting:        { label: 'Awaiting balance', className: 'text-amber-700 bg-amber-50' },
+  completed:         { label: 'Started',          className: 'text-emerald-600 bg-emerald-50' },
+  cancelled:         { label: 'Cancelled',        className: 'text-navy/50 bg-navy/5' },
+  completion_failed: { label: 'Needs attention',  className: 'text-red-600 bg-red-50' },
 };
 
 // ─── Form helpers ─────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import {
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 
 const STATUS_STYLES = {
   cooling:          'text-blue-600 bg-blue-50',
@@ -105,6 +106,8 @@ export const BuildersSchemePage = () => {
         subtitle="1 member · 60 months · house or cash"
         action={rightAction}
       />
+
+      <SchemePendingBanner schemeCode="builders_scheme" />
 
       {/* Summary strip */}
       {summary && (

@@ -33,6 +33,7 @@ import chitRoutes from './modules/chit/chit.routes';
 import buildersRoutes from './modules/builders/builders.routes';
 import landRoutes from './modules/land/land.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
+import pendingEnrollmentRoutes from './modules/pending-enrollments/pending-enrollments.routes';
 import settingsRoutes from './modules/settings/settings.routes';
 import notificationWebhookRoutes from './modules/notifications/notifications.routes';
 
@@ -191,6 +192,9 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Walks the scheme registry — every scheme that implements getOverviewByBranch
   // appears here automatically; no per-scheme edits needed in this file.
   await app.register(schemesAggregateRoutes, { prefix: '/api/schemes' });
+
+  // Partial / installment enrollment staging layer (all schemes except Land).
+  await app.register(pendingEnrollmentRoutes, { prefix: '/api/pending-enrollments' });
 
   // App-level settings (backdated-entry permission flag)
   await app.register(settingsRoutes, { prefix: '/api/settings' });

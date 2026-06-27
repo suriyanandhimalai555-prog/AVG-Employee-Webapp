@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -1899,6 +1899,45 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       invalidatesTags: ['Branches'],
     }),
+
+    // ─── Pending enrollments (partial / installment payments) ───
+    // Completion may start a real scheme entity, so invalidate the broad scheme tags too.
+    getPendingEnrollments: builder.query({
+      query: (params = {}) => ({ url: '/pending-enrollments', params }),
+      transformResponse: (response) => ({ data: response.data, total: response.total }),
+      providesTags: ['PendingEnrollments'],
+    }),
+    getPendingEnrollment: builder.query({
+      query: (id) => `/pending-enrollments/${id}`,
+      transformResponse: (response) => response.data,
+      providesTags: (result, error, id) => [{ type: 'PendingEnrollments', id }],
+    }),
+    createPendingEnrollment: builder.mutation({
+      query: (data) => ({ url: '/pending-enrollments', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['PendingEnrollments', 'GoldMembers', 'TradingMembers', 'GoldCoinRooms', 'LssRooms', 'ChitGroups', 'BuildersPlans', 'SchemesOverview'],
+    }),
+    addPendingEnrollmentPayment: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/pending-enrollments/${id}/payments`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'PendingEnrollments', id }, 'PendingEnrollments',
+        'GoldMembers', 'TradingMembers', 'GoldCoinRooms', 'LssRooms', 'ChitGroups', 'BuildersPlans', 'SchemesOverview',
+      ],
+    }),
+    cancelPendingEnrollment: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/pending-enrollments/${id}/cancel`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [{ type: 'PendingEnrollments', id }, 'PendingEnrollments', 'SchemesOverview'],
+    }),
+    retryPendingEnrollment: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/pending-enrollments/${id}/retry`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'PendingEnrollments', id }, 'PendingEnrollments',
+        'GoldMembers', 'TradingMembers', 'GoldCoinRooms', 'LssRooms', 'ChitGroups', 'BuildersPlans', 'SchemesOverview',
+      ],
+    }),
   }),
 });
 
@@ -2120,4 +2159,10 @@ export const {
   useUpdateGoldCoinEligibilityBypassSettingMutation,
   useSetHeadBranchMutation,
   useSetBranchLocationMutation,
+  useGetPendingEnrollmentsQuery,
+  useGetPendingEnrollmentQuery,
+  useCreatePendingEnrollmentMutation,
+  useAddPendingEnrollmentPaymentMutation,
+  useCancelPendingEnrollmentMutation,
+  useRetryPendingEnrollmentMutation,
 } = apiSlice;

@@ -3,7 +3,8 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Save, Loader2, AlertCircle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useAddGoldMemberMutation, useGetGoldEmployeesQuery } from '../../store/api/apiSlice';
+import { useAddGoldMemberMutation, useGetGoldEmployeesQuery, useCreatePendingEnrollmentMutation } from '../../store/api/apiSlice';
+import { DepositToggle } from './components/DepositToggle';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { BranchPicker } from '../../components/BranchPicker';
 import { PeriodDateInput } from '../../components/PeriodDateInput';
@@ -25,6 +26,9 @@ export const GoldSchemeAddPage = () => {
 
   const { data: employees = [] } = useGetGoldEmployeesQuery();
   const [addMember, { isLoading }] = useAddGoldMemberMutation();
+  const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
+  const [payMode, setPayMode] = useState('full');   // 'full' | 'deposit'
+  const [deposit, setDeposit] = useState('');
 
   const isManagement = user?.role === 'management';
   const [branchId,  setBranchId]  = useState('');
@@ -57,6 +61,13 @@ export const GoldSchemeAddPage = () => {
       return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+
+    // The payment amount is the deposit when partial, else the full month-1 amount.
+    const monthly  = parseFloat(form.monthlyAmount);
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : monthly;
+    if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
+    if (payMode === 'deposit' && payAmount > monthly + 0.01) { setError('Deposit cannot exceed the monthly amount.'); return; }
+
     if (form.firstPaymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
@@ -65,17 +76,45 @@ export const GoldSchemeAddPage = () => {
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
     if (form.firstPaymentMode === 'cash_bank' &&
-        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.monthlyAmount)) > 0.01)) {
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
-      setError('Cash + bank amounts must be filled and equal the monthly amount.');
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
+
     try {
+      // Partial: hold the enrollment in the pending-enrollment staging layer.
+      if (payMode === 'deposit') {
+        const res = await createPending({
+          schemeCode: 'gold_scheme',
+          customerId: customer.id,
+          referrerId: form.referrerId,
+          branchId:   isManagement ? branchId : undefined,
+          payload: {
+            chitNumber:    form.chitNumber.trim(),
+            monthlyAmount: monthly,
+            totalMonths:   parseInt(form.totalMonths, 10),
+            notes:         form.notes.trim() || undefined,
+          },
+          firstPayment: {
+            amount:        payAmount,
+            paymentMode:   form.firstPaymentMode,
+            paidDate:      form.startDate,
+            proofKey:      proofKey.length ? proofKey : undefined,
+            transactionId: txnId.length ? txnId : undefined,
+            cashAmount:    form.firstPaymentMode === 'cash_bank' ? splitCash : undefined,
+            bankAmount:    form.firstPaymentMode === 'cash_bank' ? splitBank : undefined,
+          },
+        }).unwrap();
+        navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
+        return;
+      }
+
       const res = await addMember({
         chitNumber:            form.chitNumber.trim(),
         customerId:            customer.id,
         referrerId:            form.referrerId,
-        monthlyAmount:         parseFloat(form.monthlyAmount),
+        monthlyAmount:         monthly,
         startDate:             form.startDate,
         totalMonths:           parseInt(form.totalMonths, 10),
         firstPaymentMode:      form.firstPaymentMode,
@@ -220,6 +259,15 @@ export const GoldSchemeAddPage = () => {
           </div>
         )}
 
+        {/* Full payment vs deposit */}
+        <FormField label="Payment plan" required>
+          <DepositToggle
+            mode={payMode} onModeChange={setPayMode}
+            deposit={deposit} onDepositChange={setDeposit}
+            required={form.monthlyAmount ? parseFloat(form.monthlyAmount) : 0}
+          />
+        </FormField>
+
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
@@ -228,7 +276,9 @@ export const GoldSchemeAddPage = () => {
             includeSplit
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
-            Month 1 will be recorded automatically when you save.
+            {payMode === 'deposit'
+              ? 'The scheme starts once the full month-1 amount is paid.'
+              : 'Month 1 will be recorded automatically when you save.'}
           </p>
         </FormField>
 
@@ -237,7 +287,9 @@ export const GoldSchemeAddPage = () => {
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
           onChange={setSplit}
-          expectedTotal={form.monthlyAmount ? parseFloat(form.monthlyAmount) : undefined}
+          expectedTotal={
+            (payMode === 'deposit' ? parseFloat(deposit) : parseFloat(form.monthlyAmount)) || undefined
+          }
           showError={showProofErr}
         />
 
@@ -269,13 +321,13 @@ export const GoldSchemeAddPage = () => {
 
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || creatingPending}
           className="w-full py-4 bg-indigo text-white text-sm font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 tactile-press shadow-lg shadow-indigo/20"
         >
-          {isLoading
+          {(isLoading || creatingPending)
             ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
             : <Save size={18} aria-hidden="true" />}
-          Save Member
+          {payMode === 'deposit' ? 'Save Deposit' : 'Save Member'}
         </button>
       </form>
     </SchemePageWrapper>

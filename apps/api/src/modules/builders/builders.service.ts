@@ -78,7 +78,9 @@ export const BuildersService = {
     db: Pool,
     enteredBy: string,
     branchId: string,
-    payload: CreateBuildersPlanInput
+    payload: CreateBuildersPlanInput,
+    // When provided, run inside the caller's transaction (pending-enrollment completion).
+    existingClient?: PoolClient
   ): Promise<any> {
     // TS: load live packages from DB; fall back to hardcoded if table not yet migrated
     const packages = await BuildersService.getPackages(db);
@@ -111,7 +113,7 @@ export const BuildersService = {
       throw new ValidationError('lumpSumCashAmount + lumpSumBankAmount must equal the package investment amount');
     }
 
-    const result = await runInTransaction(db, async (client: PoolClient) => {
+    const run = async (client: PoolClient) => {
       const insertResult = await client.query(
         `INSERT INTO builders_plans
            (branch_id, customer_id, package_number,
@@ -161,7 +163,8 @@ export const BuildersService = {
       });
 
       return { plan, customer: custResult.rows[0] };
-    });
+    };
+    const result = existingClient ? await run(existingClient) : await runInTransaction(db, run);
 
     return result;
   },

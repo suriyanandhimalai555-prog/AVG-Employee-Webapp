@@ -16,7 +16,9 @@ import {
   useGetLssPlansQuery,
   useAddLssSlotMutation,
   useGetGoldEmployeesQuery,
+  useCreatePendingEnrollmentMutation,
 } from '../../store/api/apiSlice';
+import { DepositToggle } from './components/DepositToggle';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { BranchPicker } from '../../components/BranchPicker';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
@@ -45,6 +47,9 @@ export const LssAddSlotPage = () => {
   const { data: plans = [], isLoading: plansLoading } = useGetLssPlansQuery();
   const { data: employees = [] }                      = useGetGoldEmployeesQuery();
   const [addSlot, { isLoading }] = useAddLssSlotMutation();
+  const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
+  const [payMode, setPayMode] = useState('full');
+  const [deposit, setDeposit] = useState('');
 
   const [branchId,  setBranchId]  = useState('');
   const [customer, setCustomer] = useState(null);
@@ -92,6 +97,11 @@ export const LssAddSlotPage = () => {
       setError(`Quantity must be between 1 and ${SLOTS_PER_ROOM}.`); return;
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
+
+    // Deposit is against the TOTAL (perSlot × quantity); full-mode cash_bank is per-slot.
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : perSlot;
+    if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
+    if (payMode === 'deposit' && payAmount > totalAmount + 0.01) { setError('Deposit cannot exceed the total price.'); return; }
     if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
@@ -100,12 +110,30 @@ export const LssAddSlotPage = () => {
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
-        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - perSlot) > 0.01)) {
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
-      setError('Cash + bank amounts must be filled and equal the per-slot price.');
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
     try {
+      if (payMode === 'deposit') {
+        const res = await createPending({
+          schemeCode: 'lss_scheme',
+          customerId: customer.id,
+          referrerId: form.referrerId || undefined,
+          branchId:   isManagement ? branchId : undefined,
+          payload: { planId: form.planId, quantity: effectiveQuantity, notes: form.notes.trim() || undefined },
+          firstPayment: {
+            amount: payAmount, paymentMode: form.paymentMode, paidDate: form.saleDate || getTodayISO(),
+            proofKey: proofKey.length ? proofKey : undefined,
+            transactionId: txnId.length ? txnId : undefined,
+            cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+            bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+          },
+        }).unwrap();
+        navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
+        return;
+      }
       const res = await addSlot({
         planId:      form.planId,
         customerId:  customer.id,
@@ -291,6 +319,14 @@ export const LssAddSlotPage = () => {
           />
         </FormField>
 
+        <FormField label="Payment plan" required>
+          <DepositToggle
+            mode={payMode} onModeChange={setPayMode}
+            deposit={deposit} onDepositChange={setDeposit}
+            required={totalAmount || 0}
+          />
+        </FormField>
+
         <FormField label="Payment mode" required>
           <PaymentModeSelect
             value={form.paymentMode}
@@ -305,7 +341,7 @@ export const LssAddSlotPage = () => {
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
           onChange={setSplit}
-          expectedTotal={perSlot || undefined}
+          expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : perSlot) || undefined}
           showError={showProofErr}
         />
 
@@ -352,13 +388,15 @@ export const LssAddSlotPage = () => {
 
         <button
           type="submit"
-          disabled={isLoading || !selectedPlan}
+          disabled={isLoading || creatingPending || !selectedPlan}
           className="w-full py-4 bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white text-sm font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 tactile-press shadow-lg shadow-violet-500/30"
         >
-          {isLoading
+          {(isLoading || creatingPending)
             ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
             : <Save size={18} aria-hidden="true" />}
-          {form.isFullRoom ? 'Sell FULL room' : `Sell ${effectiveQuantity} slot${effectiveQuantity > 1 ? 's' : ''}`}
+          {payMode === 'deposit'
+            ? 'Save Deposit'
+            : (form.isFullRoom ? 'Sell FULL room' : `Sell ${effectiveQuantity} slot${effectiveQuantity > 1 ? 's' : ''}`)}
         </button>
       </form>
     </SchemePageWrapper>

@@ -327,30 +327,32 @@ export const ChitService = {
     enteredBy: string,
     groupId: string,
     branchId: string,
-    payload: AddChitMemberInput
+    payload: AddChitMemberInput,
+    // When provided, run inside the caller's transaction (pending-enrollment completion).
+    existingClient?: PoolClient
   ): Promise<any> {
-    // Pre-flight: verify customer and referrer before opening the transaction
-    // (network round-trips outside the transaction to keep lock duration minimal)
-    const custResult = await db.query(
-      'SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2',
-      [payload.customerId, branchId]
-    );
-    if (custResult.rows.length === 0) throw new NotFoundError('Customer not found in this branch');
-
-    let referrerName: string | null = null;
-    if (payload.referrerId) {
-      const refResult = await db.query(
-        'SELECT name, role FROM users WHERE id = $1',
-        [payload.referrerId]
-      );
-      if (refResult.rows.length === 0) throw new NotFoundError('Referrer not found');
-      const { name, role } = refResult.rows[0];
-      referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
-    }
-
-    const client = await db.connect();
+    const ownTx = !existingClient;
+    const client = existingClient ?? await db.connect();
     try {
-      await client.query('BEGIN');
+      if (ownTx) await client.query('BEGIN');
+
+      // Verify customer and referrer (on the tx client)
+      const custResult = await client.query(
+        'SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2',
+        [payload.customerId, branchId]
+      );
+      if (custResult.rows.length === 0) throw new NotFoundError('Customer not found in this branch');
+
+      let referrerName: string | null = null;
+      if (payload.referrerId) {
+        const refResult = await client.query(
+          'SELECT name, role FROM users WHERE id = $1',
+          [payload.referrerId]
+        );
+        if (refResult.rows.length === 0) throw new NotFoundError('Referrer not found');
+        const { name, role } = refResult.rows[0];
+        referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
+      }
 
       // Lock the group row first — serialises concurrent addMember calls so the
       // 20-member cap and the forming→active transition are race-free.
@@ -451,14 +453,14 @@ export const ChitService = {
         groupStatus = 'active';
       }
 
-      await client.query('COMMIT');
+      if (ownTx) await client.query('COMMIT');
 
       return { member, customer: custResult.rows[0], commissionAmount, memberCount: newCount, groupStatus };
     } catch (err: any) {
-      await client.query('ROLLBACK');
+      if (ownTx) await client.query('ROLLBACK');
       throw err;
     } finally {
-      client.release();
+      if (ownTx) client.release();
     }
   },
 

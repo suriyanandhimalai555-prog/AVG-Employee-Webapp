@@ -2,12 +2,15 @@
 // Extracted from TradingAcademyPage where it was defined inline (163 lines).
 // Uses SuccessConfirmation for the post-submit screen.
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Loader2, ChevronDown } from 'lucide-react';
-import { useAddTradingMemberMutation } from '../../../store/api/apiSlice';
+import { useAddTradingMemberMutation, useCreatePendingEnrollmentMutation } from '../../../store/api/apiSlice';
 import { CustomerPicker } from '../../../components/CustomerPicker';
 import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { TRADING_ROLE_LABELS, createFormSetter, getTodayISO } from '../../../lib/schemeConstants';
 import { FormError } from './FormError';
+import { FormField } from './FormField';
+import { DepositToggle } from './DepositToggle';
 import { SuccessConfirmation } from './SuccessConfirmation';
 import { ProofUploadField } from '../../../components/money/ProofUploadField';
 import { TransactionIdField } from '../../../components/money/TransactionIdField';
@@ -35,6 +38,10 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
   const [addMember, { isLoading }] = useAddTradingMemberMutation();
+  const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
+  const [payMode, setPayMode] = useState('full');
+  const [deposit, setDeposit] = useState('');
+  const navigate = useNavigate();
 
   const set = createFormSetter(setForm);
 
@@ -42,6 +49,11 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer'); return; }
+    if (!form.amount || !form.enrolledBy) { setError('Amount and enrolled-by are required'); return; }
+    const fullAmt   = parseFloat(form.amount);
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : fullAmt;
+    if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
+    if (payMode === 'deposit' && payAmount > fullAmt + 0.01) { setError('Deposit cannot exceed the enrollment amount.'); return; }
     if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
@@ -50,12 +62,30 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
-        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
-      setError('Cash + bank amounts must be filled and equal the enrollment amount.');
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
     try {
+      if (payMode === 'deposit') {
+        const res = await createPending({
+          schemeCode: 'trading_academy',
+          customerId: customer.id,
+          referrerId: form.enrolledBy,
+          branchId:   branchId || undefined,
+          payload: { amount: fullAmt, enrolledBy: form.enrolledBy, notes: form.notes || undefined },
+          firstPayment: {
+            amount: payAmount, paymentMode: form.paymentMode, paidDate: form.enrollmentDate,
+            proofKey: proofKey.length ? proofKey : undefined,
+            transactionId: txnId.length ? txnId : undefined,
+            cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+            bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+          },
+        }).unwrap();
+        navigate(`/money/schemes/pending/${res.pendingId}`);
+        return;
+      }
       const res = await addMember({
         customerId:     customer.id,
         amount:         parseFloat(form.amount),
@@ -129,6 +159,15 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         />
       </div>
 
+      {/* Payment plan: full vs deposit */}
+      <FormField label="Payment plan" required>
+        <DepositToggle
+          mode={payMode} onModeChange={setPayMode}
+          deposit={deposit} onDepositChange={setDeposit}
+          required={form.amount ? parseFloat(form.amount) : 0}
+        />
+      </FormField>
+
       {/* Enrolled By */}
       <div>
         <label className="block text-[10px] font-bold uppercase tracking-widest text-navy/40 mb-1.5">
@@ -190,7 +229,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         cashAmount={split.cashAmount}
         bankAmount={split.bankAmount}
         onChange={setSplit}
-        expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
+        expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : parseFloat(form.amount)) || undefined}
         showError={showProofErr}
       />
 
@@ -226,12 +265,12 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
 
       <button
         type="submit"
-        disabled={isLoading}
+        disabled={isLoading || creatingPending}
         className="w-full py-4 bg-indigo text-white rounded-2xl font-bold tactile-press disabled:opacity-50 flex items-center justify-center gap-2"
       >
-        {isLoading
-          ? <><Loader2 className="animate-spin" size={18} aria-hidden="true" /> Saving & distributing incentives…</>
-          : 'Add Member'}
+        {(isLoading || creatingPending)
+          ? <><Loader2 className="animate-spin" size={18} aria-hidden="true" /> {payMode === 'deposit' ? 'Saving deposit…' : 'Saving & distributing incentives…'}</>
+          : (payMode === 'deposit' ? 'Save Deposit' : 'Add Member')}
       </button>
     </form>
   );

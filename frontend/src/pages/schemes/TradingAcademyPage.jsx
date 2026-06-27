@@ -14,6 +14,7 @@ import { getCurrentPeriod } from '../../lib/schemePeriod';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { TRADING_ROLE_LABELS } from '../../lib/schemeConstants';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 import { AddMemberSheet } from './components/AddMemberSheet';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
@@ -57,6 +58,8 @@ export const TradingAcademyPage = () => {
           ) : null
         }
       />
+
+      <SchemePendingBanner schemeCode="trading_academy" />
 
       {/* Summary strip */}
       {summary && (

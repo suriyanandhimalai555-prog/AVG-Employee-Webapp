@@ -19,6 +19,7 @@ import EmptyState from '../../components/EmptyState';
 import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 
 const SLOTS_PER_ROOM = 20;
 const WRITER_ROLES      = new Set(['branch_admin']);
@@ -91,6 +92,8 @@ export const LssSchemePage = () => {
           </div>
         ) : null}
       />
+
+      <SchemePendingBanner schemeCode="lss_scheme" />
 
       {/* Summary strip */}
       {summary && (

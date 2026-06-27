@@ -26,9 +26,11 @@ export const SlotsService = {
     branchId: string,
     enteredBy: string,
     payload: CreateSlotInput,
+    // When provided, run inside the caller's transaction (pending-enrollment completion).
+    existingClient?: PoolClient,
   ): Promise<{ slots: any[]; room: any; commissionAmount: number; totalAmountPaid: number }> {
     const quantity = payload.quantity ?? 1;
-    const result = await runInTransaction(db, async (client) => {
+    const run = async (client: PoolClient) => {
       // 1. Customer must exist and belong to this branch
       const custRes = await client.query(
         `SELECT id, name, customer_code FROM customers WHERE id = $1 AND branch_id = $2`,
@@ -156,7 +158,8 @@ export const SlotsService = {
       }
 
       return { slots, room, commissionAmount, totalAmountPaid };
-    });
+    };
+    const result = existingClient ? await run(existingClient) : await runInTransaction(db, run);
 
     return result;
   },

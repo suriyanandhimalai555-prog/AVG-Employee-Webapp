@@ -10,6 +10,7 @@ import { formatCurrency } from '../../lib/formatters';
 import { REFERRER_ROLES, GOLD_STATUS_STYLES } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 
 const STATUS_FILTERS = [
   ['all',       'All'],
@@ -66,6 +67,8 @@ export const GoldSchemePage = () => {
         subtitle={isReferrerView ? 'Gold scheme · customers you referred' : '12-month savings scheme members'}
         action={addButton}
       />
+
+      <SchemePendingBanner schemeCode="gold_scheme" />
 
       {/* Period picker */}
       <div className="px-4 mb-5">

@@ -22,6 +22,7 @@ import EmptyState from '../../components/EmptyState';
 import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
+import { SchemePendingBanner } from './components/SchemePendingBanner';
 
 const WRITER_ROLES      = new Set(['branch_admin']);
 const VIEWER_ROLES      = new Set(['branch_admin', 'md', 'director', 'gm', 'management']);
@@ -94,6 +95,8 @@ export const GoldCoinSchemePage = () => {
           </div>
         ) : null}
       />
+
+      <SchemePendingBanner schemeCode="gold_coin_scheme" />
 
       {/* Summary strip */}
       {summary && (

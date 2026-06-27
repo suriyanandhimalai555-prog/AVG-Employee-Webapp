@@ -26,42 +26,47 @@ export const GoldService = {
     db: Pool,
     enteredBy: string,
     branchId: string,
-    payload: AddGoldMemberInput
+    payload: AddGoldMemberInput,
+    // When provided, run inside the caller's transaction (used by pending-enrollment
+    // completion so entity-create + incentive + the exactly-once link are one tx).
+    existingClient?: PoolClient
   ): Promise<any> {
-    // Verify chit_number is unique within this branch
-    const dupCheck = await db.query(
-      'SELECT id FROM gold_scheme_members WHERE branch_id = $1 AND chit_number = $2',
-      [branchId, payload.chitNumber]
-    );
-    if (dupCheck.rows.length > 0) {
-      throw new ConflictError(`Chit number ${payload.chitNumber} already exists in this branch`);
-    }
-
-    // Verify the customer exists and belongs to this branch
-    const customerResult = await db.query(
-      `SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2`,
-      [payload.customerId, branchId]
-    );
-    if (customerResult.rows.length === 0) throw new NotFoundError('Customer not found in this branch');
-
-    // Resolve referrer name (denormalised) if referrerId is provided
-    let referrerName: string | null = null;
-    if (payload.referrerId) {
-      const refResult = await db.query(
-        'SELECT name, role FROM users WHERE id = $1',
-        [payload.referrerId]
-      );
-      if (refResult.rows.length === 0) {
-        throw new NotFoundError('Referrer not found');
-      }
-      const { name, role } = refResult.rows[0];
-      // Store "Name ROLE" like the physical ledger: "Sasirekha ABM"
-      referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
-    }
-
-    const client = await db.connect();
+    // ownTx: we manage BEGIN/COMMIT/release only when no caller client was passed
+    const ownTx = !existingClient;
+    const client = existingClient ?? await db.connect();
     try {
-      await client.query('BEGIN');
+      if (ownTx) await client.query('BEGIN');
+
+      // Verify chit_number is unique within this branch
+      const dupCheck = await client.query(
+        'SELECT id FROM gold_scheme_members WHERE branch_id = $1 AND chit_number = $2',
+        [branchId, payload.chitNumber]
+      );
+      if (dupCheck.rows.length > 0) {
+        throw new ConflictError(`Chit number ${payload.chitNumber} already exists in this branch`);
+      }
+
+      // Verify the customer exists and belongs to this branch
+      const customerResult = await client.query(
+        `SELECT id, name FROM customers WHERE id = $1 AND branch_id = $2`,
+        [payload.customerId, branchId]
+      );
+      if (customerResult.rows.length === 0) throw new NotFoundError('Customer not found in this branch');
+
+      // Resolve referrer name (denormalised) if referrerId is provided
+      let referrerName: string | null = null;
+      if (payload.referrerId) {
+        const refResult = await client.query(
+          'SELECT name, role FROM users WHERE id = $1',
+          [payload.referrerId]
+        );
+        if (refResult.rows.length === 0) {
+          throw new NotFoundError('Referrer not found');
+        }
+        const { name, role } = refResult.rows[0];
+        // Store "Name ROLE" like the physical ledger: "Sasirekha ABM"
+        referrerName = `${name} ${role.toUpperCase().replace(/_/g, ' ')}`;
+      }
 
       const memberResult = await client.query(
         `INSERT INTO gold_scheme_members (
@@ -120,14 +125,14 @@ export const GoldService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
-      await client.query('COMMIT');
+      if (ownTx) await client.query('COMMIT');
 
       return { member, commissionAmount };
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (ownTx) await client.query('ROLLBACK');
       throw err;
     } finally {
-      client.release();
+      if (ownTx) client.release();
     }
   },
 

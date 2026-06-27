@@ -31,6 +31,8 @@ const GoldSchemePage           = lazy(() => import('./pages/schemes/GoldSchemePa
 const GoldSchemeAddPage        = lazy(() => import('./pages/schemes/GoldSchemeAddPage').then(m => ({ default: m.GoldSchemeAddPage })));
 const GoldMemberDetailPage     = lazy(() => import('./pages/schemes/GoldMemberDetailPage').then(m => ({ default: m.GoldMemberDetailPage })));
 const SchemesPage              = lazy(() => import('./pages/schemes/SchemesPage').then(m => ({ default: m.SchemesPage })));
+const PendingEnrollmentsListPage = lazy(() => import('./pages/schemes/PendingEnrollmentsListPage').then(m => ({ default: m.PendingEnrollmentsListPage })));
+const PendingEnrollmentDetailPage = lazy(() => import('./pages/schemes/PendingEnrollmentDetailPage').then(m => ({ default: m.PendingEnrollmentDetailPage })));
 const IncentiveWalletPage      = lazy(() => import('./pages/schemes/IncentiveWalletPage').then(m => ({ default: m.IncentiveWalletPage })));
 const SalaryManagementPage     = lazy(() => import('./pages/SalaryManagementPage').then(m => ({ default: m.SalaryManagementPage })));
 const TradingAcademyPage       = lazy(() => import('./pages/schemes/TradingAcademyPage').then(m => ({ default: m.TradingAcademyPage })));
@@ -160,6 +162,8 @@ function App() {
 
         {/* Schemes hub */}
         <Route path="/money/schemes"             element={<SchemesPage />} />
+        <Route path="/money/schemes/pending"     element={<PendingEnrollmentsListPage />} />
+        <Route path="/money/schemes/pending/:id" element={<PendingEnrollmentDetailPage />} />
         <Route path="/money/schemes/gold"        element={<GoldSchemePage />} />
         <Route path="/money/schemes/gold/add"    element={<GoldSchemeAddPage />} />
         <Route path="/money/schemes/gold/:id"    element={<GoldMemberDetailPage />} />

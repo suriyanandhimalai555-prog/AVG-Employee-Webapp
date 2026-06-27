@@ -25,6 +25,7 @@ import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { SCHEME_REGISTRY, getScheme, listSchemes } from './scheme.registry';
 import type { SchemeBranchTotals, SchemeDateFilter } from './scheme.contract';
+import { PendingEnrollmentsService } from '../pending-enrollments/pending-enrollments.service';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string | null; }
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
@@ -93,7 +94,20 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
           })
         );
 
-        return reply.send({ success: true, data: { schemes: schemeResults } });
+        // Pending enrollments: deposits collected while still 'collecting'. Surfaced as a
+        // distinct bucket (collected-when-received). On completion the money leaves this
+        // bucket and reappears under the real scheme — so it is never double counted.
+        const pendingByBranch: SchemeBranchTotals[] = (
+          await PendingEnrollmentsService.getOverviewByBranch(fastify.db, dateFilter)
+        ).map((b) => ({ ...b, commission: 0 }));
+        const pendingResult = {
+          schemeCode: 'pending_enrollment',
+          schemeName: 'Pending Enrollments',
+          totals:     sumTotals(pendingByBranch),
+          byBranch:   pendingByBranch,
+        };
+
+        return reply.send({ success: true, data: { schemes: [...schemeResults, pendingResult] } });
       } catch (error) { return handleError(error, reply); }
     }
   );

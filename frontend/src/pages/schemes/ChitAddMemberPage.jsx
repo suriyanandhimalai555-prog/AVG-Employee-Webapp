@@ -7,7 +7,9 @@ import {
   useGetChitGroupQuery,
   useAddChitMemberMutation,
   useGetGoldEmployeesQuery,
+  useCreatePendingEnrollmentMutation,
 } from '../../store/api/apiSlice';
+import { DepositToggle } from './components/DepositToggle';
 import { CustomerPicker } from '../../components/CustomerPicker';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { formatCurrency } from '../../lib/formatters';
@@ -30,6 +32,9 @@ export const ChitAddMemberPage = () => {
   const { data: group, isLoading: loadingGroup } = useGetChitGroupQuery(groupId);
   const { data: employees = [] }                  = useGetGoldEmployeesQuery();
   const [addMember, { isLoading }]                = useAddChitMemberMutation();
+  const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
+  const [payMode, setPayMode] = useState('full');
+  const [deposit, setDeposit] = useState('');
 
   const [customer,     setCustomer]     = useState(null);
   const [referrerId,   setReferrerId]   = useState('');
@@ -64,6 +69,9 @@ export const ChitAddMemberPage = () => {
     e.preventDefault();
     setError(null);
     if (!customer) { setError('Please select or create a customer.'); return; }
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : fullAmount;
+    if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
+    if (payMode === 'deposit' && payAmount > fullAmount + 0.01) { setError('Deposit cannot exceed the monthly amount.'); return; }
     if (paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
       setShowProofErr(true);
       setError('Payment proof and transaction ID are required for GPay/bank payments.');
@@ -72,12 +80,30 @@ export const ChitAddMemberPage = () => {
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
     if (paymentMode === 'cash_bank' &&
-        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - fullAmount) > 0.01)) {
+        (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
-      setError('Cash + bank amounts must be filled and equal the monthly amount.');
+      setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
     try {
+      if (payMode === 'deposit') {
+        const res = await createPending({
+          schemeCode: 'agila_chit_scheme',
+          customerId: customer.id,
+          referrerId: referrerId || undefined,
+          branchId:   group?.branch_id,
+          payload: { groupId },
+          firstPayment: {
+            amount: payAmount, paymentMode, paidDate: paymentDate,
+            proofKey: proofKey.length ? proofKey : undefined,
+            transactionId: txnId.length ? txnId : undefined,
+            cashAmount: paymentMode === 'cash_bank' ? splitCash : undefined,
+            bankAmount: paymentMode === 'cash_bank' ? splitBank : undefined,
+          },
+        }).unwrap();
+        navigate(`/money/schemes/pending/${res.pendingId}`);
+        return;
+      }
       const res = await addMember({
         groupId,
         customerId:            customer.id,
@@ -243,6 +269,14 @@ export const ChitAddMemberPage = () => {
           </FormField>
         </div>
 
+        <FormField label="Payment plan" required>
+          <DepositToggle
+            mode={payMode} onModeChange={setPayMode}
+            deposit={deposit} onDepositChange={setDeposit}
+            required={fullAmount || 0}
+          />
+        </FormField>
+
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
@@ -251,7 +285,9 @@ export const ChitAddMemberPage = () => {
             includeSplit
           />
           <p className="text-[10px] font-medium text-navy/30 mt-1.5">
-            Month 1 ({formatCurrency(fullAmount)}) is recorded automatically on save.
+            {payMode === 'deposit'
+              ? `The membership starts once the full ${formatCurrency(fullAmount)} month-1 amount is paid.`
+              : `Month 1 (${formatCurrency(fullAmount)}) is recorded automatically on save.`}
           </p>
         </FormField>
 
@@ -260,7 +296,7 @@ export const ChitAddMemberPage = () => {
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
           onChange={setSplit}
-          expectedTotal={fullAmount || undefined}
+          expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : fullAmount) || undefined}
           showError={showProofErr}
         />
 
@@ -282,13 +318,13 @@ export const ChitAddMemberPage = () => {
 
         <button
           type="submit"
-          disabled={isLoading || spotsLeft <= 0}
+          disabled={isLoading || creatingPending || spotsLeft <= 0}
           className="w-full py-4 bg-violet-600 text-white text-sm font-bold rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50 tactile-press shadow-lg shadow-violet-200"
         >
-          {isLoading
+          {(isLoading || creatingPending)
             ? <Loader2 size={18} className="animate-spin" aria-hidden="true" />
             : <Save size={18} aria-hidden="true" />}
-          {spotsLeft <= 0 ? 'Group is full' : 'Enroll Member'}
+          {spotsLeft <= 0 ? 'Group is full' : (payMode === 'deposit' ? 'Save Deposit' : 'Enroll Member')}
         </button>
       </form>
     </SchemePageWrapper>

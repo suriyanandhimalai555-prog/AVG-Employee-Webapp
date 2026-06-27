@@ -30,13 +30,16 @@ export const TradingAcademyService = {
     db: Pool,
     enteredBy: string,
     branchId: string,
-    payload: AddTradingMemberInput
+    payload: AddTradingMemberInput,
+    // When provided, run inside the caller's transaction (pending-enrollment completion).
+    existingClient?: PoolClient
   ): Promise<{ member: any; incentivesCreated: number }> {
     const projectId = await TradingAcademyService.getProjectId(db);
 
-    const client = await db.connect();
+    const ownTx = !existingClient;
+    const client = existingClient ?? await db.connect();
     try {
-      await client.query('BEGIN');
+      if (ownTx) await client.query('BEGIN');
 
       // Verify the customer exists and belongs to this branch
       const customerResult = await client.query(
@@ -93,14 +96,14 @@ export const TradingAcademyService = {
         effectiveDate:     payload.enrollmentDate,
       });
 
-      await client.query('COMMIT');
+      if (ownTx) await client.query('COMMIT');
 
       return { member: { ...member, customer }, incentivesCreated: incentives.length };
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (ownTx) await client.query('ROLLBACK');
       throw err;
     } finally {
-      client.release();
+      if (ownTx) client.release();
     }
   },
 
