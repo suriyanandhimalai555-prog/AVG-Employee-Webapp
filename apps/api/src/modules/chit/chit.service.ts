@@ -1414,4 +1414,31 @@ export const ChitService = {
     );
     return res.rows;
   },
+
+  // Monthly instalment cash received in [startDate,endDate] by payment_date.
+  // Differs from getOverviewByBranch which incorrectly keys on group start_date.
+  // Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    let where = '1=1';
+    let idx = 1;
+    // TS: date filter uses payment_date — the actual date cash arrived, not group start
+    if (dateFilter.startDate) { where += ` AND pay.payment_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter.endDate)   { where += ` AND pay.payment_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT g.branch_id, COALESCE(SUM(pay.amount), 0) AS collected
+       FROM agila_chit_payments pay
+       JOIN agila_chit_members  m ON m.id = pay.member_id
+       JOIN agila_chit_groups   g ON g.id = m.group_id
+       WHERE ${where}
+       GROUP BY g.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows.map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
+  },
 };

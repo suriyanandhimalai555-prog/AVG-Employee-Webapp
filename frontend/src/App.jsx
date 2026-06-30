@@ -63,7 +63,8 @@ const LandAddBookingPage       = lazy(() => import('./pages/schemes/LandAddBooki
 const LandBookingDetailPage    = lazy(() => import('./pages/schemes/LandBookingDetailPage').then(m => ({ default: m.LandBookingDetailPage })));
 const LeadershipListPage          = lazy(() => import('./pages/LeadershipListPage').then(m => ({ default: m.LeadershipListPage })));
 const ManagementControlCenter     = lazy(() => import('./pages/ManagementControlCenter').then(m => ({ default: m.ManagementControlCenter })));
-const SchemesOverviewPage      = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
+const SchemesOverviewPage           = lazy(() => import('./pages/SchemesOverviewPage').then(m => ({ default: m.SchemesOverviewPage })));
+const ReconciliationDashboardPage   = lazy(() => import('./pages/ReconciliationDashboardPage').then(m => ({ default: m.ReconciliationDashboardPage })));
 const SchemeBranchListPage     = lazy(() => import('./pages/SchemeBranchListPage').then(m => ({ default: m.SchemeBranchListPage })));
 const SchemeCorrectionsPage    = lazy(() => import('./pages/schemes/SchemeCorrectionsPage').then(m => ({ default: m.SchemeCorrectionsPage })));
 const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage').then(m => ({ default: m.PersonAttendancePage })));
@@ -210,6 +211,7 @@ function App() {
         {/* Management Control Center */}
         <Route path="/control-center"             element={<ManagementControlCenter />} />
         <Route path="/control-center/corrections" element={<SchemeCorrectionsPage />} />
+        <Route path="/control-center/reconciliation" element={<ReconciliationDashboardPage />} />
 
         {/* Leadership */}
         <Route path="/leadership/:kind"          element={<LeadershipListPage />} />

@@ -35,6 +35,7 @@ import landRoutes from './modules/land/land.routes';
 import schemesAggregateRoutes from './modules/schemes/aggregate.routes';
 import pendingEnrollmentRoutes from './modules/pending-enrollments/pending-enrollments.routes';
 import settingsRoutes from './modules/settings/settings.routes';
+import reconciliationRoutes from './modules/reconciliation/reconciliation.routes';
 import notificationWebhookRoutes from './modules/notifications/notifications.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -198,6 +199,9 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // App-level settings (backdated-entry permission flag)
   await app.register(settingsRoutes, { prefix: '/api/settings' });
+
+  // Daily collection reconciliation (branch admin declaration + live panel + management overview)
+  await app.register(reconciliationRoutes, { prefix: '/api/reconciliation' });
 
   // WhatsApp delivery-receipt webhooks — public, no JWT auth.
   // Meta verifies ownership via GET challenge and signs POST bodies with HMAC-SHA256.

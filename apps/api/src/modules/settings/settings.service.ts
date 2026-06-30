@@ -1,9 +1,10 @@
 // App-level settings stored in the app_settings key/value table.
 // Flags:
-//   backdated_entry_enabled             — branch admins may enter past-dated scheme data
-//   whatsapp_messages_enabled           — WhatsApp notifications are sent to customers
-//   lss_eligibility_bypass_enabled      — skip the 30-day draw wait for LSS
-//   gold_coin_eligibility_bypass_enabled — skip the 30-day draw wait for Gold-Coin
+//   backdated_entry_enabled                  — branch admins may enter past-dated scheme data
+//   whatsapp_messages_enabled                — WhatsApp notifications are sent to customers
+//   lss_eligibility_bypass_enabled           — skip the 30-day draw wait for LSS
+//   gold_coin_eligibility_bypass_enabled     — skip the 30-day draw wait for Gold-Coin
+//   daily_collection_reconciliation_enabled  — branch admins must submit daily collection summary
 //
 // Flags are read via their guard helpers so enforcement and the settings endpoint always agree.
 // Every write appends a row to app_settings_history for a full audit trail.
@@ -15,6 +16,7 @@ import {
   GOLD_COIN_ELIGIBILITY_BYPASS_KEY,
   isEligibilityBypassEnabled,
 } from '../../shared/eligibility-bypass-guard';
+import { RECONCILIATION_KEY, isReconciliationEnabled } from '../../shared/reconciliation-guard';
 
 // TS: Read the current value before overwriting so we can write old_value to history.
 // Returns null when the key doesn't exist yet (first write after seed, or missing seed).
@@ -135,6 +137,24 @@ export const SettingsService = {
     updatedBy: string
   ): Promise<{ enabled: boolean }> {
     await upsertWithAudit(db, GOLD_COIN_ELIGIBILITY_BYPASS_KEY, enabled, updatedBy);
+    return { enabled };
+  },
+
+  // ─── Daily Collection Reconciliation ────────────────────────────────────────
+
+  // Read whether branch admins must submit a daily collection summary.
+  async getDailyCollectionReconciliation(db: Pool): Promise<{ enabled: boolean }> {
+    const enabled = await isReconciliationEnabled(db);
+    return { enabled };
+  },
+
+  // Flip the daily collection reconciliation flag.
+  async setDailyCollectionReconciliation(
+    db: Pool,
+    enabled: boolean,
+    updatedBy: string
+  ): Promise<{ enabled: boolean }> {
+    await upsertWithAudit(db, RECONCILIATION_KEY, enabled, updatedBy);
     return { enabled };
   },
 };

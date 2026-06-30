@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -1891,6 +1891,57 @@ export const apiSlice = createApi({
       invalidatesTags: ['AppSettings'],
     }),
 
+    // ─── App Settings (Daily collection reconciliation — management toggle) ───
+    getDailyCollectionReconciliationSetting: builder.query({
+      query: () => '/settings/daily-collection-reconciliation',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateDailyCollectionReconciliationSetting: builder.mutation({
+      query: (data) => ({ url: '/settings/daily-collection-reconciliation', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
+    }),
+
+    // ─── Daily Collection Reconciliation ───
+    // GET /reconciliation/summary/today?branchId=
+    getTodayCollectionSummary: builder.query({
+      query: (branchId) => `/reconciliation/summary/today${branchId ? `?branchId=${branchId}` : ''}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['DailyReconciliation'],
+    }),
+
+    // POST /reconciliation/summary
+    submitDailyCollectionSummary: builder.mutation({
+      query: (data) => ({ url: '/reconciliation/summary', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['DailyReconciliation'],
+    }),
+
+    // PUT /reconciliation/summary/:id — management edits a locked day
+    updateDailyCollectionSummary: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/reconciliation/summary/${id}`, method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['DailyReconciliation'],
+    }),
+
+    // GET /reconciliation/branch/:branchId?businessDate=YYYY-MM-DD
+    getBranchReconciliation: builder.query({
+      query: ({ branchId, businessDate }) =>
+        `/reconciliation/branch/${branchId}${businessDate ? `?businessDate=${businessDate}` : ''}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['DailyReconciliation'],
+    }),
+
+    // GET /reconciliation/overview?businessDate=YYYY-MM-DD
+    getReconciliationOverview: builder.query({
+      query: (businessDate) =>
+        `/reconciliation/overview${businessDate ? `?businessDate=${businessDate}` : ''}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['DailyReconciliation'],
+    }),
+
     // ─── Head branch (Management only) ───
     // Moves the global is_head_branch flag to the chosen branch.
     // Invalidates Branches so BranchPicker and HeadBranchSetting refetch.
@@ -2157,6 +2208,13 @@ export const {
   useUpdateLssEligibilityBypassSettingMutation,
   useGetGoldCoinEligibilityBypassSettingQuery,
   useUpdateGoldCoinEligibilityBypassSettingMutation,
+  useGetDailyCollectionReconciliationSettingQuery,
+  useUpdateDailyCollectionReconciliationSettingMutation,
+  useGetTodayCollectionSummaryQuery,
+  useSubmitDailyCollectionSummaryMutation,
+  useUpdateDailyCollectionSummaryMutation,
+  useGetBranchReconciliationQuery,
+  useGetReconciliationOverviewQuery,
   useSetHeadBranchMutation,
   useSetBranchLocationMutation,
   useGetPendingEnrollmentsQuery,

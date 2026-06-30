@@ -935,4 +935,29 @@ export const GoldService = {
     );
     return res.rows;
   },
+
+  // Cash payments received in [startDate,endDate] by paid_date — strictly money
+  // in, not enrollment events. Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    let where = '1=1';
+    let idx = 1;
+    // TS: date filter uses paid_date (not member created_at) — money row's own business date
+    if (dateFilter.startDate) { where += ` AND p.paid_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter.endDate)   { where += ` AND p.paid_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT m.branch_id, COALESCE(SUM(p.amount), 0) AS collected
+       FROM gold_scheme_payments p
+       JOIN gold_scheme_members m ON m.id = p.member_id
+       WHERE ${where}
+       GROUP BY m.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows.map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
+  },
 };

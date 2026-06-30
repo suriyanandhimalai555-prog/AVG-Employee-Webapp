@@ -4,6 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import {
   LandSitesService,
   LandBookingsService,
@@ -379,6 +380,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const body     = CreateLandBookingSchema.parse(req.body);
         // Past booking dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.bookingDate]);
+        // Daily collection summary must be submitted before any scheme entry (management exempt)
+        await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const data     = await LandBookingsService.createBooking(fastify.db, req.user.id, branchId, body);
         return reply.code(201).send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -408,6 +411,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const body     = RecordAdvanceSchema.parse(req.body);
         // Past advance dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.advanceDate]);
+        // Daily collection summary must be submitted before any scheme entry (management exempt)
+        await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const data     = await LandBookingsService.recordAdvance(fastify.db, req.user.id, id, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -424,6 +429,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const body     = RecordFullPaymentSchema.parse(req.body);
         // Past full-payment dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.fullPaymentDate]);
+        // Daily collection summary must be submitted before any scheme entry (management exempt)
+        await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const data     = await LandBookingsService.recordFullPayment(fastify.db, req.user.id, id, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }

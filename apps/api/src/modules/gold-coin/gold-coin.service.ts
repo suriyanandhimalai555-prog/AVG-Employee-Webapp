@@ -208,6 +208,30 @@ export const GoldCoinService = {
     );
     return res.rows;
   },
+
+  // Cash collected in [startDate,endDate] by slot created_at — strictly money in,
+  // not notional. Excludes refunded slots. Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    let where = "s.status <> 'refunded'";
+    let idx = 1;
+    // TS: date filter follows the standard >=/< convention; both params optional
+    if (dateFilter.startDate) { where += ` AND s.created_at >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter.endDate)   { where += ` AND s.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT s.branch_id, COALESCE(SUM(s.amount_paid), 0) AS collected
+       FROM gold_coin_slots s
+       WHERE ${where}
+       GROUP BY s.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows.map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
+  },
 } satisfies SchemeService;
 
 // Sub-services exported for the routes file

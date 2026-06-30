@@ -1,13 +1,53 @@
+import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, Clock, ChevronRight } from 'lucide-react';
-import { useGetMoneyProjectsQuery } from '../../store/api/apiSlice';
+import { selectCurrentUser } from '../../store/slices/authSlice';
+import {
+  useGetMoneyProjectsQuery,
+  useGetDailyCollectionReconciliationSettingQuery,
+  useGetTodayCollectionSummaryQuery,
+} from '../../store/api/apiSlice';
 import { SchemeCard } from './components/SchemeCard';
+import { DailyCollectionSummaryForm } from './DailyCollectionSummaryForm';
+import { LiveReconciliationPanel } from './LiveReconciliationPanel';
 
 export const SchemesPage = () => {
-  const navigate = useNavigate();
+  const navigate      = useNavigate();
+  const user          = useSelector(selectCurrentUser);
+  const isBranchAdmin = user?.role === 'branch_admin';
+
   const { data: projects = [], isLoading } = useGetMoneyProjectsQuery({});
   const activeProjects = projects.filter(p => p.is_active);
+
+  const { data: settingData, isLoading: settingLoading } =
+    useGetDailyCollectionReconciliationSettingQuery();
+  const enabled = settingData?.enabled ?? false;
+
+  const { data: summaryData, isLoading: summaryLoading } = useGetTodayCollectionSummaryQuery(
+    user?.branchId,
+    // Only fetch for branch_admin when the toggle is on — avoids unnecessary request
+    { skip: !isBranchAdmin || !enabled }
+  );
+
+  const gateLoading = settingLoading || (isBranchAdmin && enabled && summaryLoading);
+
+  if (gateLoading) {
+    return (
+      <div className="flex justify-center items-center py-24">
+        <Loader2 className="animate-spin text-indigo" size={28} aria-hidden="true" />
+      </div>
+    );
+  }
+
+  // Gate: branch_admin + toggle on + no summary yet → show mandatory declaration form
+  // summaryData is null (no summary) or { id, businessDate, lines } (submitted) after transformResponse
+  if (isBranchAdmin && enabled && !summaryData) {
+    return <DailyCollectionSummaryForm branchId={user.branchId} />;
+  }
+
+  // Show the live reconciliation panel only when branch_admin has submitted today's summary
+  const showLivePanel = isBranchAdmin && enabled && !!summaryData;
 
   return (
     <div className="relative">
@@ -31,6 +71,11 @@ export const SchemesPage = () => {
             <p className="text-xs font-medium text-navy/40 mt-0.5">All company schemes &amp; projects</p>
           </div>
         </div>
+
+        {/* Live reconciliation panel — visible to branch admin once they file today's summary */}
+        {showLivePanel && (
+          <LiveReconciliationPanel branchId={user.branchId} businessDate={undefined} />
+        )}
 
         {/* Pending enrollments (deposits awaiting their balance) */}
         <div className="px-6 mb-4">

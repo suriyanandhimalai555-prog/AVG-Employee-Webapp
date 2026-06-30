@@ -4,6 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import { BuildersService } from './builders.service';
 import { BuildersIncentivesService } from './builders-incentives.service';
 import {
@@ -104,6 +105,8 @@ export default async function buildersRoutes(fastify: FastifyInstance): Promise<
       // Past lump-sum dates require the backdated-entry flag (management exempt)
       await assertBackdateAllowed(fastify.db, req.user.role, [body.lumpSumDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      // Daily collection summary must be submitted before any scheme entry (management exempt)
+      await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
       const data = await BuildersService.createPlan(fastify.db, req.user.id, branchId, body);
       return reply.code(201).send({ success: true, data });
     } catch (error) { return handleError(error, reply); }

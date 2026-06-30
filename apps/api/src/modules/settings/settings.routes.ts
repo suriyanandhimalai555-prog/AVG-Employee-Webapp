@@ -1,16 +1,19 @@
 // App settings REST surface.
 //
-//   GET /settings/backdated-entry             → any authenticated user
-//   PUT /settings/backdated-entry             → management only
+//   GET /settings/backdated-entry                    → any authenticated user
+//   PUT /settings/backdated-entry                    → management only
 //
-//   GET /settings/whatsapp-messages           → any authenticated user
-//   PUT /settings/whatsapp-messages           → management only
+//   GET /settings/whatsapp-messages                  → any authenticated user
+//   PUT /settings/whatsapp-messages                  → management only
 //
-//   GET /settings/lss-eligibility-bypass      → any authenticated user
-//   PUT /settings/lss-eligibility-bypass      → management only
+//   GET /settings/lss-eligibility-bypass             → any authenticated user
+//   PUT /settings/lss-eligibility-bypass             → management only
 //
-//   GET /settings/gold-coin-eligibility-bypass → any authenticated user
-//   PUT /settings/gold-coin-eligibility-bypass → management only
+//   GET /settings/gold-coin-eligibility-bypass       → any authenticated user
+//   PUT /settings/gold-coin-eligibility-bypass       → management only
+//
+//   GET /settings/daily-collection-reconciliation    → any authenticated user
+//   PUT /settings/daily-collection-reconciliation    → management only
 //
 // All PUT endpoints enforce Role.MANAGEMENT with a hardcoded check.
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -23,6 +26,7 @@ import {
   UpdateWhatsappMessagesSchema,
   UpdateLssEligibilityBypassSchema,
   UpdateGoldCoinEligibilityBypassSchema,
+  UpdateDailyCollectionReconciliationSchema,
 } from './settings.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
@@ -138,6 +142,34 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
       }
       const body = UpdateGoldCoinEligibilityBypassSchema.parse(request.body);
       const data = await SettingsService.setGoldCoinEligibilityBypass(fastify.db, body.enabled, req.user.id);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── Daily Collection Reconciliation ─────────────────────────────────────────
+
+  // GET /settings/daily-collection-reconciliation — any authenticated user reads the toggle
+  fastify.get('/daily-collection-reconciliation', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const data = await SettingsService.getDailyCollectionReconciliation(fastify.db);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // PUT /settings/daily-collection-reconciliation — management enables/disables the workflow
+  fastify.put('/daily-collection-reconciliation', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: hardcoded role check — mirrors the backdated-entry convention
+      if (req.user.role !== Role.MANAGEMENT) {
+        throw new ForbiddenError('Only Management can change daily collection reconciliation');
+      }
+      const body = UpdateDailyCollectionReconciliationSchema.parse(request.body);
+      const data = await SettingsService.setDailyCollectionReconciliation(fastify.db, body.enabled, req.user.id);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

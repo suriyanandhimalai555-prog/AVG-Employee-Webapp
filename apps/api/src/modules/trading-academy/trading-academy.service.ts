@@ -493,4 +493,28 @@ export const TradingAcademyService = {
     );
     return res.rows;
   },
+
+  // Enrollment fees received in [startDate,endDate] by enrollment_date.
+  // Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    let where = '1=1';
+    let idx = 1;
+    // TS: date filter uses enrollment_date — the business date on the money row
+    if (dateFilter.startDate) { where += ` AND t.enrollment_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter.endDate)   { where += ` AND t.enrollment_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT t.branch_id, COALESCE(SUM(t.amount), 0) AS collected
+       FROM trading_academy_members t
+       WHERE ${where}
+       GROUP BY t.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows.map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
+  },
 };

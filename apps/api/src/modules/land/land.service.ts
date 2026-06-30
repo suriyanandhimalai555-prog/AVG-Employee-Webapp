@@ -1,11 +1,12 @@
 // Land Sales — facade + SchemeService contract.
 //
-// Implements getBranchSummary / getOverviewByBranch / getEntriesByBranch so the module
-// appears in the MD/Director aggregate schemes dashboard automatically.
+// Implements getBranchSummary / getOverviewByBranch / getEntriesByBranch /
+// getCollectedByBranch so the module appears in the MD/Director aggregate
+// schemes dashboard and the daily reconciliation panel automatically.
 //
 // Re-exports sub-services so land.routes.ts only needs to import from this one file.
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import type { SchemeService, SchemeDateFilter, SchemeBranchTotals } from '../schemes/scheme.contract';
 import { LandBookingsService } from './land-bookings.service';
 
@@ -156,5 +157,46 @@ export const LandService: SchemeService = {
       params
     );
     return res.rows;
+  },
+
+  // Cash actually received in [startDate,endDate] from advance and full payments,
+  // keyed on each payment's own date column (not booking_date).
+  // Loan amounts are excluded — those are bank/NBFC funds, not branch cash.
+  // Differs from getOverviewByBranch which uses full_amount on booking_date.
+  // Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    // TS: advance_date and full_payment_date are independent date columns;
+    //     both use the same $1/$2 params via FILTER (WHERE ...) expressions.
+    let advFilter  = 'bk.advance_date IS NOT NULL';
+    let fullFilter = 'bk.full_payment_date IS NOT NULL';
+    let idx = 1;
+    if (dateFilter.startDate) {
+      advFilter  += ` AND bk.advance_date      >= $${idx}::date`;
+      fullFilter += ` AND bk.full_payment_date >= $${idx++}::date`;
+      params.push(dateFilter.startDate);
+    }
+    if (dateFilter.endDate) {
+      advFilter  += ` AND bk.advance_date      < ($${idx}::date + INTERVAL '1 day')`;
+      fullFilter += ` AND bk.full_payment_date < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(dateFilter.endDate);
+    }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT bk.branch_id,
+         COALESCE(SUM(bk.advance_amount) FILTER (WHERE ${advFilter}),  0)
+       + COALESCE(SUM(bk.full_amount)    FILTER (WHERE ${fullFilter}), 0)
+         AS collected
+       FROM land_bookings bk
+       GROUP BY bk.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows
+      .filter(r => parseFloat(r.collected) > 0)
+      .map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
   },
 };

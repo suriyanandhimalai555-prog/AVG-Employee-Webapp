@@ -61,4 +61,14 @@ export interface SchemeService {
     branchId: string,
     dateFilter?: SchemeDateFilter,
   ): Promise<any[]>;
+
+  // Strictly cash RECEIVED in [startDate,endDate], keyed on each money row's
+  // own business date. Used by daily reconciliation only — distinct from
+  // getOverviewByBranch which may return notional/contract values (e.g. land
+  // books booking value before cash arrives; chit keys on group start date).
+  // Returns all branches that had activity; missing = 0 for that branch.
+  getCollectedByBranch?(
+    db: Pool | PoolClient,
+    dateFilter: SchemeDateFilter,
+  ): Promise<Array<{ branchId: string; collected: number }>>;
 }

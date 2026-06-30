@@ -4,6 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import { TradingAcademyService } from './trading-academy.service';
 import { AddTradingMemberSchema, GetTradingMembersQuerySchema, GetTradingSummaryQuerySchema, CorrectTradingMemberSchema } from './trading-academy.schema';
 
@@ -73,6 +74,8 @@ export default async function tradingAcademyRoutes(fastify: FastifyInstance): Pr
       // Past enrollment dates require the backdated-entry flag (management exempt)
       await assertBackdateAllowed(fastify.db, req.user.role, [body.enrollmentDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      // Daily collection summary must be submitted before any scheme entry (management exempt)
+      await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
       const result = await TradingAcademyService.addMember(
         fastify.db,
         req.user.id,

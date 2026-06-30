@@ -32,3 +32,12 @@ export const UpdateGoldCoinEligibilityBypassSchema = z.object({
 
 // TS: inferred type keeps service + route in sync
 export type UpdateGoldCoinEligibilityBypassInput = z.infer<typeof UpdateGoldCoinEligibilityBypassSchema>;
+
+// Body for PUT /settings/daily-collection-reconciliation — management enables/disables
+// the mandatory morning declaration workflow for branch admins.
+export const UpdateDailyCollectionReconciliationSchema = z.object({
+  enabled: z.boolean(),
+});
+
+// TS: inferred type keeps service + route in sync
+export type UpdateDailyCollectionReconciliationInput = z.infer<typeof UpdateDailyCollectionReconciliationSchema>;

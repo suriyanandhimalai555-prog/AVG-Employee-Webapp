@@ -1062,4 +1062,28 @@ export const BuildersService = {
     );
     return res.rows;
   },
+
+  // Lump-sum investments received in [startDate,endDate] by lump_sum_date.
+  // Used by daily reconciliation only.
+  async getCollectedByBranch(
+    db: Pool | PoolClient,
+    dateFilter: { startDate?: string; endDate?: string },
+  ): Promise<Array<{ branchId: string; collected: number }>> {
+    const params: any[] = [];
+    let where = '1=1';
+    let idx = 1;
+    // TS: date filter uses lump_sum_date — the business date on the money row
+    if (dateFilter.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
+    if (dateFilter.endDate)   { where += ` AND p.lump_sum_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+
+    const res = await db.query<{ branch_id: string; collected: string }>(
+      `SELECT p.branch_id, COALESCE(SUM(p.investment_amount), 0) AS collected
+       FROM builders_plans p
+       WHERE ${where}
+       GROUP BY p.branch_id`,
+      params
+    );
+    // TS: NUMERIC comes back as string from pg; parse to number for the contract type
+    return res.rows.map(r => ({ branchId: r.branch_id, collected: parseFloat(r.collected) }));
+  },
 };

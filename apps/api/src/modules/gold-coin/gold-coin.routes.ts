@@ -21,6 +21,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, GOLD_COIN_VIEWER_ROLES, REFERRER_ONLY_ROLES, hasRole, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { getOversightBranchIds } from '../../shared/hierarchy';
 import {
@@ -145,6 +146,8 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
         // Past sale dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.saleDate]);
         const branchId = await resolveSingleBranch(fastify, req, (body as any).branchId);
+        // Daily collection summary must be submitted before any scheme entry (management exempt)
+        await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const result = await SlotsService.createSlot(fastify.db, branchId, req.user.id, body);
         return reply.code(201).send({ success: true, data: result });
       } catch (error) { return handleError(error, reply); }

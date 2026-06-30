@@ -46,6 +46,8 @@ import {
   useUpdateLssEligibilityBypassSettingMutation,
   useGetGoldCoinEligibilityBypassSettingQuery,
   useUpdateGoldCoinEligibilityBypassSettingMutation,
+  useGetDailyCollectionReconciliationSettingQuery,
+  useUpdateDailyCollectionReconciliationSettingMutation,
   useGetBranchesQuery,
   useSetHeadBranchMutation,
 } from '../store/api/apiSlice';
@@ -1012,6 +1014,66 @@ const GoldCoinEligibilityBypassToggle = () => {
   );
 };
 
+// ─── Daily collection reconciliation toggle (Management only) ─────────────────
+// While ON, branch admins must complete a Daily Collection Summary each morning
+// before any scheme entries are accepted. Management itself is always exempt.
+const DailyCollectionReconciliationToggle = () => {
+  const { data, isLoading }   = useGetDailyCollectionReconciliationSettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateDailyCollectionReconciliationSettingMutation();
+  const enabled = data?.enabled === true;
+
+  const toggle = async () => {
+    try {
+      await updateSetting({ enabled: !enabled }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch stays put.
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={16} className="text-indigo-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-navy">Daily Collection Reconciliation</p>
+              <p className="text-xs text-navy/40 mt-0.5">
+                {enabled
+                  ? 'ON — branch admins must declare expected cash before scheme entries each day.'
+                  : 'OFF — no morning declaration required; admins access schemes directly.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={isLoading || saving}
+            aria-label={enabled ? 'Disable daily reconciliation' : 'Enable daily reconciliation'}
+            className="flex-shrink-0 tactile-press disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 size={34} className="animate-spin text-navy/30" />
+              : enabled
+                ? <ToggleRight size={34} className="text-emerald-600" />
+                : <ToggleLeft  size={34} className="text-navy/30" />}
+          </button>
+        </div>
+        {enabled && (
+          <div className="mt-3 px-3 py-2 bg-indigo-50 rounded-xl">
+            <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest">Active</p>
+            <p className="text-xs text-indigo-600 mt-0.5">
+              Branch admins must submit a Daily Collection Summary each morning. Management is always exempt.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ManagementControlCenter = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -1050,7 +1112,26 @@ export const ManagementControlCenter = () => {
       {user?.role === 'management' && <BackdatedEntryToggle />}
       {user?.role === 'management' && <LssEligibilityBypassToggle />}
       {user?.role === 'management' && <GoldCoinEligibilityBypassToggle />}
+      {user?.role === 'management' && <DailyCollectionReconciliationToggle />}
       {user?.role === 'management' && <HeadBranchSetting />}
+
+      {/* Reconciliation dashboard — accessible to all allowed roles */}
+      <div className="px-4 md:px-0 mb-4">
+        <button
+          type="button"
+          onClick={() => navigate('/control-center/reconciliation')}
+          className="w-full bg-white rounded-2xl p-4 border border-navy/5 card-shadow flex items-center gap-3 tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
+            <ChevronRight size={16} className="text-indigo" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-navy">Collection Reconciliation Dashboard</p>
+            <p className="text-xs text-navy/40 mt-0.5">Daily declared-vs-actual across all branches</p>
+          </div>
+          <ChevronRight size={16} className="text-navy/30 flex-shrink-0" aria-hidden="true" />
+        </button>
+      </div>
 
       {/* Tab bar — tabs with a roles set are only shown to matching roles */}
       <div className="px-4 md:px-0 mb-6">
