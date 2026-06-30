@@ -170,14 +170,14 @@ export const SlotsService = {
 
   async refundSlot(db: Pool, slotId: string, callerBranchId: string): Promise<void> {
     await runInTransaction(db, async (client) => {
-      const res = await client.query<{ status: string; room_id: string; branch_id: string }>(
-        `SELECT status, room_id, branch_id FROM lss_slots WHERE id = $1 FOR UPDATE`,
+      const res = await client.query<{ status: string; room_id: string; branch_id: string; batch_id: string }>(
+        `SELECT status, room_id, branch_id, batch_id FROM lss_slots WHERE id = $1 FOR UPDATE`,
         [slotId]
       );
       if (res.rows.length === 0) {
         throw new NotFoundError('Slot not found', 'LSS_SLOT_NOT_FOUND');
       }
-      const { status, branch_id } = res.rows[0];
+      const { status, branch_id, batch_id } = res.rows[0];
       if (branch_id !== callerBranchId) {
         throw new ForbiddenError('Slot belongs to a different branch', 'LSS_SLOT_WRONG_BRANCH');
       }
@@ -188,10 +188,20 @@ export const SlotsService = {
         `UPDATE lss_slots SET status = 'refunded' WHERE id = $1`,
         [slotId]
       );
-      // Claw back the enrollment incentive for this batch
+      // Commission was credited on slots[0] of the batch (the anchor), not necessarily
+      // this slot. Find the anchor so the reversal locates the actual incentive row.
+      const anchorRes = await client.query<{ id: string }>(
+        `SELECT s.id FROM lss_slots s
+         JOIN lss_rooms r ON r.id = s.room_id
+         WHERE s.batch_id = $1
+         ORDER BY r.created_at ASC, s.slot_number ASC
+         LIMIT 1`,
+        [batch_id]
+      );
+      const anchorSlotId = anchorRes.rows[0]?.id ?? slotId;
       await IncentiveService.reverseIncentives(client, {
         schemeCode:   SCHEME_CODE,
-        sourceId:     slotId,
+        sourceId:     anchorSlotId,
         paymentEvent: 'enrollment',
       });
     });
@@ -213,12 +223,29 @@ export const SlotsService = {
                 s.amount_paid * (SELECT COUNT(*) FROM lss_slots WHERE batch_id = s.batch_id) AS total_amount
          FROM lss_slots s
          JOIN customers c ON c.id = s.customer_id
-         JOIN lss_plans p ON p.id = s.plan_id
+         JOIN lss_rooms lr ON lr.id = s.room_id
+         JOIN lss_plans p ON p.id = lr.plan_id
          WHERE s.id = $1 AND s.branch_id = $2`,
         [slotId, branchId]
       );
       if (beforeRes.rows.length === 0) throw new NotFoundError('LSS slot not found');
       const old = beforeRes.rows[0];
+
+      // Pre-fetch active batch slots for both incentive calc and field propagation.
+      // Status filter (Bug 5): excludes refunded/voided so batchAmount isn't inflated.
+      // Used below (Bug 6) to propagate field changes to overflow-room slots.
+      const batchSlotsRes = await client.query(
+        `SELECT s.id
+         FROM   lss_slots s
+         JOIN   lss_rooms r ON r.id = s.room_id
+         WHERE  s.batch_id = $1
+         AND    s.status NOT IN ('refunded', 'voided')
+         ORDER  BY r.created_at ASC, s.slot_number ASC`,
+        [old.batch_id]
+      );
+      const batchIds     = batchSlotsRes.rows.map((r: { id: string }) => r.id);
+      const anchorSlotId = batchSlotsRes.rows[0]?.id ?? slotId;
+      const batchAmount  = parseFloat(old.amount_paid) * batchSlotsRes.rows.length;
 
       const fields: string[] = [];
       const vals: any[] = [];
@@ -247,46 +274,47 @@ export const SlotsService = {
         vals
       );
 
+      // Bug 6: Propagate all field changes to other active slots in the same batch.
+      // Without this, overflow-room slots (in a second room) keep stale payment data.
+      const otherBatchIds = batchIds.filter((id: string) => id !== slotId);
+      if (otherBatchIds.length > 0) {
+        const batchFields: string[] = [];
+        const batchVals: any[]  = [];
+        let bidx = 1;
+        if (payload.notes      !== undefined) { batchFields.push(`notes = $${bidx++}`);        batchVals.push(payload.notes); }
+        if (payload.paymentMode != null)      { batchFields.push(`payment_mode = $${bidx++}`); batchVals.push(payload.paymentMode); }
+        if (payload.proofKey   != null)       { batchFields.push(`proof_key = $${bidx++}`);    batchVals.push(payload.proofKey); }
+        if (payload.transactionId !== undefined) { batchFields.push(`transaction_id = $${bidx++}`); batchVals.push(payload.transactionId?.length ? payload.transactionId : null); }
+        if (payload.paymentMode === 'cash_bank') {
+          if (payload.cashAmount != null) { batchFields.push(`cash_amount = $${bidx++}`); batchVals.push(payload.cashAmount); }
+          if (payload.bankAmount != null) { batchFields.push(`bank_amount = $${bidx++}`); batchVals.push(payload.bankAmount); }
+        } else if (payload.paymentMode != null) {
+          batchFields.push(`cash_amount = NULL`);
+          batchFields.push(`bank_amount = NULL`);
+        }
+        if (payload.referrerId !== undefined) { batchFields.push(`referrer_id = $${bidx++}`);  batchVals.push(payload.referrerId ?? null); }
+        if (payload.customerId !== undefined) { batchFields.push(`customer_id = $${bidx++}`);  batchVals.push(payload.customerId); }
+        if (batchFields.length > 0) {
+          batchVals.push(otherBatchIds);
+          await client.query(
+            `UPDATE lss_slots SET ${batchFields.join(', ')} WHERE id = ANY($${bidx}::uuid[])`,
+            batchVals
+          );
+        }
+      }
+
       const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
 
       if (referrerChanged) {
-        // Scope to the BATCH the corrected slot belongs to via batch_id.
-        // batch_id is set once per createSlot call and shared by every slot in that
-        // purchase, even when the purchase spans two rooms (overflow). It also
-        // survives combineRooms (which reassigns room_id/slot_number).
-        // Ordering by room created_at then slot_number reproduces the original
-        // insertion order, so rows[0] is always the incentive anchor (slots[0] at
-        // creation time).
-        const batchSlots = await client.query(
-          `SELECT s.id, s.amount_paid
-           FROM   lss_slots s
-           JOIN   lss_rooms r ON r.id = s.room_id
-           WHERE  s.batch_id = $1
-           ORDER  BY r.created_at ASC, s.slot_number ASC`,
-          [old.batch_id]
-        );
-        // TS: anchorSlotId is the first slot of this batch — the sourceId used at creation
-        const anchorSlotId = batchSlots.rows[0]?.id ?? slotId;
-        // TS: batchAmount is the total value of THIS batch (all rooms, all slots)
-        const batchAmount = parseFloat(old.amount_paid) * batchSlots.rows.length;
-
-        // Update referrer_id on this batch's slots only
-        const batchIds = batchSlots.rows.map((r: { id: string }) => r.id);
-        await client.query(
-          `UPDATE lss_slots SET referrer_id = $1 WHERE id = ANY($2::uuid[])`,
-          [payload.referrerId ?? null, batchIds]
-        );
-        // Reverse the batch-anchor's enrollment credit (keyed to anchorSlotId at creation)
+        // anchorSlotId, batchAmount pre-fetched above with status filter (Bug 5 fix).
+        // referrer_id already propagated to all batch slots by the batch update above.
         await IncentiveService.reverseIncentives(client, {
           schemeCode:   SCHEME_CODE,
           sourceId:     anchorSlotId,
           paymentEvent: 'enrollment',
         });
         if (effectiveReferrer) {
-          // Re-credit in the ORIGINAL batch's period so the commission moves between
-          // referrers within the same accounting period (mirrors gold.service.ts pattern).
-          // TS: effectiveDate pins created_at to the batch's original transaction date
           await IncentiveService.distributeIncentives(client, {
             schemeCode:        SCHEME_CODE,
             dealMakerUserId:   effectiveReferrer,
@@ -337,9 +365,18 @@ export const SlotsService = {
         [slotId]
       );
 
+      const voidAnchorRes = await client.query<{ id: string }>(
+        `SELECT s.id FROM lss_slots s
+         JOIN lss_rooms r ON r.id = s.room_id
+         WHERE s.batch_id = $1
+         ORDER BY r.created_at ASC, s.slot_number ASC
+         LIMIT 1`,
+        [old.batch_id]
+      );
+      const voidAnchorId = voidAnchorRes.rows[0]?.id ?? slotId;
       await IncentiveService.reverseIncentives(client, {
         schemeCode:   SCHEME_CODE,
-        sourceId:     slotId,
+        sourceId:     voidAnchorId,
         paymentEvent: 'enrollment',
       });
 
@@ -379,9 +416,18 @@ export const SlotsService = {
 
       await client.query(`UPDATE lss_slots SET status = 'refunded' WHERE id = $1`, [slotId]);
 
+      const removeAnchorRes = await client.query<{ id: string }>(
+        `SELECT s.id FROM lss_slots s
+         JOIN lss_rooms r ON r.id = s.room_id
+         WHERE s.batch_id = $1
+         ORDER BY r.created_at ASC, s.slot_number ASC
+         LIMIT 1`,
+        [old.batch_id]
+      );
+      const removeAnchorId = removeAnchorRes.rows[0]?.id ?? slotId;
       await IncentiveService.reverseIncentives(client, {
         schemeCode:   SCHEME_CODE,
-        sourceId:     slotId,
+        sourceId:     removeAnchorId,
         paymentEvent: 'enrollment',
       });
 

@@ -75,7 +75,7 @@ export const RoomsService = {
        WHERE r.package_id = $1
          AND r.branch_id = $2
          AND r.status = 'filling'
-         AND (SELECT COUNT(*) FROM gold_coin_slots s WHERE s.room_id = r.id) < ${SLOTS_PER_ROOM}
+         AND (SELECT COALESCE(MAX(s.slot_number), 0) FROM gold_coin_slots s WHERE s.room_id = r.id) < ${SLOTS_PER_ROOM}
        ORDER BY r.created_at ASC
        LIMIT 1
        FOR UPDATE`,
@@ -127,21 +127,23 @@ export const RoomsService = {
       return [{ room, firstSlotNumber: 1, count: SLOTS_PER_ROOM }];
     }
 
-    // Partial: lock the current filling room and count its held slots
-    const room       = await this.findOrCreateFillingRoom(client, packageId, branchId, createdBy);
-    const heldCount  = await this.countHeldSlots(client, room.id);
-    const available  = SLOTS_PER_ROOM - heldCount;
+    // Partial: lock the current filling room and find its highest-numbered slot
+    const room      = await this.findOrCreateFillingRoom(client, packageId, branchId, createdBy);
+    // TS: maxSlot uses MAX(slot_number) across ALL statuses so refunded/voided slots
+    // don't cause a UNIQUE(room_id, slot_number) violation on the next insert
+    const maxSlot   = await this.maxSlotNumber(client, room.id);
+    const available = SLOTS_PER_ROOM - maxSlot;
 
     if (quantity <= available) {
       // TS: entire purchase fits in the current room — single allocation
-      return [{ room, firstSlotNumber: heldCount + 1, count: quantity }];
+      return [{ room, firstSlotNumber: maxSlot + 1, count: quantity }];
     }
 
     // TS: purchase overflows — fill the current room, open a fresh room for the rest
     const allocations: Array<{ room: RoomRow; firstSlotNumber: number; count: number }> = [];
     if (available > 0) {
       // TS: current room still has space — fill it to capacity first
-      allocations.push({ room, firstSlotNumber: heldCount + 1, count: available });
+      allocations.push({ room, firstSlotNumber: maxSlot + 1, count: available });
     }
     const overflow   = quantity - available;
     const freshRoom  = await this.createFreshFillingRoom(client, packageId, branchId, createdBy);
@@ -158,6 +160,13 @@ export const RoomsService = {
     branchId: string,
     createdBy: string,
   ): Promise<RoomRow> {
+    // Serialize concurrent room-creation for the same (package, branch) so two
+    // simultaneous overflow purchases cannot both read the same MAX(room_number)
+    // and collide on the UNIQUE(package_id, branch_id, room_number) constraint.
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+      [packageId, branchId]
+    );
     // Determine next room_number for this (package, branch)
     const seqRes = await client.query<{ next: number }>(
       `SELECT COALESCE(MAX(room_number), 0) + 1 AS next
@@ -362,6 +371,17 @@ export const RoomsService = {
   async countHeldSlots(client: PoolClient, roomId: string): Promise<number> {
     const r = await client.query<{ n: number }>(
       `SELECT COUNT(*)::int AS n FROM gold_coin_slots WHERE room_id = $1 AND status = 'held'`,
+      [roomId]
+    );
+    return r.rows[0].n;
+  },
+
+  // Highest slot_number assigned in a room across ALL statuses.
+  // Used by allocateRoomsForPurchase for firstSlotNumber so refunded/voided
+  // gaps don't cause a UNIQUE(room_id, slot_number) violation on the next insert.
+  async maxSlotNumber(client: PoolClient, roomId: string): Promise<number> {
+    const r = await client.query<{ n: number }>(
+      `SELECT COALESCE(MAX(slot_number), 0)::int AS n FROM gold_coin_slots WHERE room_id = $1`,
       [roomId]
     );
     return r.rows[0].n;
