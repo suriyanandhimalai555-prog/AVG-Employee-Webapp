@@ -1,4 +1,5 @@
-import { Loader2, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, TrendingUp, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { useGetBranchReconciliationQuery } from '../../store/api/apiSlice';
 import { formatCurrency } from '../../lib/formatters';
 
@@ -44,29 +45,66 @@ const SchemeRow = ({ row }) => {
   );
 };
 
-// branchId and businessDate are passed from SchemesPage — no need to re-fetch settings.
-// businessDate omitted (undefined) means the server uses IST today.
+// businessDate omitted (undefined) → server defaults to IST today
 export const LiveReconciliationPanel = ({ branchId, businessDate }) => {
-  // transformResponse strips the { success, data } wrapper — data is already ReconciliationLine[]
+  const [expanded, setExpanded] = useState(false);
+  // transformResponse strips the wrapper — data is already ReconciliationLine[]
   const { data, isLoading } = useGetBranchReconciliationQuery({ branchId, businessDate });
   const lines = data ?? [];
 
+  const done     = lines.filter(l => l.status === 'completed').length;
+  const over     = lines.filter(l => l.status === 'exceeded').length;
+  const pending  = lines.filter(l => l.status === 'pending').length;
+  const allDone  = lines.length > 0 && done === lines.length;
+
   return (
-    <div className="px-6 mb-6">
-      <div className="bg-white rounded-3xl border border-navy/8 card-shadow overflow-hidden">
-        <div className="px-4 pt-4 pb-3 border-b border-navy/5 flex items-center gap-2">
-          <TrendingUp size={16} className="text-indigo" aria-hidden="true" />
-          <p className="text-sm font-bold text-navy">Today's Reconciliation</p>
-        </div>
-        {isLoading ? (
-          <div className="flex justify-center py-6">
-            <Loader2 className="animate-spin text-indigo" size={20} aria-hidden="true" />
+    <div className="px-6 mb-5">
+      <div className={`rounded-2xl border overflow-hidden transition-colors ${allDone ? 'border-emerald-200 bg-emerald-50/60' : 'border-navy/8 bg-white'} card-shadow`}>
+
+        {/* Compact header — always visible, click to toggle detail */}
+        <button
+          type="button"
+          onClick={() => setExpanded(x => !x)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+        >
+          {isLoading ? (
+            <Loader2 size={15} className="animate-spin text-indigo flex-shrink-0" aria-hidden="true" />
+          ) : allDone ? (
+            <CheckCircle2 size={15} className="text-emerald-500 flex-shrink-0" aria-hidden="true" />
+          ) : (
+            <TrendingUp size={15} className="text-indigo flex-shrink-0" aria-hidden="true" />
+          )}
+
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-navy">Today's Reconciliation</p>
+            {!isLoading && lines.length > 0 && (
+              <p className="text-[10px] font-medium text-navy/50 mt-0.5">
+                {done > 0 && <span className="text-emerald-600">{done} done</span>}
+                {done > 0 && (over > 0 || pending > 0) && <span className="text-navy/30"> · </span>}
+                {over > 0 && <span className="text-amber-600">{over} over</span>}
+                {over > 0 && pending > 0 && <span className="text-navy/30"> · </span>}
+                {pending > 0 && <span>{pending} pending</span>}
+              </p>
+            )}
           </div>
-        ) : lines.length === 0 ? (
-          <p className="px-4 py-5 text-xs text-navy/40">No scheme lines declared for today.</p>
-        ) : (
-          <div className="px-4">
-            {lines.map(row => <SchemeRow key={row.schemeCode} row={row} />)}
+
+          {expanded
+            ? <ChevronUp  size={14} className="text-navy/30 flex-shrink-0" aria-hidden="true" />
+            : <ChevronDown size={14} className="text-navy/30 flex-shrink-0" aria-hidden="true" />}
+        </button>
+
+        {/* Expanded detail */}
+        {expanded && (
+          <div className="border-t border-navy/5 px-4">
+            {isLoading ? (
+              <div className="flex justify-center py-5">
+                <Loader2 className="animate-spin text-indigo" size={18} aria-hidden="true" />
+              </div>
+            ) : lines.length === 0 ? (
+              <p className="py-4 text-xs text-navy/40">No declared scheme lines for today.</p>
+            ) : (
+              lines.map(row => <SchemeRow key={row.schemeCode} row={row} />)
+            )}
           </div>
         )}
       </div>

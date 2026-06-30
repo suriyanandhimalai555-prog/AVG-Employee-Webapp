@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Loader2, ClipboardList, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, ClipboardList, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useSubmitDailyCollectionSummaryMutation } from '../../store/api/apiSlice';
 import { SOURCE_META, NAVIGABLE_SCHEMES } from '../../lib/schemeConstants';
 
 const SCHEME_CODES = Object.keys(NAVIGABLE_SCHEMES);
 
 export const DailyCollectionSummaryForm = ({ branchId }) => {
+  const navigate = useNavigate();
   const [submitSummary, { isLoading: submitting }] = useSubmitDailyCollectionSummaryMutation();
   const [amounts, setAmounts] = useState(() =>
     Object.fromEntries(SCHEME_CODES.map(code => [code, '']))
@@ -30,12 +32,22 @@ export const DailyCollectionSummaryForm = ({ branchId }) => {
     <div className="min-h-screen bg-white pb-32 pt-4">
       <div className="px-6 mb-6">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
-            <ClipboardList size={20} className="text-indigo" aria-hidden="true" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-navy">Daily Collection Summary</h2>
-            <p className="text-xs font-medium text-navy/40">Required before adding entries today</p>
+          <button
+            type="button"
+            onClick={() => navigate('/money')}
+            className="w-10 h-10 rounded-2xl bg-navy/5 flex items-center justify-center text-navy tactile-press flex-shrink-0"
+            aria-label="Back to Money"
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
+              <ClipboardList size={20} className="text-indigo" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-navy">Daily Collection Summary</h2>
+              <p className="text-xs font-medium text-navy/40">Required before adding entries today</p>
+            </div>
           </div>
         </div>
         <div className="bg-indigo/5 rounded-2xl p-4 border border-indigo/10">

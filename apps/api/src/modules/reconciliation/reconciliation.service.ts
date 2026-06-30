@@ -34,6 +34,8 @@ export interface BranchOverview {
   branchId:          string;
   branchName:        string;
   businessDate:      string;
+  // TS: present only when summarySubmitted = true; needed by the edit form
+  summaryId?:        string;
   summarySubmitted:  boolean;
   status:            'not_submitted' | 'reconciled' | 'mismatch';
   mismatchedSchemes: number;
@@ -335,6 +337,8 @@ export const ReconciliationService = {
         branchId:          bId,
         branchName:        branch.name,
         businessDate,
+        // TS: expose summaryId so the management edit form can call PUT /summary/:id
+        summaryId:         summaryByBranch.get(bId),
         summarySubmitted:  submitted,
         status,
         mismatchedSchemes: mismatches,

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { getISTToday } from '../../lib/date';
-import { ArrowRight, AlertCircle, Building2, Users, ChevronRight } from 'lucide-react';
+import { ArrowRight, AlertCircle, Building2, Users, ChevronRight, TrendingUp, CheckCircle2, AlertTriangle, Settings2, IndianRupee } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { AlertCard } from '../../components/attendance/AlertCard';
@@ -18,6 +18,7 @@ import {
   useGetTeamHistoryQuery,
   useGetEmployeesQuery,
   useGetUsersQuery,
+  useGetReconciliationOverviewQuery,
 } from '../../store/api/apiSlice';
 
 /** Today's stats card — shared by BM / GM / Director / MD / BranchAdmin home views. */
@@ -459,6 +460,123 @@ export const HomeTab = () => {
           />
         </div>
       )}
+
+      {/* ── Management ── */}
+      {user?.role === 'management' && (
+        <ManagementHomeSection navigate={navigate} />
+      )}
     </motion.div>
+  );
+};
+
+// ─── Management Home ──────────────────────────────────────────────────────────
+
+const ManagementHomeSection = ({ navigate }) => {
+  const today = getISTToday();
+  const { data: overview, isLoading } = useGetReconciliationOverviewQuery(today);
+  const branches   = overview ?? [];
+  const filed      = branches.filter(b => b.summarySubmitted).length;
+  const reconciled = branches.filter(b => b.status === 'reconciled').length;
+  const mismatch   = branches.filter(b => b.status === 'mismatch').length;
+  const total      = branches.length;
+
+  return (
+    <div className="px-6 pb-32 space-y-4">
+
+      {/* Collection reconciliation — featured card */}
+      <button
+        type="button"
+        onClick={() => navigate('/control-center/reconciliation')}
+        className="w-full bg-gradient-to-br from-indigo to-indigo/80 rounded-3xl p-5 card-shadow tactile-press text-left overflow-hidden relative"
+      >
+        {/* Background accent */}
+        <div className="absolute right-4 top-4 opacity-10">
+          <TrendingUp size={56} className="text-white" aria-hidden="true" />
+        </div>
+
+        <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest mb-2">Today</p>
+        <p className="text-lg font-bold text-white mb-4">Collection Reconciliation</p>
+
+        {isLoading ? (
+          <div className="flex gap-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex-1 bg-white/10 rounded-xl h-12 animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white/10 rounded-xl px-3 py-2.5">
+              <p className="text-xl font-bold text-white">{filed}</p>
+              <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">Filed</p>
+            </div>
+            <div className="bg-white/10 rounded-xl px-3 py-2.5">
+              <p className="text-xl font-bold text-emerald-300">{reconciled}</p>
+              <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">OK</p>
+            </div>
+            <div className="bg-white/10 rounded-xl px-3 py-2.5">
+              <p className="text-xl font-bold text-amber-300">{mismatch}</p>
+              <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest">Off</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-1.5 mt-4">
+          <p className="text-[11px] font-bold text-white/60">{total} branches · tap to drill in</p>
+          <ChevronRight size={12} className="text-white/40" aria-hidden="true" />
+        </div>
+      </button>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/money')}
+          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center mb-3">
+            <IndianRupee size={18} className="text-amber-600" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-bold text-navy">Money</p>
+          <p className="text-[10px] text-navy/40 mt-0.5">Collections &amp; schemes</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/user-management')}
+          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center mb-3">
+            <Users size={18} className="text-indigo" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-bold text-navy">Staff</p>
+          <p className="text-[10px] text-navy/40 mt-0.5">Manage employees</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/branches')}
+          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center mb-3">
+            <Building2 size={18} className="text-stone-600" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-bold text-navy">Branches</p>
+          <p className="text-[10px] text-navy/40 mt-0.5">View &amp; manage</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/control-center')}
+          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-stone-800/10 flex items-center justify-center mb-3">
+            <Settings2 size={18} className="text-stone-700" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-bold text-navy">Control Center</p>
+          <p className="text-[10px] text-navy/40 mt-0.5">Config &amp; settings</p>
+        </button>
+      </div>
+
+    </div>
   );
 };
