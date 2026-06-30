@@ -55,6 +55,11 @@ export const RoomsService = {
     return room;
   },
 
+  // Find the current filling room for (plan, branch) with room for at least
+  // one more slot, or create a new one. Returns the room locked with FOR UPDATE
+  // so the caller can safely append a slot inside the same transaction.
+  // Used for partial (single-slot) purchases. Full-room purchases call
+  // createFreshFillingRoom directly so they never land on a partially-filled room.
   async findOrCreateFillingRoom(
     client: PoolClient,
     planId: string,
@@ -81,11 +86,75 @@ export const RoomsService = {
           `UPDATE lss_rooms SET status='pending_combine' WHERE id=$1`,
           [room.id]
         );
+        // Fall through to create a NEW filling room — the old one is now
+        // awaiting head-branch action.
       } else {
         return room;
       }
     }
 
+    return this.createFreshFillingRoom(client, planId, branchId, createdBy);
+  },
+
+  // Returns an allocation plan for `quantity` slots across one or more rooms.
+  // Each entry describes: which room, the first slot_number to write, and how many.
+  //
+  // Full room (quantity === SLOTS_PER_ROOM):
+  //   Always gets a brand-new empty dedicated room; slots 1..20.
+  //   Never mixed with existing single-slot buyers.
+  //
+  // Partial (quantity < SLOTS_PER_ROOM):
+  //   Greedy: fill the current filling room to capacity first, then open a fresh
+  //   room for any overflow.  Since quantity ≤ SLOTS_PER_ROOM-1 and a room holds
+  //   SLOTS_PER_ROOM, at most 2 rooms are ever returned.
+  //
+  // The FOR UPDATE lock in findOrCreateFillingRoom serialises concurrent purchases
+  // so the held-count check inside is safe within the caller's transaction.
+  async allocateRoomsForPurchase(
+    client: PoolClient,
+    planId: string,
+    branchId: string,
+    createdBy: string,
+    quantity: number,
+  ): Promise<Array<{ room: RoomRow; firstSlotNumber: number; count: number }>> {
+    // TS: full-room purchase always gets its own fresh empty room
+    if (quantity === SLOTS_PER_ROOM) {
+      const room = await this.createFreshFillingRoom(client, planId, branchId, createdBy);
+      return [{ room, firstSlotNumber: 1, count: SLOTS_PER_ROOM }];
+    }
+
+    // Partial: lock the current filling room and count its held slots
+    const room       = await this.findOrCreateFillingRoom(client, planId, branchId, createdBy);
+    const heldCount  = await this.countHeldSlots(client, room.id);
+    const available  = SLOTS_PER_ROOM - heldCount;
+
+    if (quantity <= available) {
+      // TS: entire purchase fits in the current room — single allocation
+      return [{ room, firstSlotNumber: heldCount + 1, count: quantity }];
+    }
+
+    // TS: purchase overflows — fill the current room, open a fresh room for the rest
+    const allocations: Array<{ room: RoomRow; firstSlotNumber: number; count: number }> = [];
+    if (available > 0) {
+      // TS: current room still has space — fill it to capacity first
+      allocations.push({ room, firstSlotNumber: heldCount + 1, count: available });
+    }
+    const overflow   = quantity - available;
+    const freshRoom  = await this.createFreshFillingRoom(client, planId, branchId, createdBy);
+    // TS: remaining slots go into slot positions 1..overflow of the new room
+    allocations.push({ room: freshRoom, firstSlotNumber: 1, count: overflow });
+    return allocations;
+  },
+
+  // Always insert a brand-new empty filling room for (plan, branch).
+  // Used by Full-room purchases, which must not land on a partially-filled room.
+  async createFreshFillingRoom(
+    client: PoolClient,
+    planId: string,
+    branchId: string,
+    createdBy: string,
+  ): Promise<RoomRow> {
+    // Determine next room_number for this (plan, branch)
     const seqRes = await client.query<{ next: number }>(
       `SELECT COALESCE(MAX(room_number), 0) + 1 AS next
        FROM lss_rooms WHERE plan_id = $1 AND branch_id = $2`,
@@ -93,6 +162,7 @@ export const RoomsService = {
     );
     const roomNumber = seqRes.rows[0].next;
 
+    // Insert the new filling room. deadline = now + 30d
     const ins = await client.query<RoomRow>(
       `INSERT INTO lss_rooms
          (plan_id, branch_id, room_number, status, fill_deadline, created_by)

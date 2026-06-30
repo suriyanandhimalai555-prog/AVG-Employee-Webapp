@@ -1,8 +1,19 @@
 // Slots — customer purchases. One entry point: createSlot.
 //
-// quantity=20 with an empty room == FULL room (one owner).
-// Referral commission is ONE row, 20% of quantity × plan.price.
+// quantity=20 → FULL room (one owner): always opens a fresh dedicated room.
+// quantity<20 → partial: fill the current filling room first; if the purchase
+//               exceeds its remaining capacity, the overflow goes into a new room.
+//
+// All slots in one createSlot call share a single batch_id UUID — the stable
+// cross-room purchase identity used by correctSlot to reverse and re-credit
+// incentives. batch_id replaces the old (room_id, customer_id, created_at)
+// heuristic, which collapsed when two backdated purchases by the same customer
+// shared a sale date.
+//
+// Referral commission is ONE row on the TOTAL paid, anchored on slots[0].id,
+// credited after all inserts complete.
 
+import { randomUUID } from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
@@ -62,74 +73,76 @@ export const SlotsService = {
         }
       }
 
-      // 4. Find or open a filling room (FOR UPDATE — serialised on the room row)
-      const room = await RoomsService.findOrCreateFillingRoom(
-        client, payload.planId, branchId, enteredBy
+      // 4. Compute the allocation plan across rooms.
+      //    Full-room → fresh dedicated room (no mixing with existing buyers).
+      //    Partial → fill current filling room first; overflow remainder into a
+      //    new room. allocateRoomsForPurchase holds FOR UPDATE internally so
+      //    concurrent purchases cannot overshoot the 20-slot cap.
+      const allocations = await RoomsService.allocateRoomsForPurchase(
+        client, payload.planId, branchId, enteredBy, quantity
       );
 
-      // 5. Recount under the lock and validate capacity
-      const heldCount = await RoomsService.countHeldSlots(client, room.id);
-      const available = LSS_SLOTS_PER_ROOM - heldCount;
+      // 5. Generate ONE batch_id shared by every slot in this purchase.
+      //    This is the durable cross-room purchase identity. batch_id is stable
+      //    across combineRooms (which reassigns room_id/slot_number) and avoids
+      //    the backdating collision of the old (room_id, customer_id, created_at)
+      //    heuristic.
+      const batchId = randomUUID();
 
-      if (quantity === LSS_SLOTS_PER_ROOM && heldCount > 0) {
-        throw new ConflictError(
-          `A Full room (20 slots) needs a fresh room — the current room already has ${heldCount} slot(s). ` +
-          `Sell those out first, or buy ≤ ${available} slot(s) here.`,
-          'LSS_FULL_ROOM_NOT_EMPTY'
-        );
-      }
-      if (quantity > available) {
-        throw new ConflictError(
-          `Only ${available} slot(s) available in the current room — cannot sell ${quantity}.`,
-          'LSS_ROOM_INSUFFICIENT_SLOTS'
-        );
-      }
-
-      // 6. Insert N slots, numbered (heldCount + 1) .. (heldCount + quantity)
+      // 6. Insert slots across all allocated rooms.
+      //    Allocations are ordered: current room first, overflow room second.
+      //    slots[0] is therefore the creation-order anchor used by incentive logic.
       const slots: any[] = [];
-      for (let i = 0; i < quantity; i++) {
-        const slotNumber = heldCount + 1 + i;
-        // Backdated entry: saleDate overrides created_at so branch summaries
-        // (which filter slots by created_at) count the sale in its real period.
-        const slotRes = await client.query(
-          `INSERT INTO lss_slots
-             (room_id, slot_number, customer_id, branch_id, amount_paid,
-              payment_mode, proof_key, transaction_id, cash_amount, bank_amount, referrer_id, notes, entered_by, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                   COALESCE($14::timestamptz, now()))
-           RETURNING *`,
-          [
-            room.id,
-            slotNumber,
-            payload.customerId,
-            branchId,
-            payload.amountPaid,
-            payload.paymentMode,
-            payload.proofKey?.length ? payload.proofKey : null,
-            // transactionId is TEXT[] — bind array directly; empty array → NULL
-            payload.transactionId?.length ? payload.transactionId : null,
-            // cash_bank split is per-slot — null unless mode is cash_bank
-            payload.paymentMode === 'cash_bank' ? payload.cashAmount : null,
-            payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
-            payload.referrerId ?? null,
-            payload.notes ?? null,
-            enteredBy,
-            payload.saleDate ?? null,
-          ]
-        );
-        slots.push(slotRes.rows[0]);
+      for (const alloc of allocations) {
+        for (let i = 0; i < alloc.count; i++) {
+          const slotNumber = alloc.firstSlotNumber + i;
+          // Backdated entry: saleDate overrides created_at so branch summaries
+          // (which filter slots by created_at) count the sale in its real period.
+          const slotRes = await client.query(
+            `INSERT INTO lss_slots
+               (room_id, slot_number, customer_id, branch_id, amount_paid,
+                payment_mode, proof_key, transaction_id, cash_amount, bank_amount,
+                referrer_id, notes, entered_by, created_at, batch_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                     COALESCE($14::timestamptz, now()), $15)
+             RETURNING *`,
+            [
+              alloc.room.id,
+              slotNumber,
+              payload.customerId,
+              branchId,
+              payload.amountPaid,
+              payload.paymentMode,
+              payload.proofKey?.length ? payload.proofKey : null,
+              // transactionId is TEXT[] — bind array directly; empty array → NULL
+              payload.transactionId?.length ? payload.transactionId : null,
+              // cash_bank split is per-slot — null unless mode is cash_bank
+              payload.paymentMode === 'cash_bank' ? payload.cashAmount : null,
+              payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
+              payload.referrerId ?? null,
+              payload.notes ?? null,
+              enteredBy,
+              payload.saleDate ?? null,
+              batchId,
+            ]
+          );
+          slots.push(slotRes.rows[0]);
+        }
       }
 
       const totalAmountPaid = quantity * payload.amountPaid;
 
-      // 7. Referral payout — ONE row, 20% of the TOTAL paid
+      // 7. Referral payout — ONE row on the TOTAL paid, anchored on slots[0].id.
+      //    Called once after ALL inserts so the commission covers the full batch
+      //    even when the purchase spans two rooms.
       let commissionAmount = 0;
       if (payload.referrerId) {
+        // TS: slotRangeLabel describes the purchase for the incentive description
         const slotRangeLabel = quantity === 1
           ? `slot ${slots[0].slot_number}/${LSS_SLOTS_PER_ROOM}`
           : quantity === LSS_SLOTS_PER_ROOM
             ? `FULL room`
-            : `slots ${slots[0].slot_number}-${slots[slots.length - 1].slot_number}/${LSS_SLOTS_PER_ROOM} (×${quantity})`;
+            : `${quantity} slots (${allocations.length} room${allocations.length > 1 ? 's' : ''})`;
         const sourceDescription =
           `LSS ${slotRangeLabel} — ${customer.name} (${customer.customer_code}) — ${plan.name}`;
         const credited = await IncentiveService.distributeIncentives(client, {
@@ -139,7 +152,7 @@ export const SlotsService = {
           percentRole:       'referrer_direct',
           baseAmount:        totalAmountPaid,
           paymentEvent:      'enrollment',
-          sourceId:          slots[0].id,
+          sourceId:          slots[0].id,  // TS: anchor = first slot of this batch
           sourceDescription,
           creditedBy:        enteredBy,
           // Backdated entry: the incentive sits in the sale date's wallet period
@@ -148,11 +161,11 @@ export const SlotsService = {
         commissionAmount = credited.reduce((sum, row) => sum + parseFloat(row.amount), 0);
       }
 
-      return { slots, room, commissionAmount, totalAmountPaid };
+      // TS: room is the primary room (first allocation) for back-compat; consumers
+      // that need the true room for each slot should read slot.room_id instead.
+      return { slots, room: allocations[0].room, commissionAmount, totalAmountPaid };
     };
-    const result = existingClient ? await run(existingClient) : await runInTransaction(db, run);
-
-    return result;
+    return existingClient ? await run(existingClient) : await runInTransaction(db, run);
   },
 
   async refundSlot(db: Pool, slotId: string, callerBranchId: string): Promise<void> {
@@ -195,7 +208,9 @@ export const SlotsService = {
     return runInTransaction(db, async (client: PoolClient) => {
       const beforeRes = await client.query(
         `SELECT s.*, c.name AS customer_name, c.customer_code, p.name AS plan_name,
-                s.amount_paid * (SELECT COUNT(*) FROM lss_slots WHERE room_id = s.room_id AND customer_id = s.customer_id) AS total_amount
+                -- TS: total_amount counts by batch_id so overflow slots in a second room
+                -- are included; the old (room_id, customer_id) count was room-scoped
+                s.amount_paid * (SELECT COUNT(*) FROM lss_slots WHERE batch_id = s.batch_id) AS total_amount
          FROM lss_slots s
          JOIN customers c ON c.id = s.customer_id
          JOIN lss_plans p ON p.id = s.plan_id
@@ -236,20 +251,24 @@ export const SlotsService = {
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
 
       if (referrerChanged) {
-        // Scope to the BATCH the corrected slot belongs to: slots sharing the same
-        // (room_id, customer_id, created_at). This prevents a multi-batch customer
-        // from having a different batch's referrer reversed or its amount combined.
-        // Batches are isolated by created_at because Postgres now() is transaction-
-        // stable, so all slots in one purchase share an identical created_at.
+        // Scope to the BATCH the corrected slot belongs to via batch_id.
+        // batch_id is set once per createSlot call and shared by every slot in that
+        // purchase, even when the purchase spans two rooms (overflow). It also
+        // survives combineRooms (which reassigns room_id/slot_number).
+        // Ordering by room created_at then slot_number reproduces the original
+        // insertion order, so rows[0] is always the incentive anchor (slots[0] at
+        // creation time).
         const batchSlots = await client.query(
-          `SELECT id, amount_paid FROM lss_slots
-           WHERE room_id = $1 AND customer_id = $2 AND created_at = $3
-           ORDER BY slot_number ASC`,
-          [old.room_id, old.customer_id, old.created_at]
+          `SELECT s.id, s.amount_paid
+           FROM   lss_slots s
+           JOIN   lss_rooms r ON r.id = s.room_id
+           WHERE  s.batch_id = $1
+           ORDER  BY r.created_at ASC, s.slot_number ASC`,
+          [old.batch_id]
         );
         // TS: anchorSlotId is the first slot of this batch — the sourceId used at creation
         const anchorSlotId = batchSlots.rows[0]?.id ?? slotId;
-        // TS: batchAmount is the total value of THIS batch only (not all batches in the room)
+        // TS: batchAmount is the total value of THIS batch (all rooms, all slots)
         const batchAmount = parseFloat(old.amount_paid) * batchSlots.rows.length;
 
         // Update referrer_id on this batch's slots only

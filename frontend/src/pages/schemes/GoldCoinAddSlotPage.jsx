@@ -170,11 +170,17 @@ export const GoldCoinAddSlotPage = () => {
     const slotsCount    = result.slots?.length || 0;
     const isFullRoom    = slotsCount === 16;
     const refName       = employees.find(e => e.id === form.referrerId)?.name;
+    // When a purchase spans more than one room (overflow), slot numbers restart at 1
+    // in the new room so a contiguous range label is misleading. Show a count instead.
+    const roomIds       = [...new Set((result.slots || []).map(s => s.room_id))];
+    const spansRooms    = roomIds.length > 1;
     const slotRangeLabel = slotsCount === 1
       ? `Slot ${result.slots[0].slot_number}`
       : isFullRoom
         ? `Full room (all 16 slots)`
-        : `Slots ${result.slots[0].slot_number}-${result.slots[slotsCount - 1].slot_number}`;
+        : spansRooms
+          ? `${slotsCount} slots across ${roomIds.length} rooms`
+          : `Slots ${result.slots[0].slot_number}–${result.slots[slotsCount - 1].slot_number}`;
     return (
       <SchemePageWrapper>
         <SuccessConfirmation
