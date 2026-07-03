@@ -998,6 +998,12 @@ export const apiSlice = createApi({
       invalidatesTags: ['Salaries'],
     }),
 
+    setSalaryByRole: builder.mutation({
+      query: (data) => ({ url: '/salaries/by-role', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['Salaries'],
+    }),
+
     // ─── User Management (Staff & Admins) ───
     getUserSuperiors: builder.query({
       query: () => '/users/superiors',
@@ -2106,6 +2112,7 @@ export const {
   useGetCurrentSalaryQuery,
   useGetSalaryHistoryQuery,
   useSetSalaryMutation,
+  useSetSalaryByRoleMutation,
   useSearchCustomersQuery,
   useLazySearchCustomersQuery,
   useCreateCustomerMutation,

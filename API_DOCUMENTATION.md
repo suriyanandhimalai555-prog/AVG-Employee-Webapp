@@ -2781,22 +2781,24 @@ The server generates the key automatically. Understanding the naming pattern hel
 
 # Quick Role Permission Reference
 
+> This table covers only the original modules (1–11). See **Updated Role Permission Reference** near the end of the document for the full matrix including all roles and new modules.
+
 | Action | md | director | gm | branch_manager | abm | sales_officer | branch_admin | oa | client |
 |--------|----|---------|----|----------------|-----|---------------|--------------|----|--------|
-| Create user | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Create user | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Create branch | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Self check-in | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Admin mark attendance | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Submit collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Verify collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Add gold member | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| View gold members | ✅ | ✅ | ✅ | ✅* | ✅* | ✅* | ✅ | ❌ | ❌ |
+| View scheme members | ✅ | ✅* | ✅* | ✅* | ✅* | ✅* | ✅ | ❌ | ❌ |
 | Set salary | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Set commission rules | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Gold Coin write | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Schemes overview | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-\* Own referrals only
+\* Own referrals only (director/gm/branch_manager/abm/sales_officer see only entries they referred)
 
 ---
 
@@ -2818,4 +2820,1588 @@ Default page = `1`, default limit = `20`–`50` (varies per endpoint). Always in
 
 ---
 
-*Document generated from source code — Employee Management System API v1.0*
+*Document updated 2026-07-01 — includes all modules through migration 079.*
+
+---
+
+# Module 15 — Agila Chit Fund Scheme (`/api/chit`)
+
+**Overview:** 20-member, 20-month chit fund. Month 1 payment goes to the company; months 2-19 one winner per month selected by admin; month 20 final member auto-wins. 5 package tiers. Groups can be combined from multiple branches at the head branch.
+
+### `GET /api/chit/packages`
+**Auth:** Yes — Reader roles  
+**Description:** Lists all active Chit packages (price tiers).
+
+**Response 200:**
+```json
+{ "success": true, "data": [{ "id": 1, "name": "Package 1", "fullAmount": 5000, "halfAmount": 2500 }] }
+```
+
+---
+
+### `PATCH /api/chit/packages/:number`
+**Auth:** Yes — `md`, `director`, `management`  
+**Description:** Updates a package's amounts.
+
+**Request Body:** `{ "fullAmount": 5000, "halfAmount": 2500 }`
+
+**Response 200:** Returns updated package.
+
+---
+
+### `GET /api/chit/summary`
+**Auth:** Yes — Reader roles  
+**Description:** Returns chit fund summary stats. Referrer-only roles see own cards only.
+
+**Query Params:** `startDate`, `endDate`, `branchId` (optional)
+
+**Response 200:** `{ "success": true, "data": { "totalGroups": 5, "activeGroups": 4, "totalMembers": 80 } }`
+
+---
+
+### `GET /api/chit/groups`
+**Auth:** Yes — Reader roles  
+**Description:** Lists chit groups scoped by role/branch.
+
+**Query Params:**
+| Param | Type | Notes |
+|-------|------|-------|
+| `status` | string | `active`, `completed` |
+| `branchId` | UUID | Override branch (oversight roles) |
+| `search` | string | Group name search |
+| `page` | number | Default 1 |
+| `limit` | number | Default 50, max 200 |
+
+**Response 200:** Returns array of group objects with member count.
+
+---
+
+### `POST /api/chit/groups`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Creates a new chit group.
+
+**Request Body:**
+```json
+{
+  "groupName": "Group A",
+  "packageNumber": 1,
+  "startDate": "2026-06-01",
+  "branchId": "uuid",
+  "notes": "First group"
+}
+```
+
+**Response 201:** Returns created group.
+
+---
+
+### `GET /api/chit/groups/:id`
+**Auth:** Yes — Reader roles  
+**Description:** Returns full group detail including members, payments and winner history.
+
+**Response 200:** Full group object with nested members, payments, winners.
+
+---
+
+### `POST /api/chit/groups/:id/members`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Adds a member to a chit group. Max 20 members per group.
+
+**Request Body:**
+```json
+{
+  "customerId": "uuid",
+  "referrerId": "uuid",
+  "firstPaymentMode": "cash",
+  "firstPaymentDate": "2026-06-01",
+  "notes": null
+}
+```
+
+**Response 201:** Returns created member record.
+
+---
+
+### `POST /api/chit/groups/:id/payments`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Records a monthly payment for a group (bulk — one row per paying member).
+
+**Request Body:**
+```json
+{
+  "monthNumber": 2,
+  "payments": [
+    { "memberId": "uuid", "amount": 5000, "paymentMode": "cash", "paymentDate": "2026-07-01" }
+  ]
+}
+```
+
+**Response 201:** Returns array of created payment records.
+
+---
+
+### `POST /api/chit/groups/:id/winners`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Selects the winner for a specific month (months 2-19). Month 20 winner is auto-selected.
+
+**Request Body:**
+```json
+{
+  "memberId": "uuid",
+  "monthNumber": 3,
+  "notes": "Winner selected at branch meeting"
+}
+```
+
+**Response 201:** Returns winner record.
+
+---
+
+### `POST /api/chit/groups/:id/cancel-member`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Cancels a member's participation. Money is held until group completion.
+
+**Request Body:** `{ "memberId": "uuid", "reason": "Member requested exit" }`
+
+**Response 200:** Returns updated member.
+
+---
+
+### `POST /api/chit/groups/:groupId/members/:memberId/correct`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Corrects a member's enrollment details (referrer, notes, etc.).
+
+**Response 200:** Returns updated member.
+
+---
+
+### `POST /api/chit/groups/:groupId/payments/:paymentId/correct`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Corrects a payment record (amount, mode, date).
+
+**Response 200:** Returns corrected payment.
+
+---
+
+### `GET /api/chit/groups/awaiting-combine`
+**Auth:** Yes — Head-branch admin, `md`, `director`  
+**Description:** Lists groups ready to be combined at head branch.
+
+**Response 200:** Array of pending-combine groups.
+
+---
+
+### `POST /api/chit/groups/combine`
+**Auth:** Yes — Head-branch admin  
+**Description:** Combines multiple single-branch groups into one head-branch group.
+
+**Request Body:** `{ "sourceGroupIds": ["uuid1", "uuid2"], "notes": "Combined" }`
+
+**Response 201:** Returns new combined group.
+
+---
+
+# Module 16 — Builders Scheme (`/api/builders`)
+
+**Overview:** 6-package, 60-month individual investment scheme. Customer pays a lump sum, receives fixed monthly payouts for 50 months, then chooses House or Cash path for months 51-60.
+
+### `GET /api/builders/packages`
+**Auth:** Yes — Reader roles  
+**Description:** Lists all Builders packages with investment amounts and payout rates.
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "packageNumber": 1,
+      "name": "₹5L Package",
+      "investmentAmount": 500000,
+      "monthlyPayout": 9000,
+      "cashFinalMonthly": 12000,
+      "houseWorth": 700000
+    }
+  ]
+}
+```
+
+---
+
+### `PATCH /api/builders/packages/:number`
+**Auth:** Yes — `md`, `director`, `management`  
+**Description:** Updates package amounts (investment, payout rates).
+
+**Request Body:** `{ "monthlyPayout": 9500, "cashFinalMonthly": 12500 }`
+
+**Response 200:** Returns updated package config.
+
+---
+
+### `GET /api/builders/summary`
+**Auth:** Yes — Reader roles  
+**Description:** Returns builders scheme stats. Referrer-only roles see own referrals only.
+
+**Query Params:** `startDate`, `endDate`, `branchId` (optional)
+
+**Response 200:** `{ "success": true, "data": { "totalPlans": 10, "totalInvestment": 5000000, "activePlans": 8 } }`
+
+---
+
+### `GET /api/builders/plans`
+**Auth:** Yes — Reader roles  
+**Description:** Lists builders plans scoped by role/branch.
+
+**Query Params:**
+| Param | Type | Notes |
+|-------|------|-------|
+| `status` | string | `cooling`, `active`, `decision_pending`, `house`, `cash`, `completed`, `cancelled` |
+| `branchId` | UUID | Override branch |
+| `search` | string | Customer name search |
+| `referrerId` | UUID | Filter by referrer |
+| `startDate` | string | YYYY-MM-DD |
+| `endDate` | string | YYYY-MM-DD |
+| `page` | number | Default 1 |
+| `limit` | number | Default 50, max 200 |
+
+**Response 200:** Returns paginated array of plan objects.
+
+---
+
+### `POST /api/builders/plans`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Enrolls a customer in a builders plan.
+
+**Request Body:**
+```json
+{
+  "customerId": "uuid",
+  "packageNumber": 1,
+  "referrerId": "uuid",
+  "lumpSumDate": "2026-06-01",
+  "lumpSumMode": "bank_receipt",
+  "branchId": "uuid",
+  "notes": null
+}
+```
+
+**Response 201:** Returns created plan + incentive distribution result.
+
+---
+
+### `GET /api/builders/plans/:id`
+**Auth:** Yes — Reader roles  
+**Description:** Returns full plan detail including all payout records.
+
+**Response 200:** Full plan object with nested `payouts` array.
+
+---
+
+### `POST /api/builders/plans/:id/payouts`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Records a monthly payout disbursement to the customer.
+
+**Request Body:**
+```json
+{
+  "monthNumber": 1,
+  "amount": 9000,
+  "paymentDate": "2026-08-01",
+  "paymentMode": "cash",
+  "notes": null
+}
+```
+
+**Response 201:** Returns created payout record.
+
+---
+
+### `POST /api/builders/plans/:id/choose-reward`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Sets the customer's reward choice at month 50 (`house` or `cash`).
+
+**Request Body:** `{ "rewardChoice": "cash", "landProvided": false }`
+
+**Response 200:** Returns updated plan with new status.
+
+---
+
+### `POST /api/builders/plans/:id/change-reward`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Corrects a previously submitted reward choice (before month 51 payout).
+
+**Request Body:** `{ "rewardChoice": "house", "landProvided": true }`
+
+**Response 200:** Returns updated plan.
+
+---
+
+### `POST /api/builders/plans/:planId/correct`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Corrects enrollment-level details (referrer, dates, notes).
+
+**Response 200:** Returns corrected plan.
+
+---
+
+### `POST /api/builders/plans/:planId/payouts/:payoutId/correct`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Corrects a payout record (amount, mode, date).
+
+**Response 200:** Returns corrected payout.
+
+---
+
+### `GET /api/builders/incentive-rules`
+**Auth:** Yes — `md`, `director`  
+**Description:** Lists commission rules specific to the builders scheme.
+
+**Response 200:** Array of rule objects `{ role, rateType, amount }`.
+
+---
+
+### `PUT /api/builders/incentive-rules`
+**Auth:** Yes — `md`, `director`  
+**Description:** Sets a commission rule for a role.
+
+**Request Body:** `{ "role": "sales_officer", "rateType": "fixed", "amount": 5000 }`
+
+**Response 200:** Returns updated rule.
+
+---
+
+# Module 17 — Land Scheme (`/api/land`)
+
+**Overview:** Land plot sales management. MD manages sites and plots; branch admins handle customer bookings. Lifecycle: `booked → advance_paid → full_paid → completed`. Full payment triggers a 60-month buyback bonus schedule.
+
+### `GET /api/land/sites`
+**Auth:** Yes — Reader roles  
+**Description:** Lists land sites.
+
+**Query Params:** `status` (`active`, `inactive`), `page`, `limit`
+
+**Response 200:** Returns array of site objects.
+
+---
+
+### `POST /api/land/sites`
+**Auth:** Yes — `md`, `management`  
+**Description:** Creates a new land site.
+
+**Request Body:**
+```json
+{
+  "name": "Green Valley",
+  "layoutName": "Phase 1",
+  "location": "Tiruvannamalai",
+  "address": "NH-66, Km 23",
+  "state": "Tamil Nadu",
+  "loanEnabled": false
+}
+```
+
+**Response 201:** Returns created site.
+
+---
+
+### `PATCH /api/land/sites/:id`
+**Auth:** Yes — `md`, `management`  
+**Description:** Updates a site's details or status.
+
+**Response 200:** Returns updated site.
+
+---
+
+### `GET /api/land/sites/:siteId/plots`
+**Auth:** Yes — Reader roles  
+**Description:** Lists plots in a site.
+
+**Query Params:** `status` (`available`, `booked`, `cancelled`, `completed`), `page`, `limit`
+
+**Response 200:** Returns array of plot objects.
+
+---
+
+### `POST /api/land/sites/:siteId/plots`
+**Auth:** Yes — `md`, `management`  
+**Description:** Adds a plot to a site.
+
+**Request Body:**
+```json
+{
+  "siteNumber": "81A",
+  "areaSqft": 1200,
+  "landCost": 600000,
+  "buybackBonusMonthly": 5000
+}
+```
+
+**Response 201:** Returns created plot.
+
+---
+
+### `PATCH /api/land/sites/:siteId/plots/:plotId`
+**Auth:** Yes — `md`, `management`  
+**Description:** Updates a plot's details or pricing.
+
+**Response 200:** Returns updated plot.
+
+---
+
+### `GET /api/land/customers`
+**Auth:** Yes — Reader roles  
+**Description:** Lists land customers for the caller's branch.
+
+**Query Params:** `search`, `branchId`, `page`, `limit`
+
+**Response 200:** Returns array of land customer objects.
+
+---
+
+### `POST /api/land/customers`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Creates a land customer record.
+
+**Request Body:**
+```json
+{
+  "customerRef": "TVM-L-001",
+  "name": "Ravi Kumar",
+  "phone": "9876543210",
+  "address": "123 Street",
+  "email": "ravi@example.com",
+  "idProof": "AADHAR-XXXX",
+  "branchId": "uuid"
+}
+```
+
+**Response 201:** Returns created land customer.
+
+---
+
+### `GET /api/land/bookings`
+**Auth:** Yes — Reader roles  
+**Description:** Lists land bookings scoped by role/branch.
+
+**Query Params:** `status`, `siteId`, `branchId`, `referrerId`, `search`, `page`, `limit`
+
+**Response 200:** Returns paginated array of booking objects.
+
+---
+
+### `POST /api/land/bookings`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Creates a new plot booking.
+
+**Request Body:**
+```json
+{
+  "plotId": "uuid",
+  "landCustomerId": "uuid",
+  "referrerId": "uuid",
+  "bookingDate": "2026-06-01",
+  "bookingAmount": 10000,
+  "paymentMode": "cash",
+  "branchId": "uuid",
+  "notes": null
+}
+```
+
+**Response 201:** Returns created booking + incentives if applicable.
+
+---
+
+### `GET /api/land/bookings/:id`
+**Auth:** Yes — Reader roles  
+**Description:** Returns full booking detail including advance payments, buyback schedule, and audit log.
+
+**Response 200:** Full booking object with nested records.
+
+---
+
+### `POST /api/land/bookings/:id/advance`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Records an advance payment toward a booking.
+
+**Request Body:**
+```json
+{
+  "amount": 50000,
+  "paymentDate": "2026-06-15",
+  "paymentMode": "bank_receipt",
+  "notes": null
+}
+```
+
+**Response 201:** Returns updated booking + payment record.
+
+---
+
+### `POST /api/land/bookings/:id/full-payment`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Records the final full payment. Triggers creation of the 60-month buyback bonus schedule and incentive distribution.
+
+**Request Body:**
+```json
+{
+  "amount": 540000,
+  "paymentDate": "2026-07-01",
+  "paymentMode": "bank_receipt",
+  "notes": null
+}
+```
+
+**Response 201:** Returns booking, buyback schedule, and incentive results.
+
+---
+
+### `POST /api/land/bookings/:id/buyback/:payoutId/pay`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Marks a buyback bonus month as paid.
+
+**Request Body:** `{ "paymentDate": "2026-08-01", "paymentMode": "cash" }`
+
+**Response 200:** Returns updated payout row.
+
+---
+
+### `POST /api/land/bookings/:id/cancel`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Cancels a booking and records the refund.
+
+**Request Body:** `{ "reason": "Customer changed mind" }`
+
+**Response 200:** Returns cancelled booking.
+
+---
+
+---
+
+# Module 18 — Pending Enrollments (`/api/pending-enrollments`)
+
+**Overview:** Staging layer for partial / installment enrollments. A customer pays a deposit; subsequent part-payments accumulate until the full required amount is reached, at which point the scheme entity is auto-created. Applies to: `gold_scheme`, `trading_academy`, `builders_scheme`, `agila_chit_scheme`, `gold_coin_scheme`, `lss_scheme`.
+
+### `POST /api/pending-enrollments`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Opens a pending enrollment with an initial deposit.
+
+**Request Body:**
+```json
+{
+  "schemeCode": "gold_scheme",
+  "customerId": "uuid",
+  "referrerId": "uuid",
+  "requiredAmount": 5000,
+  "branchId": "uuid",
+  "payload": { ... },
+  "firstPayment": {
+    "amount": 1000,
+    "paymentMode": "cash",
+    "paidDate": "2026-06-01"
+  }
+}
+```
+| Field | Type | Notes |
+|-------|------|-------|
+| `schemeCode` | string | One of the 6 supported schemes |
+| `requiredAmount` | number | Full scheme enrollment cost |
+| `payload` | object | Scheme-specific enrollment data (replayed at completion) |
+| `firstPayment` | object | Initial deposit |
+
+**Response 201:** Returns created pending enrollment.
+
+---
+
+### `POST /api/pending-enrollments/:id/payments`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Records a subsequent part-payment. If `amount_paid` reaches `required_amount`, the scheme entity is auto-created.
+
+**Request Body:**
+```json
+{
+  "amount": 2000,
+  "paymentMode": "gpay",
+  "paidDate": "2026-06-15",
+  "branchId": "uuid"
+}
+```
+
+**Response 201:** Returns updated pending enrollment (status may flip to `completed`).
+
+---
+
+### `POST /api/pending-enrollments/:id/cancel`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Abandons a pending enrollment (status → `cancelled`).
+
+**Response 200:** Returns cancelled enrollment.
+
+---
+
+### `POST /api/pending-enrollments/:id/retry`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Retries a failed completion (`completion_failed` status). Replays the scheme create function.
+
+**Response 200:** Returns enrollment with updated status.
+
+---
+
+### `GET /api/pending-enrollments`
+**Auth:** Yes — Reader roles  
+**Description:** Lists pending enrollments for a branch.
+
+**Query Params:**
+| Param | Type | Notes |
+|-------|------|-------|
+| `schemeCode` | string | Filter by scheme |
+| `status` | string | `collecting`, `completing`, `completed`, `cancelled`, `completion_failed` |
+| `branchId` | UUID | Override branch |
+| `page` | number | Default 1 |
+| `limit` | number | Default 50 |
+
+**Response 200:** Returns paginated list.
+
+---
+
+### `GET /api/pending-enrollments/:id`
+**Auth:** Yes — Reader roles  
+**Description:** Returns a single pending enrollment with its full installment ledger.
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "schemeCode": "gold_scheme",
+    "status": "collecting",
+    "requiredAmount": 5000,
+    "amountPaid": 1000,
+    "customer": { "id": "uuid", "name": "Suresh" },
+    "payments": [
+      { "id": "uuid", "amount": 1000, "paidDate": "2026-06-01", "paymentMode": "cash" }
+    ]
+  }
+}
+```
+
+---
+
+# Module 19 — App Settings (`/api/settings`)
+
+All settings are key-value feature toggles stored in `app_settings`. Only `management` role can write; any authenticated user can read.
+
+### `GET /api/settings/backdated-entry`
+**Auth:** Yes — Any authenticated user  
+**Description:** Returns whether backdated scheme entry is permitted.
+
+**Response 200:** `{ "success": true, "data": { "enabled": false } }`
+
+---
+
+### `PUT /api/settings/backdated-entry`
+**Auth:** Yes — `management` only  
+**Description:** Enables or disables backdated scheme entries.
+
+**Request Body:** `{ "enabled": true }`
+
+**Response 200:** Returns updated setting.
+
+---
+
+### `GET /api/settings/whatsapp-messages`
+**Auth:** Yes — Any authenticated user  
+**Description:** Returns whether WhatsApp customer messaging is active.
+
+**Response 200:** `{ "success": true, "data": { "enabled": false } }`
+
+---
+
+### `PUT /api/settings/whatsapp-messages`
+**Auth:** Yes — `management` only  
+**Description:** Enables or disables WhatsApp messaging.
+
+**Request Body:** `{ "enabled": true }`
+
+**Response 200:** Returns updated setting.
+
+---
+
+### `GET /api/settings/lss-eligibility-bypass`
+**Auth:** Yes — Any authenticated user  
+**Description:** Returns whether the 30-day LSS draw eligibility wait is bypassed.
+
+**Response 200:** `{ "success": true, "data": { "enabled": false } }`
+
+---
+
+### `PUT /api/settings/lss-eligibility-bypass`
+**Auth:** Yes — `management` only  
+**Description:** Bypasses or restores the LSS eligibility wait.
+
+**Request Body:** `{ "enabled": true }`
+
+**Response 200:** Returns updated setting.
+
+---
+
+### `GET /api/settings/gold-coin-eligibility-bypass`
+**Auth:** Yes — Any authenticated user  
+**Description:** Returns whether the 30-day Gold Coin draw eligibility wait is bypassed.
+
+**Response 200:** `{ "success": true, "data": { "enabled": false } }`
+
+---
+
+### `PUT /api/settings/gold-coin-eligibility-bypass`
+**Auth:** Yes — `management` only  
+**Description:** Bypasses or restores the Gold Coin eligibility wait.
+
+**Request Body:** `{ "enabled": true }`
+
+**Response 200:** Returns updated setting.
+
+---
+
+### `GET /api/settings/daily-collection-reconciliation`
+**Auth:** Yes — Any authenticated user  
+**Description:** Returns whether the daily collection reconciliation workflow is enabled.
+
+**Response 200:** `{ "success": true, "data": { "enabled": false } }`
+
+---
+
+### `PUT /api/settings/daily-collection-reconciliation`
+**Auth:** Yes — `management` only  
+**Description:** Enables or disables the daily reconciliation requirement.
+
+**Request Body:** `{ "enabled": true }`
+
+**Response 200:** Returns updated setting.
+
+---
+
+# Module 20 — Daily Collection Reconciliation (`/api/reconciliation`)
+
+**Overview:** When enabled via settings, branch admins must submit a daily summary of expected scheme collections before any scheme writes are allowed. Management can view and edit summaries for all branches.
+
+### `POST /api/reconciliation/summary`
+**Auth:** Yes — `branch_admin`, `management`  
+**Description:** Branch admin declares today's expected amounts per scheme. Idempotent per (branch, date).
+
+**Request Body:**
+```json
+{
+  "branchId": "uuid",
+  "lines": [
+    { "schemeCode": "gold_scheme", "expectedAmount": 25000 },
+    { "schemeCode": "trading_academy", "expectedAmount": 15000 }
+  ]
+}
+```
+> `branchId` required for management role; ignored for branch_admin (taken from JWT).
+
+**Response 201:** Returns created summary record.
+
+---
+
+### `GET /api/reconciliation/summary/today`
+**Auth:** Yes — `branch_admin`, `management`, `md`, `director`  
+**Description:** Checks whether today's summary has been submitted for the caller's branch.
+
+**Query Params:** `branchId` (for management roles)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "submitted": true,
+    "summary": {
+      "id": "uuid",
+      "businessDate": "2026-07-01",
+      "submittedAt": "2026-07-01T08:30:00Z",
+      "lines": [{ "schemeCode": "gold_scheme", "expectedAmount": 25000 }]
+    }
+  }
+}
+```
+
+---
+
+### `PUT /api/reconciliation/summary/:id`
+**Auth:** Yes — `management` only  
+**Description:** Edits a submitted summary's expected amounts.
+
+**Request Body:**
+```json
+{
+  "branchId": "uuid",
+  "lines": [
+    { "schemeCode": "gold_scheme", "expectedAmount": 30000 }
+  ]
+}
+```
+
+**Response 200:** `{ "success": true, "data": { "updated": true } }`
+
+---
+
+### `GET /api/reconciliation/branch/:branchId`
+**Auth:** Yes — `branch_admin` (own branch), `md`, `director`, `management`  
+**Description:** Returns the live reconciliation panel for a branch on a given date — declared amounts vs actual collections.
+
+**Query Params:** `businessDate` (YYYY-MM-DD, defaults to today IST)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "branchId": "uuid",
+    "businessDate": "2026-07-01",
+    "summarySubmitted": true,
+    "lines": [
+      {
+        "schemeCode": "gold_scheme",
+        "expectedAmount": 25000,
+        "actualAmount": 22000,
+        "variance": -3000
+      }
+    ]
+  }
+}
+```
+
+---
+
+### `GET /api/reconciliation/overview`
+**Auth:** Yes — `md`, `director`, `management`  
+**Description:** Management dashboard showing all branches' reconciliation status for a date.
+
+**Query Params:** `businessDate` (YYYY-MM-DD, defaults to today IST)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "branchId": "uuid",
+      "branchName": "Tiruvannamalai",
+      "summarySubmitted": true,
+      "status": "reconciled",
+      "totalExpected": 40000,
+      "totalActual": 38000,
+      "variance": -2000
+    }
+  ]
+}
+```
+
+---
+
+# Module 21 — WhatsApp Webhooks (`/webhooks`)
+
+These endpoints are **public** (no JWT) and verified via HMAC-SHA256 signed by Meta's app secret.
+
+### `GET /webhooks/whatsapp`
+**Auth:** None (Meta webhook verification)  
+**Description:** Verification challenge during webhook registration in Meta App Dashboard. Responds with `hub.challenge` when `hub.verify_token` matches `WHATSAPP_WEBHOOK_VERIFY_TOKEN`.
+
+**Query Params:** `hub.mode`, `hub.verify_token`, `hub.challenge`
+
+**Response 200:** Raw string (the challenge value).
+
+---
+
+### `POST /webhooks/whatsapp`
+**Auth:** None — HMAC-SHA256 signature check via `x-hub-signature-256` header  
+**Description:** Receives delivery receipts from Meta (`sent`, `delivered`, `read`, `failed`). Updates `whatsapp_notifications` table. Always returns 200 so Meta doesn't retry.
+
+**Response 200:** `{ "success": true }`
+
+---
+
+---
+
+# Database Schema Reference
+
+> All timestamps are `TIMESTAMPTZ`. All IDs are `UUID`. Foreign keys are listed for each table.
+
+---
+
+## Core Tables
+
+### `users`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(200) | |
+| `email` | VARCHAR(200) UNIQUE | |
+| `password_hash` | TEXT | bcrypt |
+| `role` | VARCHAR(20) | `md`, `director`, `gm`, `branch_manager`, `abm`, `sales_officer`, `client`, `branch_admin`, `oa`, `management` |
+| `manager_id` | UUID → users | Nullable, builds org tree |
+| `branch_id` | UUID → branches | Nullable |
+| `has_smartphone` | BOOLEAN | Default true |
+| `is_active` | BOOLEAN | Default true |
+| `profile_photo_key` | TEXT | S3 key |
+| `profile_proof_key` | TEXT | S3 key |
+| `created_at` | TIMESTAMPTZ | |
+
+### `branches`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(200) | |
+| `gm_id` | UUID → users | Nullable |
+| `admin_id` | UUID → users | Nullable |
+| `shift_start` | TIME | Default 09:00 |
+| `shift_end` | TIME | Default 18:00 |
+| `timezone` | VARCHAR(50) | Default `Asia/Kolkata` |
+| `is_active` | BOOLEAN | Default true |
+| `is_head_branch` | BOOLEAN | Default false — unlocks combine/refund |
+| `geofence_lat` | DECIMAL | Nullable |
+| `geofence_lng` | DECIMAL | Nullable |
+| `geofence_radius_m` | INTEGER | Nullable |
+| `created_at` | TIMESTAMPTZ | |
+
+### `user_oversight_branches`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `user_id` | UUID → users ON DELETE CASCADE | |
+| `branch_id` | UUID → branches | |
+
+---
+
+## Attendance Tables
+
+### `attendance`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `user_id` | UUID → users | |
+| `branch_id` | UUID → branches | |
+| `date` | DATE | |
+| `mode` | VARCHAR(10) | `office`, `field` |
+| `status` | VARCHAR(10) | `present`, `absent`, `half_day` |
+| `check_in_time` | TIMESTAMPTZ | |
+| `check_out_time` | TIMESTAMPTZ | |
+| `check_in_lat/lng` | DECIMAL(9,6) | |
+| `check_out_lat/lng` | DECIMAL(9,6) | |
+| `photo_key` | TEXT | S3 key |
+| `field_note` | TEXT | |
+| `is_corrected` | BOOLEAN | |
+| `corrected_by` | UUID → users | |
+| `correction_note` | TEXT | |
+| `corrected_at` | TIMESTAMPTZ | |
+| `marked_by` | UUID → users | |
+| `submitted_at` | TIMESTAMPTZ | |
+| **UNIQUE** | `(user_id, date)` | |
+
+### `attendance_audit`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `attendance_id` | UUID → attendance | |
+| `changed_by` | UUID → users | |
+| `change_type` | VARCHAR(20) | |
+| `old_data` | JSONB | |
+| `new_data` | JSONB | |
+| `changed_at` | TIMESTAMPTZ | |
+> UPDATE/DELETE revoked — immutable audit trail.
+
+---
+
+## Money & Transaction Tables
+
+### `projects`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(200) UNIQUE | |
+| `code` | VARCHAR(50) UNIQUE | Stable scheme code |
+| `is_active` | BOOLEAN | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `money_collections`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `user_id` | UUID → users | Submitter |
+| `project_id` | UUID → projects | |
+| `amount` | NUMERIC(15,2) | Positive |
+| `mode` | VARCHAR(20) | `cash`, `gpay`, `bank_receipt`, `cash_transfer` |
+| `client_name` | VARCHAR(200) | |
+| `client_phone` | VARCHAR(20) | |
+| `photo_key` | TEXT | S3 key |
+| `assigned_verifier_id` | UUID → users | |
+| `status` | VARCHAR(20) | `pending`, `approved`, `rejected` |
+| `rejection_note` | TEXT | |
+| `verified_at` | TIMESTAMPTZ | |
+| `is_forwarded` | BOOLEAN | |
+| `source_collection_ids` | UUID[] | For `cash_transfer` rows |
+| `collection_date` | DATE | Override date |
+| `reference_number` | VARCHAR(100) | |
+| `override_branch_id` | UUID → branches | MD-only override |
+| `idempotency_key` | UUID UNIQUE | |
+| `submitted_at` | TIMESTAMPTZ | |
+
+### `transactions`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `sender_id` | UUID → users | |
+| `receiver_id` | UUID → users | Must be sender's direct manager |
+| `amount` | NUMERIC(15,2) | |
+| `category` | VARCHAR(30) | `expense`, `advance`, `reimbursement`, `collection`, `other` |
+| `status` | VARCHAR(30) | `pending_acknowledgment`, `acknowledged`, `rejected`, `flagged` |
+| `note` | TEXT | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `transaction_audit`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `transaction_id` | UUID → transactions | |
+| `changed_by` | UUID → users | |
+| `change_type` | VARCHAR(20) | |
+| `old_data` | JSONB | |
+| `new_data` | JSONB | |
+| `changed_at` | TIMESTAMPTZ | |
+
+---
+
+## Scheme Tables
+
+### `customers`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `customer_code` | VARCHAR(20) UNIQUE | Auto-generated per branch |
+| `branch_id` | UUID → branches | |
+| `name` | VARCHAR(255) | |
+| `phone` | VARCHAR(20) | |
+| `address` | TEXT | |
+| `notes` | TEXT | |
+| `has_whatsapp` | BOOLEAN | Default false |
+| `created_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_scheme_members`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `branch_id` | UUID → branches | |
+| `chit_number` | VARCHAR(20) | UNIQUE per branch |
+| `customer_id` | UUID → customers | |
+| `referrer_id` | UUID → users | Nullable |
+| `referrer_name` | VARCHAR(200) | Denormalised |
+| `monthly_amount` | NUMERIC(12,2) | |
+| `start_date` | DATE | |
+| `total_months` | INTEGER | Default 12 |
+| `status` | VARCHAR(20) | `active`, `completed`, `withdrawn` |
+| `notes` | TEXT | |
+| `entered_by` | UUID → users | |
+| `pending_enrollment_id` | UUID → pending_enrollments UNIQUE | Nullable |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_scheme_payments`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `member_id` | UUID → gold_scheme_members | |
+| `month_number` | INTEGER | 1–60 |
+| `paid_date` | DATE | |
+| `amount` | NUMERIC(12,2) | |
+| `payment_mode` | VARCHAR(20) | `cash`, `gpay`, `bank_receipt` |
+| `notes` | TEXT | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `trading_academy_members`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `branch_id` | UUID → branches | |
+| `customer_id` | UUID → customers | |
+| `enrolled_by` | UUID → users | The SO who brought the deal |
+| `entered_by` | UUID → users | |
+| `amount` | NUMERIC(12,2) | |
+| `enrollment_date` | DATE | |
+| `payment_mode` | VARCHAR(20) | |
+| `notes` | TEXT | |
+| `pending_enrollment_id` | UUID → pending_enrollments UNIQUE | Nullable |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_coin_packages`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(100) | |
+| `price` | NUMERIC(12,2) UNIQUE | |
+| `gold_grams` | NUMERIC(8,3) | |
+| `is_active` | BOOLEAN | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_coin_rooms`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `package_id` | UUID → gold_coin_packages | |
+| `branch_id` | UUID → branches | |
+| `room_number` | INTEGER | UNIQUE per (package, branch) |
+| `is_combined` | BOOLEAN | |
+| `status` | VARCHAR(20) | `filling`, `pending_combine`, `combined_into`, `expired`, `active`, `completed` |
+| `fill_deadline` | TIMESTAMPTZ | |
+| `activated_at` | TIMESTAMPTZ | |
+| `activated_by` | UUID → users | |
+| `first_draw_date` | DATE | |
+| `completed_at` | TIMESTAMPTZ | |
+| `combined_into_room_id` | UUID → gold_coin_rooms | Self-referencing |
+| `notes` | TEXT | |
+| `created_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_coin_slots`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `room_id` | UUID → gold_coin_rooms | |
+| `slot_number` | INTEGER 1–16 | UNIQUE per room |
+| `customer_id` | UUID → customers | |
+| `branch_id` | UUID → branches | |
+| `amount_paid` | NUMERIC(12,2) | |
+| `payment_mode` | VARCHAR(20) | |
+| `referrer_id` | UUID → users | |
+| `status` | VARCHAR(15) | `held`, `won`, `refunded` |
+| `won_in_draw_id` | UUID → gold_coin_draws | |
+| `notes` | TEXT | |
+| `entered_by` | UUID → users | |
+| `pending_enrollment_id` | UUID → pending_enrollments UNIQUE | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `gold_coin_draws`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `room_id` | UUID → gold_coin_rooms | |
+| `draw_number` | INTEGER 1–16 | UNIQUE per room |
+| `draw_date` | DATE | |
+| `winning_slot_id` | UUID → gold_coin_slots UNIQUE | |
+| `drawn_by` | UUID → users | |
+| `notes` | TEXT | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `lss_plans`
+Same structure as `gold_coin_packages` but 5 price tiers.
+
+### `lss_rooms`
+Same structure as `gold_coin_rooms` but `plan_id` instead of `package_id`, and up to **20 slots**.
+
+### `lss_slots`
+Same structure as `gold_coin_slots` but `slot_number` range 1–20.
+
+### `lss_draws`
+Same structure as `gold_coin_draws` but also stores `payout_amount` (denormalised formula result).
+
+### `agila_chit_groups`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `branch_id` | UUID → branches | |
+| `group_name` | VARCHAR(100) | UNIQUE per branch |
+| `package_number` | INTEGER 1–5 | |
+| `full_amount` | NUMERIC(12,2) | Months 1–10 |
+| `half_amount` | NUMERIC(12,2) | Months 11–20 |
+| `start_date` | DATE | |
+| `current_month` | INTEGER 2–21 | Next month awaiting winner |
+| `status` | VARCHAR(20) | `active`, `completed` |
+| `is_combined` | BOOLEAN | Head-branch combined group |
+| `notes` | TEXT | |
+| `created_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `agila_chit_members`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `group_id` | UUID → agila_chit_groups | |
+| `customer_id` | UUID → customers | UNIQUE per group |
+| `referrer_id` | UUID → users | Nullable |
+| `status` | VARCHAR(20) | `active`, `cancelled` |
+| `has_won` | BOOLEAN | |
+| `won_month` | INTEGER 2–20 | |
+| `winner_amount` | NUMERIC(12,2) | |
+| `paying_half` | BOOLEAN | Flips when won before month 11 |
+| `pending_enrollment_id` | UUID → pending_enrollments UNIQUE | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `agila_chit_payments`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `group_id` | UUID → agila_chit_groups | |
+| `member_id` | UUID → agila_chit_members | UNIQUE per (member, month) |
+| `month_number` | INTEGER 1–20 | |
+| `amount` | NUMERIC(12,2) | |
+| `payment_date` | DATE | |
+| `payment_mode` | VARCHAR(20) | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `agila_chit_winners`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `group_id` | UUID → agila_chit_groups | UNIQUE per (group, month) |
+| `member_id` | UUID → agila_chit_members | UNIQUE per (member, group) |
+| `month_number` | INTEGER 2–20 | |
+| `winner_amount` | NUMERIC(12,2) | |
+| `selected_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `builders_plans`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `branch_id` | UUID → branches | |
+| `customer_id` | UUID → customers | |
+| `package_number` | INTEGER 1–6 | |
+| `investment_amount` | NUMERIC(12,2) | |
+| `monthly_payout` | NUMERIC(12,2) | M1-50 fixed |
+| `cash_final_monthly` | NUMERIC(12,2) | M51-60 cash path |
+| `house_worth` | NUMERIC(12,2) | House path value |
+| `lump_sum_date` | DATE | |
+| `lump_sum_mode` | VARCHAR(20) | |
+| `cooling_end_date` | DATE | lump_sum_date + 60d |
+| `payout_start_date` | DATE | |
+| `current_month` | INTEGER 0–60 | Last recorded payout month |
+| `reward_choice` | VARCHAR(10) | `house`, `cash` — set at month 50 |
+| `status` | VARCHAR(20) | `cooling`, `active`, `decision_pending`, `house`, `cash`, `completed`, `cancelled` |
+| `referrer_id` | UUID → users | |
+| `pending_enrollment_id` | UUID → pending_enrollments UNIQUE | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `builders_payouts`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `plan_id` | UUID → builders_plans | |
+| `month_number` | INTEGER 1–60 | |
+| `amount` | NUMERIC(12,2) | |
+| `payment_date` | DATE | |
+| `payment_mode` | VARCHAR(20) | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+---
+
+## Land Tables
+
+### `land_sites`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(200) | |
+| `layout_name` | VARCHAR(200) | |
+| `location` | TEXT | |
+| `address` | TEXT | |
+| `state` | VARCHAR(100) | |
+| `loan_enabled` | BOOLEAN | Default false |
+| `status` | VARCHAR(20) | `active`, `inactive` |
+| `created_by` | UUID → users | |
+| `updated_by` | UUID → users | |
+| `created_at / updated_at` | TIMESTAMPTZ | |
+
+### `land_plots`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `site_id` | UUID → land_sites | |
+| `site_number` | VARCHAR(50) | UNIQUE per site |
+| `area_sqft` | NUMERIC(12,2) | |
+| `land_cost` | NUMERIC(14,2) | |
+| `buyback_bonus_monthly` | NUMERIC(12,2) | |
+| `status` | VARCHAR(20) | `available`, `booked`, `cancelled`, `completed` |
+| `created_by / updated_by` | UUID → users | |
+| `created_at / updated_at` | TIMESTAMPTZ | |
+
+### `land_customers`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `customer_ref` | VARCHAR(50) UNIQUE | Manual ref |
+| `branch_id` | UUID → branches | |
+| `name` | VARCHAR(255) | |
+| `phone` | VARCHAR(20) | |
+| `address` | TEXT | |
+| `id_proof` | TEXT | |
+| `email` | VARCHAR(255) | |
+| `created_by / updated_by` | UUID → users | |
+| `created_at / updated_at` | TIMESTAMPTZ | |
+
+### `land_bookings`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `plot_id` | UUID → land_plots | |
+| `land_customer_id` | UUID → land_customers | |
+| `branch_id` | UUID → branches | |
+| `referrer_id` | UUID → users | |
+| `booking_date` | DATE | |
+| `booking_amount` | NUMERIC(14,2) | |
+| `advance_amount` | NUMERIC(14,2) | |
+| `full_payment_amount` | NUMERIC(14,2) | |
+| `status` | VARCHAR(20) | `booked`, `advance_paid`, `full_paid`, `completed`, `cancelled` |
+| `payment_mode` | VARCHAR(20) | |
+| `notes` | TEXT | |
+| `entered_by` | UUID → users | |
+| `created_at / updated_at` | TIMESTAMPTZ | |
+
+### `land_buyback_payouts`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `booking_id` | UUID → land_bookings | |
+| `month_number` | INTEGER 1–60 | |
+| `amount` | NUMERIC(12,2) | |
+| `due_date` | DATE | |
+| `paid_date` | DATE | |
+| `payment_mode` | VARCHAR(20) | |
+| `status` | VARCHAR(20) | `pending`, `paid` |
+| `paid_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `land_audit_log`
+Append-only audit trail for all land booking state changes.
+
+---
+
+## Incentive & Salary Tables
+
+### `employee_incentives`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `user_id` | UUID → users | |
+| `amount` | NUMERIC(12,2) | |
+| `source_type` | VARCHAR(30) | `collection`, `scheme`, `direct_cash`, `other` |
+| `scheme_code` | VARCHAR(50) | Scheme identifier |
+| `payment_event` | VARCHAR(50) | `enrollment`, `renewal`, `monthly` |
+| `source_id` | UUID | Polymorphic pointer |
+| `source_description` | TEXT | Denormalised |
+| `credited_by` | UUID → users | |
+| `notes` | TEXT | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `scheme_commission_rules`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `project_id` | UUID → projects | |
+| `role` | VARCHAR(30) | |
+| `rate_type` | VARCHAR(10) | `fixed`, `percent` |
+| `amount` | NUMERIC(12,2) | |
+| `payment_event` | VARCHAR(50) | |
+| UNIQUE | `(project_id, role, payment_event)` | |
+
+### `employee_salaries`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `user_id` | UUID → users | |
+| `base_salary` | NUMERIC(12,2) | |
+| `effective_from` | DATE | |
+| `notes` | TEXT | |
+| `set_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+---
+
+## Notification & Settings Tables
+
+### `whatsapp_notifications`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `scheme_code` | VARCHAR(50) | |
+| `event` | VARCHAR(20) | `enrollment`, `renewal` |
+| `source_id` | UUID | UNIQUE per (scheme_code, event, source_id) |
+| `customer_id` | UUID → customers | |
+| `branch_id` | UUID → branches | |
+| `template_name` | VARCHAR(100) | |
+| `template_params` | JSONB | |
+| `status` | VARCHAR(20) | `pending`, `sending`, `sent`, `failed`, `skipped` |
+| `skip_reason` | TEXT | |
+| `provider_message_id` | VARCHAR(255) | WAMID from Meta |
+| `last_error` | TEXT | |
+| `attempts` | INT | |
+| `delivered_at` | TIMESTAMPTZ | |
+| `read_at` | TIMESTAMPTZ | |
+| `sent_at` | TIMESTAMPTZ | |
+| `created_at` | TIMESTAMPTZ | |
+
+### `app_settings`
+| Column | Type | Notes |
+|--------|------|-------|
+| `key` | TEXT PK | |
+| `value` | JSONB | |
+| `updated_by` | UUID → users | |
+| `updated_at` | TIMESTAMPTZ | |
+
+**Known keys:**
+| Key | Default | Description |
+|-----|---------|-------------|
+| `backdated_entry_enabled` | `false` | Allow scheme entries with past dates |
+| `whatsapp_messages_enabled` | `false` | Enable WhatsApp customer notifications |
+| `lss_eligibility_bypass` | `false` | Skip 30-day LSS draw wait |
+| `gold_coin_eligibility_bypass` | `false` | Skip 30-day Gold Coin draw wait |
+| `daily_collection_reconciliation_enabled` | `false` | Enforce daily collection summary before scheme writes |
+
+### `daily_collection_summaries`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `branch_id` | UUID → branches | UNIQUE per (branch, business_date) |
+| `business_date` | DATE | |
+| `submitted_by` | UUID → users | |
+| `submitted_at` | TIMESTAMPTZ | |
+| `updated_by` | UUID → users | |
+| `updated_at` | TIMESTAMPTZ | |
+
+### `daily_collection_summary_lines`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `summary_id` | UUID → daily_collection_summaries ON DELETE CASCADE | |
+| `scheme_code` | TEXT | |
+| `expected_amount` | NUMERIC(12,2) | Default 0 |
+| UNIQUE | `(summary_id, scheme_code)` | |
+
+---
+
+## Pending Enrollment Tables
+
+### `pending_enrollments`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `scheme_code` | TEXT | One of 6 supported schemes |
+| `branch_id` | UUID → branches | |
+| `customer_id` | UUID → customers | |
+| `referrer_id` | UUID → users | Nullable |
+| `required_amount` | NUMERIC(12,2) | Full cost |
+| `amount_paid` | NUMERIC(12,2) | Running total |
+| `status` | TEXT | `collecting`, `completing`, `completed`, `cancelled`, `completion_failed` |
+| `payload` | JSONB | Scheme create-fn params |
+| `created_entity_id` | UUID | Set on completion |
+| `failure_reason` | TEXT | Set on `completion_failed` |
+| `entered_by` | UUID → users | |
+| `created_at / updated_at` | TIMESTAMPTZ | |
+
+### `pending_enrollment_payments`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `pending_enrollment_id` | UUID → pending_enrollments ON DELETE CASCADE | |
+| `amount` | NUMERIC(12,2) | |
+| `payment_mode` | VARCHAR(20) | `cash`, `gpay`, `bank_receipt`, `cash_bank` |
+| `cash_amount` | NUMERIC(12,2) | For cash_bank split |
+| `bank_amount` | NUMERIC(12,2) | For cash_bank split |
+| `proof_key` | TEXT[] | S3 keys |
+| `transaction_id` | TEXT[] | |
+| `paid_date` | DATE | |
+| `entered_by` | UUID → users | |
+| `created_at` | TIMESTAMPTZ | |
+
+---
+
+## Scheme Corrections & Audit
+
+### `scheme_corrections_audit`
+Append-only log of every correction made to any scheme record (gold, trading academy, builders, chit, land, LSS, Gold Coin).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `scheme_code` | VARCHAR(50) | |
+| `record_type` | VARCHAR(50) | `member`, `payment`, `slot`, etc. |
+| `record_id` | UUID | Polymorphic target |
+| `actor_id` | UUID → users | Who made the correction |
+| `old_data` | JSONB | |
+| `new_data` | JSONB | |
+| `is_void` | BOOLEAN | Whether correction voids the record |
+| `is_delete` | BOOLEAN | Whether correction deletes the record |
+| `created_at` | TIMESTAMPTZ | |
+
+---
+
+# Updated Role Permission Reference
+
+| Action | md | director | gm | branch_manager | abm | sales_officer | branch_admin | management | oa | client |
+|--------|----|---------|----|----------------|-----|---------------|--------------|------------|----|--------|
+| Create user | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Create branch | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Self check-in | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Admin mark attendance | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Submit collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Verify collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Write any scheme | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| View scheme members | ✅ | ✅* | ✅* | ✅* | ✅* | ✅* | ✅ | ✅ | ❌ | ❌ |
+| Configure packages/plans | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Set salary | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Set commission rules | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Gold Coin / LSS write | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| Chit / Builders write | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| Land bookings write | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| Land sites/plots write | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Correct any scheme record | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Schemes overview | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Reconciliation submit | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| Reconciliation overview | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Toggle app settings | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Pending enrollments write | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+
+\* Own referrals only (director/gm/bm/abm/so see only entries they personally referred)
+
+**Role quick guide:**
+- `md` — full read + site/plot creation + salary write + schemes overview
+- `director` — read oversight branches + schemes overview + salary write + commission rules
+- `gm` — read oversight branches + create users + admin-mark attendance + commission rules (via MD delegation)
+- `branch_manager / abm / sales_officer` — read own referrals only
+- `branch_admin` — full branch write (scheme entries, corrections, reconciliation)
+- `management` — control-center superuser: all scheme writes + configure packages + toggle settings (never marks own attendance)
+- `oa` — attendance only (self check-in), no scheme access
+- `client` — no access
+
+---
+
+# Updated Environment Variables Reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | Yes | Server port (default `3001`) |
+| `NODE_ENV` | Yes | `development` or `production` |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `REDIS_URL` | Yes | Redis connection string |
+| `JWT_SECRET` | Yes | Min 32 chars for production |
+| `JWT_EXPIRES_IN` | No | Token expiry, default `8h` |
+| `FRONTEND_URL` | Yes | Allowed CORS origin |
+| `ALLOWED_ORIGINS` | No | Comma-separated extra origins |
+| `AWS_ACCESS_KEY_ID` | Yes | S3 access key |
+| `AWS_SECRET_ACCESS_KEY` | Yes | S3 secret key |
+| `AWS_REGION` | Yes | e.g. `ap-south-2` |
+| `S3_BUCKET_NAME` | Yes | S3 bucket name |
+| `S3_PRESIGN_EXPIRES` | No | Presigned URL TTL (seconds), default `3600` |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | No | Meta webhook verification token |
+| `WHATSAPP_WEBHOOK_SECRET` | No | Meta app secret for HMAC verification |
+| `WHATSAPP_ACCESS_TOKEN` | No | Meta Graph API access token |
+| `WHATSAPP_PHONE_NUMBER_ID` | No | Meta sender phone number ID |
+
+---
+
+*Document updated 2026-07-01 — Employee Management System API v2.0 (migrations 001–079)*
