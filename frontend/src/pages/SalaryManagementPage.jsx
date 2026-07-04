@@ -346,6 +346,8 @@ export const SalaryManagementPage = () => {
   const navigate  = useNavigate();
   const user      = useSelector(selectCurrentUser);
   const isWriter  = WRITER_ROLES.includes(user?.role);
+  // OA reaches this page from Home (no Money tab), so send them back there.
+  const backTo    = user?.role === 'oa' ? '/' : '/money';
 
   const [mode, setMode]                 = useState('individual'); // 'individual' | 'by_role'
   const [selectedUser, setSelectedUser] = useState(null);
@@ -372,7 +374,7 @@ export const SalaryManagementPage = () => {
         {/* Header */}
         <div className="px-6 mb-8 flex items-center gap-3">
           <button
-            onClick={() => navigate('/money')}
+            onClick={() => navigate(backTo)}
             className="w-10 h-10 rounded-2xl bg-navy/5 flex items-center justify-center text-navy tactile-press"
           >
             <ArrowLeft size={20} />

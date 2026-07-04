@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
+import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetIncentiveWalletQuery, useGetIncentivesQuery } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
 import { getCurrentPeriod } from '../../lib/schemePeriod';
@@ -10,6 +12,9 @@ import { SOURCE_META } from '../../lib/schemeConstants';
 
 export const IncentiveWalletPage = () => {
   const navigate        = useNavigate();
+  const user            = useSelector(selectCurrentUser);
+  // OA reaches this page from Home (no Money tab), so send them back there.
+  const backTo          = user?.role === 'oa' ? '/' : '/money';
   const [page, setPage] = useState(1);
   const [period, setPeriod] = useState(getCurrentPeriod);
 
@@ -32,7 +37,7 @@ export const IncentiveWalletPage = () => {
         {/* Header */}
         <div className="px-6 mb-8 flex items-center gap-3">
           <button
-            onClick={() => navigate('/money')}
+            onClick={() => navigate(backTo)}
             className="w-10 h-10 rounded-2xl bg-navy/5 flex items-center justify-center text-navy tactile-press"
           >
             <ArrowLeft size={20} aria-hidden="true" />
