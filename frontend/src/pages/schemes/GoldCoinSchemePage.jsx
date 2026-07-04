@@ -101,7 +101,7 @@ export const GoldCoinSchemePage = () => {
       {/* Summary strip */}
       {summary && (
         <div className="px-4 mb-5">
-          <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
+          <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
               { label: 'Slots',      val: summary.totalSlots },
               { label: 'Held',       val: summary.heldSlots },
@@ -115,11 +115,11 @@ export const GoldCoinSchemePage = () => {
             ))}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-2xl p-3 card-shadow border border-navy/5">
+            <div className="bg-white rounded-2xl p-3 card-shadow border border-border">
               <p className="text-[10px] font-semibold text-navy/40 uppercase tracking-wider">Total collected</p>
               <p className="text-xl font-bold text-navy mt-1">{formatCurrency(summary.totalCollected || 0)}</p>
             </div>
-            <div className="bg-white rounded-2xl p-3 card-shadow border border-navy/5">
+            <div className="bg-white rounded-2xl p-3 card-shadow border border-border">
               <p className="text-[10px] font-semibold text-navy/40 uppercase tracking-wider">Commission paid</p>
               <p className="text-xl font-bold text-emerald-600 mt-1">{formatCurrency(summary.totalCommission || 0)}</p>
             </div>
@@ -161,7 +161,7 @@ export const GoldCoinSchemePage = () => {
             <Loader2 className="animate-spin text-indigo" size={24} aria-hidden="true" />
           </div>
         ) : rooms.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 card-shadow border border-navy/5 text-center">
+          <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <Coins size={32} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-medium text-navy/40">No rooms yet</p>
             <p className="text-xs text-navy/30 mt-1">Sell a slot to open the first room.</p>
@@ -182,7 +182,7 @@ export const GoldCoinSchemePage = () => {
                   key={room.id}
                   type="button"
                   onClick={() => navigate(`/money/schemes/gold-coin/${room.id}`)}
-                  className="w-full bg-white rounded-2xl p-4 card-shadow border border-navy/5 text-left tactile-press"
+                  className="w-full bg-white rounded-2xl p-4 card-shadow border border-border text-left tactile-press"
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div>
@@ -233,14 +233,14 @@ export const GoldCoinSchemePage = () => {
             <Loader2 className="animate-spin text-indigo" size={20} aria-hidden="true" />
           </div>
         ) : (
-          <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
+          <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
             <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-2 px-4 py-2 bg-navy/5 text-[9px] font-bold text-navy/50 uppercase tracking-widest">
               <span>Package</span>
               <span className="text-right">Gold coin</span>
               <span className="text-right">Full room</span>
               <span className="text-right">Total coins</span>
             </div>
-            <div className="divide-y divide-navy/5">
+            <div className="divide-y divide-border">
               {packages.map((pkg) => (
                 <div key={pkg.id} className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-2 px-4 py-2.5 items-center">
                   <span className="text-sm font-bold text-amber-700">{formatCurrency(pkg.price)}</span>

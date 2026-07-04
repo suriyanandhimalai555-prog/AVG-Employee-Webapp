@@ -41,7 +41,7 @@ export const LeadershipListPage = () => {
       transition={{ duration: 0.2 }}
       className="flex-1 bg-surface"
     >
-      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-4 flex items-center gap-3">
         <button
           onClick={() => navigate('/')}
           className="p-2 rounded-xl text-navy/40 hover:text-navy hover:bg-navy/5 transition-all tactile-press shrink-0"
@@ -58,7 +58,7 @@ export const LeadershipListPage = () => {
       </div>
 
       <div className="max-w-2xl mx-auto px-5 py-6 pb-24">
-        <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
+        <div className="bg-white rounded-3xl card-shadow divide-y divide-border overflow-hidden">
           {members.map((member) => (
             <button
               key={member.id}
@@ -109,7 +109,7 @@ const AttendanceBadge = ({ status }) => {
   // null means data loaded but no attendance record
   if (status === null) {
     return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-navy/5 text-navy/30 border border-navy/8 whitespace-nowrap">
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider bg-navy/5 text-navy/30 border border-border whitespace-nowrap">
         Not Marked
       </span>
     );

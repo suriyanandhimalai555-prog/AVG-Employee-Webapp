@@ -59,7 +59,7 @@ const StatPill = ({ label, value, tone = 'navy' }) => {
     emerald: 'text-emerald-600',
   }[tone];
   return (
-    <div className="px-3 py-2 bg-white rounded-2xl border border-navy/5 text-center min-w-[78px]">
+    <div className="px-3 py-2 bg-white rounded-2xl border border-border text-center min-w-[78px]">
       <p className={`text-lg font-bold ${toneClass}`}>{value}</p>
       <p className="text-[10px] font-semibold text-navy/40 uppercase tracking-wider">{label}</p>
     </div>
@@ -70,7 +70,7 @@ const AccessDenied = ({ reason }) => (
   <SchemePageWrapper>
     <SchemePageHeader backTo="/money/schemes/gold-coin" title="Head Branch" />
     <div className="px-4">
-      <div className="bg-white rounded-2xl p-6 border border-navy/5 card-shadow text-center">
+      <div className="bg-white rounded-2xl p-6 border border-border card-shadow text-center">
         <ShieldCheck size={28} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
         <p className="text-sm font-bold text-navy">Access denied</p>
         <p className="text-xs text-navy/50 mt-1">{reason}</p>
@@ -154,8 +154,8 @@ const PackageGroup = ({
     selectedInGroup.length >= 2 && totalHeldInSelection >= SLOTS_PER_ROOM;
 
   return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-navy/5 flex items-center justify-between bg-navy/[0.02]">
+    <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-navy/[0.02]">
         <div>
           <p className="text-sm font-bold text-navy">{pkg?.name ?? rooms[0].package_name}</p>
           <p className="text-[11px] text-navy/40">
@@ -176,7 +176,7 @@ const PackageGroup = ({
         )}
       </div>
 
-      <div className="divide-y divide-navy/5">
+      <div className="divide-y divide-border">
         {rooms.map((room) => (
           <PendingRoomRow
             key={room.id}
@@ -347,7 +347,7 @@ export const GoldCoinHeadBranchPage = () => {
 
       {/* Summary strip */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="bg-white rounded-3xl p-4 card-shadow border border-border flex items-center gap-2 overflow-x-auto scrollbar-none">
           <StatPill label="Pending rooms"    value={totals.totalRooms}            tone="amber" />
           <StatPill label="Held slots"       value={totals.totalHeldSlots}        tone="navy" />
           <StatPill label="Combinable"       value={totals.totalCombineCandidates} tone="emerald" />
@@ -380,7 +380,7 @@ export const GoldCoinHeadBranchPage = () => {
             <Loader2 className="animate-spin text-indigo" size={24} aria-hidden="true" />
           </div>
         ) : groupedByPackage.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 card-shadow border border-navy/5 text-center">
+          <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <CalendarClock size={32} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-medium text-navy/40">No pending rooms</p>
             <p className="text-xs text-navy/30 mt-1">All filling rooms are within deadline.</p>

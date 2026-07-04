@@ -164,7 +164,7 @@ const CommissionsTab = () => {
         const projectId = codeToId[code];
         const isOpen = expanded === code;
         return (
-          <div key={code} className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
+          <div key={code} className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
             <button
               type="button"
               onClick={() => setExpanded(isOpen ? null : code)}
@@ -174,7 +174,7 @@ const CommissionsTab = () => {
               <ChevronRight size={16} className={`text-navy/30 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
             </button>
             {isOpen && (
-              <div className="px-4 pb-4 border-t border-navy/5 pt-3">
+              <div className="px-4 pb-4 border-t border-border pt-3">
                 {projectId
                   ? <CommissionPanel projectId={projectId} />
                   : <p className="text-xs text-navy/30 italic">Project not found</p>
@@ -221,16 +221,16 @@ const BuildersTab = () => {
         {isLoading ? (
           <div className="flex justify-center py-6"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
         ) : (
-          <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+          <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
             <table className="w-full border-collapse min-w-max">
               <thead>
-                <tr className="bg-navy/[0.02] border-b border-navy/5">
+                <tr className="bg-navy/[0.02] border-b border-border">
                   {['Tier','Investment','Monthly M1-60','Cash Bonus M51-60','House Worth'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-navy/5">
+              <tbody className="divide-y divide-border">
                 {pkgList.map(pkg => (
                   <tr key={pkg.num} className="hover:bg-navy/[0.01]">
                     <td className="px-4 py-3 text-xs font-bold text-sky-700">Tier {pkg.num} ({TIER_LABELS[pkg.num-1]})</td>
@@ -261,15 +261,15 @@ const BuildersTab = () => {
       {/* Employee incentive matrix */}
       <div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">Employee Incentives — One-Time (Enrollment)</p>
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+        <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
           <table className="w-full border-collapse min-w-max">
             <thead>
-              <tr className="bg-navy/[0.02] border-b border-navy/5">
+              <tr className="bg-navy/[0.02] border-b border-border">
                 <th className="px-4 py-2.5 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">Role</th>
                 {TIER_LABELS.map(t => <th key={t} className="px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">{t}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-navy/5">
+            <tbody className="divide-y divide-border">
               {ROLES.map(role => (
                 <tr key={role} className="hover:bg-navy/[0.01]">
                   <td className="px-4 py-2.5 text-xs font-bold text-navy/60">{ROLE_LABELS[role]}</td>
@@ -280,10 +280,10 @@ const BuildersTab = () => {
           </table>
         </div>
         <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mt-5 mb-3">Monthly (SO — 60 months)</p>
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+        <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
           <table className="w-full border-collapse min-w-max">
             <thead>
-              <tr className="bg-navy/[0.02] border-b border-navy/5">
+              <tr className="bg-navy/[0.02] border-b border-border">
                 <th className="px-4 py-2.5 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">Role</th>
                 {TIER_LABELS.map(t => <th key={t} className="px-3 py-2.5 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">{t}</th>)}
               </tr>
@@ -313,16 +313,16 @@ const ChitTab = () => {
       {isLoading ? (
         <div className="flex justify-center py-6"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
       ) : (
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+        <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-navy/[0.02] border-b border-navy/5">
+              <tr className="bg-navy/[0.02] border-b border-border">
                 {['Package','Full Amount (M1–10)','Half Amount (M11–20)'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-navy/5">
+            <tbody className="divide-y divide-border">
               {packages.map(pkg => (
                 <tr key={pkg.package_number} className="hover:bg-navy/[0.01]">
                   <td className="px-4 py-3 text-xs font-bold text-violet-700">Package {pkg.package_number}</td>
@@ -356,16 +356,16 @@ const GoldCoinTab = () => {
       {isLoading ? (
         <div className="flex justify-center py-6"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
       ) : (
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+        <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-navy/[0.02] border-b border-navy/5">
+              <tr className="bg-navy/[0.02] border-b border-border">
                 {['Name','Price (₹)','Gold (grams)','Status'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-navy/5">
+            <tbody className="divide-y divide-border">
               {packages.map(pkg => (
                 <tr key={pkg.id} className={`hover:bg-navy/[0.01] ${!pkg.isActive ? 'opacity-40' : ''}`}>
                   <td className="px-4 py-3 text-xs font-bold text-yellow-700">{pkg.name}</td>
@@ -411,16 +411,16 @@ const LssTab = () => {
       {isLoading ? (
         <div className="flex justify-center py-6"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
       ) : (
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+        <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-navy/[0.02] border-b border-navy/5">
+              <tr className="bg-navy/[0.02] border-b border-border">
                 {['Name','Price (₹)','Status'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-navy/5">
+            <tbody className="divide-y divide-border">
               {plans.map(plan => (
                 <tr key={plan.id} className={`hover:bg-navy/[0.01] ${!plan.isActive ? 'opacity-40' : ''}`}>
                   <td className="px-4 py-3 text-xs font-bold text-violet-700">{plan.name}</td>
@@ -549,13 +549,13 @@ const LandCommissionEditor = ({ layoutId }) => {
   const sorted = [...rules].sort((a, b) => LAND_ROLE_ORDER.indexOf(a.role) - LAND_ROLE_ORDER.indexOf(b.role));
 
   return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+    <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
       {isLoading ? (
         <div className="flex justify-center py-8"><Loader2 className="animate-spin text-navy/20" size={24} /></div>
       ) : (
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-navy/[0.02] border-b border-navy/5">
+            <tr className="bg-navy/[0.02] border-b border-border">
               <th className="px-4 py-2.5 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">Role</th>
               <th className="px-3 py-2.5 text-right text-[9px] font-bold uppercase tracking-wider text-navy/30">Spot (₹)</th>
               <th className="px-3 py-2.5 text-right text-[9px] font-bold uppercase tracking-wider text-navy/30">Monthly (₹)</th>
@@ -563,14 +563,14 @@ const LandCommissionEditor = ({ layoutId }) => {
               <th className="px-3 py-2.5 w-20"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-navy/5">
+          <tbody className="divide-y divide-border">
             {sorted.map(rule => (
               <LandCommissionRuleRow key={rule.role} layoutId={layoutId} rule={rule} />
             ))}
           </tbody>
         </table>
       )}
-      <p className="text-[9px] text-navy/30 px-4 pb-3 flex items-center gap-1 border-t border-navy/5 pt-2">
+      <p className="text-[9px] text-navy/30 px-4 pb-3 flex items-center gap-1 border-t border-border pt-2">
         <IndianRupee size={8} /> Hover Spot and click the pencil to edit. Monthly = 0 / Months blank = no monthly commission for that role.
       </p>
     </div>
@@ -601,7 +601,7 @@ const LandTab = ({ navigate }) => {
       {/* Quick-nav links */}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => navigate('/money/schemes/land/sites')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 text-left tactile-press hover:border-stone-200 transition-colors flex items-center gap-3">
+          className="bg-white rounded-2xl p-4 card-shadow border border-border text-left tactile-press hover:border-stone-200 transition-colors flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center flex-shrink-0">
             <Landmark size={18} className="text-stone-600" />
           </div>
@@ -612,7 +612,7 @@ const LandTab = ({ navigate }) => {
           <ChevronRight size={14} className="text-navy/20 flex-shrink-0 ml-auto" />
         </button>
         <button type="button" onClick={() => navigate('/money/schemes/land')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 text-left tactile-press hover:border-stone-200 transition-colors flex items-center gap-3">
+          className="bg-white rounded-2xl p-4 card-shadow border border-border text-left tactile-press hover:border-stone-200 transition-colors flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center flex-shrink-0">
             <Landmark size={18} className="text-stone-500" />
           </div>
@@ -693,7 +693,7 @@ const LandTab = ({ navigate }) => {
         )}
 
         {!selectedSiteId && !loadingSites && (
-          <div className="bg-white rounded-2xl p-6 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-6 border border-border card-shadow text-center">
             <Landmark size={24} className="text-navy/20 mx-auto mb-2" />
             <p className="text-xs text-navy/40">Select a site, then a layout to edit commission rules.</p>
           </div>
@@ -735,7 +735,7 @@ const HeadBranchSetting = () => {
 
   return (
     <div className="px-4 md:px-0 mb-4">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
         <div className="flex items-start gap-3 mb-3">
           <Building2 size={16} className="text-navy/50 mt-0.5 flex-shrink-0" aria-hidden="true" />
           <div className="min-w-0">
@@ -803,7 +803,7 @@ const WhatsappMessagesToggle = () => {
 
   return (
     <div className="px-4 md:px-0 mb-4">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
@@ -865,7 +865,7 @@ const BackdatedEntryToggle = () => {
 
   return (
     <div className="px-4 md:px-0 mb-6">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow flex items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-bold text-navy">Backdated entry by branch admins</p>
           <p className="text-xs text-navy/40 mt-0.5">
@@ -910,7 +910,7 @@ const LssEligibilityBypassToggle = () => {
 
   return (
     <div className="px-4 md:px-0 mb-4">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
@@ -971,7 +971,7 @@ const GoldCoinEligibilityBypassToggle = () => {
 
   return (
     <div className="px-4 md:px-0 mb-6">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
@@ -1032,11 +1032,11 @@ const DailyCollectionReconciliationToggle = () => {
 
   return (
     <div className="px-4 md:px-0 mb-4">
-      <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
-              <ShieldCheck size={16} className="text-indigo-600" />
+            <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={16} className="text-indigo" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-navy">Daily Collection Reconciliation</p>
@@ -1062,9 +1062,9 @@ const DailyCollectionReconciliationToggle = () => {
           </button>
         </div>
         {enabled && (
-          <div className="mt-3 px-3 py-2 bg-indigo-50 rounded-xl">
-            <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest">Active</p>
-            <p className="text-xs text-indigo-600 mt-0.5">
+          <div className="mt-3 px-3 py-2 bg-indigo/8 rounded-xl">
+            <p className="text-[10px] font-bold text-indigo uppercase tracking-widest">Active</p>
+            <p className="text-xs text-indigo mt-0.5">
               Branch admins must submit a Daily Collection Summary each morning. Management is always exempt.
             </p>
           </div>
@@ -1082,7 +1082,7 @@ export const ManagementControlCenter = () => {
   if (!ALLOWED_ROLES.has(user?.role)) {
     return (
       <div className="px-4 pt-16 max-w-lg mx-auto">
-        <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+        <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
           <ShieldCheck size={32} className="text-navy/30 mx-auto mb-2" />
           <p className="text-sm font-bold text-navy">Access restricted</p>
           <p className="text-xs text-navy/40 mt-1">Only Management, MD, and Directors can access the Control Center.</p>
@@ -1120,7 +1120,7 @@ export const ManagementControlCenter = () => {
         <button
           type="button"
           onClick={() => navigate('/control-center/reconciliation')}
-          className="w-full bg-white rounded-2xl p-4 border border-navy/5 card-shadow flex items-center gap-3 tactile-press text-left"
+          className="w-full bg-white rounded-2xl p-4 border border-border card-shadow flex items-center gap-3 tactile-press text-left"
         >
           <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
             <ChevronRight size={16} className="text-indigo" aria-hidden="true" />
@@ -1145,7 +1145,7 @@ export const ManagementControlCenter = () => {
                 className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all ${
                   activeTab === key
                     ? 'bg-stone-800 text-white shadow-sm'
-                    : 'bg-white text-navy/50 border border-navy/5 card-shadow hover:text-navy/70'
+                    : 'bg-white text-navy/50 border border-border card-shadow hover:text-navy/70'
                 }`}
               >
                 <Icon size={13} aria-hidden="true" />

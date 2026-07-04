@@ -121,7 +121,7 @@ export const ChitSchemePage = () => {
       {/* Summary strip */}
       {summary && (
         <div className="px-4 mb-5">
-          <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
+          <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
               { label: 'Groups',   val: summary.totalGroups },
               { label: 'Filling',  val: summary.formingGroups,   cls: 'text-blue-600' },
@@ -173,7 +173,7 @@ export const ChitSchemePage = () => {
             <Loader2 className="animate-spin text-navy/20" size={32} aria-hidden="true" />
           </div>
         ) : groups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
             <Layers size={28} className="text-navy/20 mb-3" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No Groups Found</p>
             <p className="text-xs font-medium text-navy/40 mt-1">
@@ -196,7 +196,7 @@ export const ChitSchemePage = () => {
               <button
                 key={group.id}
                 onClick={() => navigate(`/money/schemes/agila-chit/${group.id}`)}
-                className="w-full bg-white rounded-3xl p-4 card-shadow border border-navy/5 text-left hover:border-violet-100 transition-colors tactile-press"
+                className="w-full bg-white rounded-3xl p-4 card-shadow border border-border text-left hover:border-violet-100 transition-colors tactile-press"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">

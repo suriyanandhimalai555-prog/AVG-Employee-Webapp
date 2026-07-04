@@ -7,9 +7,9 @@ export const Card = ({
   className
 }) => {
   const variants = {
-    base: "bg-surface-container-lowest",
-    low: "bg-surface-container-low",
-    container: "bg-surface-container",
+    base: "bg-white border border-border card-shadow",
+    low: "bg-surface-container-low border border-border",
+    container: "bg-surface-container border border-border",
   };
 
   return (
@@ -26,7 +26,7 @@ export const Card = ({
 export const CardHeader = ({ title, subtitle, icon: Icon }) => (
   <div className="flex items-center gap-4 mb-6">
     {Icon && (
-      <div className="p-3 rounded-xl bg-surface-container text-indigo shrink-0">
+      <div className="p-3 rounded-xl bg-indigo/10 text-indigo shrink-0">
         <Icon size={24} />
       </div>
     )}

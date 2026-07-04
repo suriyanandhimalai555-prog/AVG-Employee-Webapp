@@ -77,7 +77,7 @@ export const PendingEnrollmentsListPage = () => {
 
         {/* Summary — how much is pending (per scheme) */}
         {summary && summary.count > 0 && (
-          <div className="bg-white rounded-2xl border border-navy/5 card-shadow p-4">
+          <div className="bg-white rounded-2xl border border-border card-shadow p-4">
             <div className="flex items-baseline justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-navy/40">Outstanding</span>
               <span className="text-[10px] font-medium text-navy/40">{summary.count} pending</span>
@@ -86,7 +86,7 @@ export const PendingEnrollmentsListPage = () => {
             <p className="text-[10px] font-medium text-navy/40">{formatCurrency(summary.collected)} collected so far</p>
 
             {!schemeFilter && summary.byScheme?.length > 1 && (
-              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-navy/5">
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">
                 {summary.byScheme.map((s) => {
                   const meta = SOURCE_META[s.schemeCode] || SOURCE_META.other;
                   return (
@@ -158,7 +158,7 @@ export const PendingEnrollmentsListPage = () => {
                 <button
                   key={pe.id} type="button"
                   onClick={() => navigate(`/money/schemes/pending/${pe.id}${isManagement && branchId ? `?branchId=${branchId}` : ''}`)}
-                  className="w-full bg-white rounded-2xl border border-navy/5 card-shadow p-3.5 text-left tactile-press"
+                  className="w-full bg-white rounded-2xl border border-border card-shadow p-3.5 text-left tactile-press"
                 >
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">

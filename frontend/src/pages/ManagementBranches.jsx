@@ -33,7 +33,7 @@ export const ManagementBranches = () => {
       <header className="flex items-center gap-4 mb-10">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           {/* Icon badge */}
-          <div className="p-3.5 rounded-[20px] bg-white card-shadow border border-navy/5 text-indigo flex-shrink-0">
+          <div className="p-3.5 rounded-xl bg-white card-shadow border border-border text-indigo flex-shrink-0">
             <Settings2 size={24} />
           </div>
           <div className="min-w-0">
@@ -63,19 +63,19 @@ export const ManagementBranches = () => {
       {!isLoading && branches.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
           {/* Total branches */}
-          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-navy/5">
+          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Branches</p>
             <p className="text-2xl font-bold text-navy">{branches.length}</p>
           </div>
           {/* Branches with geofence */}
-          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-navy/5">
+          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Geofenced</p>
             <p className="text-2xl font-bold text-emerald-600">
               {branches.filter(b => b.latitude != null).length}
             </p>
           </div>
           {/* Branches without geofence */}
-          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-navy/5 col-span-2 sm:col-span-1">
+          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border col-span-2 sm:col-span-1">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Unrestricted</p>
             <p className="text-2xl font-bold text-navy/40">
               {branches.filter(b => b.latitude == null).length}

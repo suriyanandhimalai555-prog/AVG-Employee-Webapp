@@ -131,7 +131,7 @@ const RuleCell = ({ packageNumber, role, incentiveType, amount }) => {
 const IncentiveMatrix = ({ title, rows, incentiveType, matrix, isLoading }) => (
   <div className="px-4 mb-8">
     <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">{title}</p>
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-x-auto">
+    <div className="bg-white rounded-2xl card-shadow border border-border overflow-x-auto">
       {isLoading ? (
         <div className="flex justify-center py-8">
           <Loader2 className="animate-spin text-navy/20" size={24} aria-hidden="true" />
@@ -139,7 +139,7 @@ const IncentiveMatrix = ({ title, rows, incentiveType, matrix, isLoading }) => (
       ) : (
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="bg-navy/[0.02] border-b border-navy/5">
+            <tr className="bg-navy/[0.02] border-b border-border">
               <th className="px-3 py-2.5 text-[9px] font-bold uppercase tracking-wider text-navy/30 w-16">Role</th>
               {TIER_LABELS.map((t, i) => (
                 <th key={i} className="px-2 py-2.5 text-[9px] font-bold uppercase tracking-wider text-navy/30 text-right">
@@ -148,7 +148,7 @@ const IncentiveMatrix = ({ title, rows, incentiveType, matrix, isLoading }) => (
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-navy/5">
+          <tbody className="divide-y divide-border">
             {rows.map(({ key: role, label }) => (
               <tr key={role} className="hover:bg-navy/[0.01]">
                 <td className="px-3 py-2.5 text-xs font-bold text-navy/70">{label}</td>
@@ -187,7 +187,7 @@ export const BuildersIncentiveRulesPage = () => {
       <SchemePageWrapper>
         <SchemePageHeader backTo="/money/schemes/builders" title="Incentive Rules" />
         <div className="px-4 pt-8">
-          <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
             <ShieldCheck size={28} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">MD access only</p>
             <p className="text-xs text-navy/40 mt-1">Only the MD can view or edit incentive rules.</p>

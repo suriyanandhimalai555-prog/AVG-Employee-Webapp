@@ -180,7 +180,7 @@ export const AdminDashboard = () => {
       {/* ── Header ── */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 md:mb-12">
         <div className="flex items-center gap-4">
-          <div className="p-3 sm:p-4 rounded-[20px] sm:rounded-[24px] bg-white shadow-premium border border-navy/5 text-indigo shrink-0">
+          <div className="p-3 sm:p-4 rounded-xl sm:rounded-xl bg-white shadow-premium border border-border text-indigo shrink-0">
             <ShieldCheck size={26} className="sm:w-8 sm:h-8" />
           </div>
           <div>
@@ -201,16 +201,16 @@ export const AdminDashboard = () => {
         <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
           <button
             onClick={refetchEmployees}
-            className="p-3 rounded-2xl bg-white text-navy/40 hover:text-indigo hover:bg-indigo/5 transition-all card-shadow border border-navy/5 tactile-press"
+            className="p-3 rounded-2xl bg-white text-navy/40 hover:text-indigo hover:bg-indigo/5 transition-all card-shadow border border-border tactile-press"
           >
             <RefreshCw size={18} />
           </button>
-          <button className="px-4 sm:px-6 py-3 rounded-2xl bg-white text-navy font-bold text-xs card-shadow tactile-press flex items-center gap-2 border border-navy/5 hover:bg-navy/[0.02]">
+          <button className="px-4 sm:px-6 py-3 rounded-2xl bg-white text-navy font-bold text-xs card-shadow tactile-press flex items-center gap-2 border border-border hover:bg-navy/[0.02]">
             <Download size={15} /> <span className="hidden sm:inline">Export</span>
           </button>
           <button
             onClick={handleLogout}
-            className="p-3 rounded-2xl bg-white text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all card-shadow border border-navy/5 tactile-press group"
+            className="p-3 rounded-2xl bg-white text-navy/20 hover:text-red-500 hover:bg-red-50 transition-all card-shadow border border-border tactile-press group"
           >
             <LogOut size={18} className="group-hover:rotate-12 transition-transform" />
           </button>
@@ -226,10 +226,10 @@ export const AdminDashboard = () => {
       </div>
 
       {/* ── Workforce Roster (FIRST) ── */}
-      <Card className="p-0 overflow-hidden bg-white/70 backdrop-blur-md rounded-[28px] sm:rounded-[40px] card-shadow border border-white/50 mb-8 md:mb-12">
+      <Card className="p-0 overflow-hidden bg-white rounded-2xl sm:rounded-2xl card-shadow border border-border mb-8 md:mb-12">
 
         {/* Roster header */}
-        <div className="p-4 sm:p-6 md:p-8 border-b border-navy/5 flex flex-col gap-4">
+        <div className="p-4 sm:p-6 md:p-8 border-b border-border flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {selectedBranch && (
@@ -290,7 +290,7 @@ export const AdminDashboard = () => {
 
         {/* Branch stats strip (when drilling into a branch) */}
         {selectedBranch && selectedBranchStats && (
-          <div className="px-4 sm:px-6 py-4 border-b border-navy/5 grid grid-cols-3 gap-4">
+          <div className="px-4 sm:px-6 py-4 border-b border-border grid grid-cols-3 gap-4">
             <div className="text-center">
               <p className="text-xl sm:text-2xl font-bold text-navy font-mono">{selectedBranchStats.total}</p>
               <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Total</p>
@@ -309,7 +309,7 @@ export const AdminDashboard = () => {
         )}
 
         {/* ── Mobile card list (< md) ── */}
-        <div className={`md:hidden divide-y divide-navy/5 transition-opacity duration-200 ${empFetching ? 'opacity-60' : ''}`}>
+        <div className={`md:hidden divide-y divide-border transition-opacity duration-200 ${empFetching ? 'opacity-60' : ''}`}>
           {empLoading ? (
             <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-indigo/40" size={28} /></div>
           ) : employees.length === 0 ? (
@@ -373,18 +373,18 @@ export const AdminDashboard = () => {
           <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
               <tr className="bg-navy/[0.02]">
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Identity</th>
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Designation</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Identity</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Designation</th>
                 {!user?.branchId && (
-                  <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Branch</th>
+                  <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Branch</th>
                 )}
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Time</th>
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Status</th>
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5">Mode</th>
-                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-navy/5 text-right">Actions</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Time</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Status</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border">Mode</th>
+                <th className="px-6 lg:px-8 py-5 text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono border-b border-border text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-navy/5">
+            <tbody className="divide-y divide-border">
               {empLoading ? (
                 <tr>
                   <td colSpan={user?.branchId ? 6 : 7} className="py-16 text-center">
@@ -487,7 +487,7 @@ export const AdminDashboard = () => {
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="px-4 sm:px-6 py-4 border-t border-navy/5 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-4 border-t border-border flex items-center justify-between">
             <button
               disabled={currentPage <= 1 || empFetching}
               onClick={() => setCurrentPage(p => p - 1)}
@@ -518,7 +518,7 @@ export const AdminDashboard = () => {
               <button
                 key={b.id}
                 onClick={() => handleBranchSelect(b)}
-                className="text-left p-5 sm:p-7 bg-white rounded-[24px] sm:rounded-[32px] card-shadow border border-transparent hover:border-indigo/20 hover-lift group relative overflow-hidden"
+                className="text-left p-5 sm:p-7 bg-white rounded-xl sm:rounded-2xl card-shadow border border-transparent hover:border-indigo/20 hover-lift group relative overflow-hidden"
               >
                 <div className="absolute top-0 right-0 w-20 h-20 bg-indigo/5 rounded-full -mr-10 -mt-10 transition-transform group-hover:scale-125" />
                 <div className="flex items-center justify-between mb-4 sm:mb-6 relative z-10">
@@ -578,7 +578,7 @@ export const AdminDashboard = () => {
                   key={u.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-[20px] card-shadow border border-red-100/60 p-4 sm:p-5 flex items-center gap-4"
+                  className="bg-white rounded-xl card-shadow border border-red-100/60 p-4 sm:p-5 flex items-center gap-4"
                 >
                   {/* Avatar placeholder */}
                   <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center shrink-0">
@@ -662,7 +662,7 @@ export const AdminDashboard = () => {
               <select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value)}
-                className="w-full p-4 bg-white rounded-2xl text-navy font-bold outline-none border border-navy/5 card-shadow appearance-none"
+                className="w-full p-4 bg-white rounded-2xl text-navy font-bold outline-none border border-border card-shadow appearance-none"
               >
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
@@ -690,7 +690,7 @@ export const AdminDashboard = () => {
             )}
 
             {selectedEmployee.photo_key && (
-              <div className="rounded-3xl overflow-hidden bg-navy/5 border border-navy/5 relative h-44 flex items-center justify-center">
+              <div className="rounded-3xl overflow-hidden bg-navy/5 border border-border relative h-44 flex items-center justify-center">
                 {photoLoading ? (
                   <Loader2 className="animate-spin text-navy/30" size={24} />
                 ) : photoData?.downloadUrl && !photoLoadError ? (
@@ -755,7 +755,7 @@ const StatCard = ({ icon: Icon, label, value, color }) => {
     amber:   'text-amber-600 bg-amber-500/5 border-amber-500/10',
   };
   return (
-    <Card className="hover-lift bg-white/70 backdrop-blur-md card-shadow border-white/50 p-4 sm:p-6 md:p-7 group">
+    <Card className="hover-lift bg-white card-shadow border-border p-4 sm:p-6 md:p-7 group">
       <div className={`w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center mb-4 sm:mb-5 md:mb-6 shadow-sm border ${colors[color]} group-hover:scale-110 transition-transform duration-500`}>
         <Icon size={20} className="sm:w-[22px] sm:h-[22px] md:w-[26px] md:h-[26px]" />
       </div>

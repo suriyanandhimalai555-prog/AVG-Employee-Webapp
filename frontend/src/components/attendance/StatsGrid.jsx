@@ -8,8 +8,8 @@ export const StatsGrid = ({ summary, isLoading, label = 'Your Month at a Glance'
         {new Date().toLocaleString('default', { month: 'short', year: 'numeric' }).toUpperCase()}
       </span>
     </p>
-    <Card className="p-0 border-none shadow-none bg-white/70 backdrop-blur-md rounded-[32px] overflow-hidden card-shadow">
-      <div className="grid grid-cols-3 divide-x divide-navy/5">
+    <Card className="p-0 border-none shadow-none bg-white rounded-2xl overflow-hidden card-shadow">
+      <div className="grid grid-cols-3 divide-x divide-border">
         {/* Present */}
         <div className="flex flex-col items-center justify-center p-5 group hover:bg-indigo/[0.02] transition-colors">
           <p className="text-2xl md:text-3xl font-bold text-indigo font-mono transition-transform duration-200 group-hover:scale-110">

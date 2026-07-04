@@ -12,8 +12,8 @@ export const StatusChip = ({ status, label, className }) => {
     branch_manager: "bg-navy/6      text-navy/70   border border-navy/10",
     branch_admin:   "bg-emerald/8   text-emerald   border border-emerald/20",
     abm:            "bg-navy/6      text-navy/70   border border-navy/10",
-    sales_officer:  "bg-navy/4      text-navy/60   border border-navy/8",
-    client:         "bg-navy/4      text-navy/50   border border-navy/8",
+    sales_officer:  "bg-navy/4      text-navy/60   border border-border",
+    client:         "bg-navy/4      text-navy/50   border border-border",
   };
 
   return (

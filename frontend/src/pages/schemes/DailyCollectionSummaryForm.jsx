@@ -63,7 +63,7 @@ export const DailyCollectionSummaryForm = ({ branchId }) => {
             const meta = SOURCE_META[code] ?? SOURCE_META.scheme;
             const Icon = meta.Icon;
             return (
-              <div key={code} className="bg-white rounded-2xl border border-navy/8 card-shadow p-4">
+              <div key={code} className="bg-white rounded-2xl border border-border card-shadow p-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className={`w-8 h-8 rounded-xl ${meta.bg} flex items-center justify-center flex-shrink-0`}>
                     <Icon size={16} className={meta.color} aria-hidden="true" />
@@ -79,7 +79,7 @@ export const DailyCollectionSummaryForm = ({ branchId }) => {
                     placeholder="0"
                     value={amounts[code]}
                     onChange={e => setAmounts(prev => ({ ...prev, [code]: e.target.value }))}
-                    className="w-full pl-8 pr-4 py-3 bg-navy/[0.03] rounded-xl border border-navy/8 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 placeholder:text-navy/30"
+                    className="w-full pl-8 pr-4 py-3 bg-navy/[0.03] rounded-xl border border-border text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 placeholder:text-navy/30"
                   />
                 </div>
               </div>

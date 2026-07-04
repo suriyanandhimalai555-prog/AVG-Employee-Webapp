@@ -71,8 +71,8 @@ export const AlertsTab = () => {
         {isLoading ? (
           <div className="flex justify-center p-10"><Loader2 className="animate-spin text-navy/20" size={32} /></div>
         ) : pendingAlerts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
-            <div className="w-20 h-20 rounded-[24px] bg-navy/5 flex items-center justify-center text-navy/20 mb-6">
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
+            <div className="w-20 h-20 rounded-xl bg-navy/5 flex items-center justify-center text-navy/20 mb-6">
               <Bell size={36} />
             </div>
             <h2 className="text-xl font-bold text-navy tracking-tight mb-2">No Alerts</h2>
@@ -80,7 +80,7 @@ export const AlertsTab = () => {
           </div>
         ) : (
           pendingAlerts.map(alert => (
-            <div key={alert.id} className="bg-white p-5 rounded-3xl card-shadow border border-navy/5 space-y-4">
+            <div key={alert.id} className="bg-white p-5 rounded-3xl card-shadow border border-border space-y-4">
                <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-navy/5">

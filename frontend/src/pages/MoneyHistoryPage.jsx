@@ -117,7 +117,7 @@ export const MoneyHistoryPage = () => {
           </p>
         ) : (
           filteredCollections.map(col => (
-            <div key={col.id} className="bg-white p-5 rounded-3xl card-shadow border border-navy/5 space-y-3 relative overflow-hidden">
+            <div key={col.id} className="bg-white p-5 rounded-3xl card-shadow border border-border space-y-3 relative overflow-hidden">
               {col.status === 'rejected' && <div className="absolute top-0 right-0 w-12 h-12 bg-red-500 blur-3xl opacity-20" />}
               {col.status === 'approved' && <div className="absolute top-0 right-0 w-12 h-12 bg-emerald-500 blur-3xl opacity-20" />}
 
@@ -146,7 +146,7 @@ export const MoneyHistoryPage = () => {
               </div>
 
               {col.verifier_name && (
-                <div className="px-3 py-2 bg-navy/2 rounded-xl border border-navy/5 flex items-center justify-between relative z-10">
+                <div className="px-3 py-2 bg-navy/2 rounded-xl border border-border flex items-center justify-between relative z-10">
                   <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Receiver</p>
                   <p className="text-[10px] font-bold text-navy">{col.verifier_name}</p>
                 </div>
@@ -155,7 +155,7 @@ export const MoneyHistoryPage = () => {
               {col.mode === 'cash_transfer' && (
                 <button
                   onClick={() => setInspectingId(col.id)}
-                  className="p-3 rounded-2xl bg-navy/2 border border-navy/5 flex items-center justify-center gap-2 text-[10px] font-bold text-navy/40 hover:bg-navy/5 transition-colors relative z-10"
+                  className="p-3 rounded-2xl bg-navy/2 border border-border flex items-center justify-center gap-2 text-[10px] font-bold text-navy/40 hover:bg-navy/5 transition-colors relative z-10"
                 >
                   <Info size={14} /> View Origin Details
                 </button>

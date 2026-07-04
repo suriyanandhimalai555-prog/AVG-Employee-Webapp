@@ -231,11 +231,11 @@ export const MoneySubmitPage = () => {
 
           {/* Client Info */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-[24px] p-4 shadow-sm border">
+            <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Client Name</p>
               <input type="text" required placeholder="Name" className="w-full text-sm font-bold bg-transparent outline-none text-navy placeholder:text-navy/20" value={formState.clientName} onChange={e => setFormState({...formState, clientName: e.target.value})} />
             </div>
-            <div className="bg-white rounded-[24px] p-4 shadow-sm border">
+            <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Client Phone</p>
               <input type="tel" required placeholder="Phone" className="w-full text-sm font-bold bg-transparent outline-none text-navy placeholder:text-navy/20" value={formState.clientPhone} onChange={e => setFormState({...formState, clientPhone: e.target.value})} />
             </div>
@@ -243,7 +243,7 @@ export const MoneySubmitPage = () => {
 
           {/* Collection Date — branch_admin only, constrained to active cycle */}
           {user?.role === 'branch_admin' && !isBlockedByCycle && cycleInfo && (
-            <div className="bg-white rounded-[24px] p-4 shadow-sm border">
+            <div className="bg-white rounded-xl p-4 shadow-sm border">
               <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Collection Date</p>
               <input
                 type="date"
@@ -259,7 +259,7 @@ export const MoneySubmitPage = () => {
           )}
 
           {/* Project */}
-          <div className="bg-white rounded-[24px] p-4 shadow-sm border relative">
+          <div className="bg-white rounded-xl p-4 shadow-sm border relative">
             <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Assigned Project</p>
             <select
               required
@@ -281,7 +281,7 @@ export const MoneySubmitPage = () => {
                 <button
                   type="button"
                   onClick={() => setFormState({ ...formState, keepInWallet: true, handedOverTo: '' })}
-                  className={`p-4 rounded-[24px] border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
+                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
                     formState.keepInWallet
                       ? 'border-indigo bg-indigo/5 shadow-md shadow-indigo/10'
                       : 'border-navy/10 bg-white'
@@ -298,7 +298,7 @@ export const MoneySubmitPage = () => {
                 <button
                   type="button"
                   onClick={() => setFormState({ ...formState, keepInWallet: false })}
-                  className={`p-4 rounded-[24px] border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
+                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all duration-200 tactile-press ${
                     !formState.keepInWallet
                       ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-500/10'
                       : 'border-navy/10 bg-white'
@@ -316,7 +316,7 @@ export const MoneySubmitPage = () => {
 
               {/* Manager selector — only when handing over */}
               {!formState.keepInWallet && (
-                <div className="bg-white rounded-[24px] p-4 shadow-sm border relative">
+                <div className="bg-white rounded-xl p-4 shadow-sm border relative">
                   <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30 mb-1">Handed Over To</p>
                   <select
                     className="w-full text-sm font-bold bg-transparent outline-none text-navy appearance-none"
@@ -375,7 +375,7 @@ export const MoneySubmitPage = () => {
         <button
           disabled={isSubmitting || isUploading || isBlockedByCycle}
           type="submit"
-          className="w-full p-5 rounded-[24px] gradient-primary text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
+          className="w-full p-5 rounded-xl gradient-primary text-white font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo/20 tactile-press disabled:opacity-50"
         >
           {isSubmitting || isUploading
             ? <><Loader2 size={20} className="animate-spin"/> Submitting...</>

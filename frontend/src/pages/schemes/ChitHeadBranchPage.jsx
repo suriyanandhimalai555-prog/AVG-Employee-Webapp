@@ -37,7 +37,7 @@ const PACKAGE_LABELS = { 1: '₹5,000', 2: '₹10,000', 3: '₹15,000', 4: '₹2
 const StatPill = ({ label, value, tone = 'navy' }) => {
   const cls = { navy: 'text-navy', amber: 'text-amber-700', emerald: 'text-emerald-600', rose: 'text-rose-600' }[tone];
   return (
-    <div className="px-3 py-2 bg-white rounded-2xl border border-navy/5 text-center min-w-[78px]">
+    <div className="px-3 py-2 bg-white rounded-2xl border border-border text-center min-w-[78px]">
       <p className={`text-lg font-bold ${cls}`}>{value}</p>
       <p className="text-[10px] font-semibold text-navy/40 uppercase tracking-wider">{label}</p>
     </div>
@@ -48,7 +48,7 @@ const AccessDenied = () => (
   <SchemePageWrapper>
     <SchemePageHeader backTo="/money/schemes/agila-chit" title="Head Branch" />
     <div className="px-4">
-      <div className="bg-white rounded-2xl p-6 border border-navy/5 card-shadow text-center">
+      <div className="bg-white rounded-2xl p-6 border border-border card-shadow text-center">
         <ShieldCheck size={28} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
         <p className="text-sm font-bold text-navy">Access denied</p>
         <p className="text-xs text-navy/50 mt-1">Only the head-branch admin, MD, or Director can view this page.</p>
@@ -96,8 +96,8 @@ const PackageGroup = ({ packageNumber, groups, selectable, selectedIds, onToggle
   const canCombine       = selectedInGroup.length >= 2 && totalMembersInSel <= MAX_MEMBERS;
 
   return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-navy/5 flex items-center justify-between bg-navy/[0.02]">
+    <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-navy/[0.02]">
         <div>
           <p className="text-sm font-bold text-navy">Package {packageNumber} — {PACKAGE_LABELS[packageNumber]}</p>
           <p className="text-[11px] text-navy/40">
@@ -114,7 +114,7 @@ const PackageGroup = ({ packageNumber, groups, selectable, selectedIds, onToggle
         )}
       </div>
 
-      <div className="divide-y divide-navy/5">
+      <div className="divide-y divide-border">
         {groups.map(group => (
           <PendingGroupRow key={group.id} group={group} selectable={selectable}
             selected={selectedIds.has(group.id)} onToggle={() => onToggleGroup(group.id)}
@@ -241,7 +241,7 @@ export const ChitHeadBranchPage = () => {
 
       {/* Summary strip */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="bg-white rounded-3xl p-4 card-shadow border border-border flex items-center gap-2 overflow-x-auto scrollbar-none">
           <StatPill label="Pending"    value={totals.totalGroups}  tone="amber" />
           <StatPill label="Members"   value={totals.totalMembers} tone="navy" />
           <StatPill label="Combinable" value={totals.combinable}   tone="emerald" />
@@ -274,7 +274,7 @@ export const ChitHeadBranchPage = () => {
             <Loader2 className="animate-spin text-indigo" size={24} aria-hidden="true" />
           </div>
         ) : groupedByPackage.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 card-shadow border border-navy/5 text-center">
+          <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <CalendarClock size={32} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-medium text-navy/40">No pending groups</p>
             <p className="text-xs text-navy/30 mt-1">All groups are filling within their deadline.</p>

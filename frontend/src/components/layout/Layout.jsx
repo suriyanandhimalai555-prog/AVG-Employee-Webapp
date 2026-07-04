@@ -1,6 +1,8 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import { motion } from 'framer-motion';
 import { selectCurrentUser } from '../../store/slices/authSlice';
+import { page } from '../../lib/motion';
 import { BottomNav } from '../attendance/BottomNav';
 import { PageHeader } from '../attendance/PageHeader';
 import { Sidebar } from './Sidebar';
@@ -17,6 +19,7 @@ import { ScrollManager } from './ScrollManager';
  */
 export const Layout = () => {
   const user = useSelector(selectCurrentUser);
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-surface md:flex">
@@ -31,8 +34,20 @@ export const Layout = () => {
 
         <main className="flex-1 w-full mx-auto max-w-[480px] md:max-w-none pb-28 md:pb-10">
           <div className="md:px-8 lg:px-12 md:py-6 md:max-w-[1400px] md:mx-auto w-full">
-            {/* context={{}} prevents useOutletContext() crash in pages until migrated */}
-            <Outlet context={{}} />
+            {/* Enter-only route fade, keyed by pathname. Deliberately NOT wrapped
+                in AnimatePresence: an exiting wrapper would keep rendering the
+                live <Outlet/>, which re-resolves to the new lazy route and
+                suspends mid-exit — the Suspense boundary above Layout then eats
+                the animation and the page never mounts.
+                context={{}} prevents useOutletContext() crash in pages until migrated. */}
+            <motion.div
+              key={location.pathname}
+              variants={page}
+              initial="initial"
+              animate="animate"
+            >
+              <Outlet context={{}} />
+            </motion.div>
           </div>
         </main>
       </div>

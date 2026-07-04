@@ -1,21 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-navy: #0B1C30;
-  --color-indigo: #4338CA;
-  --color-yellow: #FACC15;
-  --color-emerald: #10B981;
-  --color-surface: #F8F9FF;
-  --color-surface-container: #E5EEFF;
-  --color-surface-container-low: #EFF4FF;
+  /* ── Premium SaaS Blue palette ────────────────────────────────────
+     Token NAMES are unchanged (navy/indigo/emerald/surface*) so every
+     existing `text-navy` / `bg-indigo` / `card-shadow` cascades. Only
+     the VALUES changed: cool near-white canvas + vivid trust blue,
+     Stripe/Linear-inspired. */
+  --color-navy: #0F1C2E;                    /* deep slate-blue ink       */
+  --color-indigo: #2563EB;                  /* primary action = blue     */
+  --color-yellow: #D97706;                  /* amber highlights          */
+  --color-emerald: #059669;                 /* success                   */
+  --color-surface: #F8FAFC;                 /* cool near-white canvas    */
+  --color-surface-container: #EEF2F7;
+  --color-surface-container-low: #F1F5F9;
   --color-surface-container-lowest: #FFFFFF;
 
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "Berkeley Mono", ui-monospace, monospace;
+  /* Hairline borders — quiet structure instead of heavy shadows */
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
 
-  /* Premium Shadows */
-  --shadow-premium: 0 10px 15px -3px rgb(11 28 48 / 0.1), 0 4px 6px -4px rgb(11 28 48 / 0.1);
-  --shadow-glass: 0 8px 32px 0 rgba(11, 28, 48, 0.08);
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
+
+  /* ── Soft corner radii (cascades to rounded-xl/2xl/3xl) ─────────── */
+  --radius-lg: 0.625rem;     /* 10px */
+  --radius-xl: 0.75rem;      /* 12px */
+  --radius-2xl: 1rem;        /* 16px */
+  --radius-3xl: 1.25rem;     /* 20px */
+
+  /* ── Soft layered shadows — ambient + key, low alpha ────────────── */
+  --shadow-premium: 0 1px 2px rgb(15 28 46 / 0.05), 0 4px 12px rgb(15 28 46 / 0.06);
+  --shadow-glass: 0 1px 2px rgb(15 28 46 / 0.04), 0 8px 24px rgb(15 28 46 / 0.06);
 }
 
 @layer base {
@@ -23,7 +38,7 @@
     @apply bg-surface text-navy font-sans antialiased overflow-x-hidden;
   }
 
-  /* Custom Scrollbar for premium feel */
+  /* Custom Scrollbar — thin + neutral */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -35,69 +50,90 @@
     @apply bg-navy/10 rounded-full hover:bg-navy/20 transition-colors;
   }
 
-  /* Smoother font rendering */
+  /* Smoother font rendering + gentle baseline transition */
   * {
     -webkit-tap-highlight-color: transparent;
     @apply transition-colors duration-200;
   }
+
+  /* Keyboard navigation: one consistent blue focus ring everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--color-indigo);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Accessibility: honour the OS "Reduce Motion" setting for CSS-driven
+     transitions/animations (framer-motion is handled via MotionConfig). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer utilities {
+  /* Opaque premium surface: white + hairline border + soft ambient shadow. */
   .glass {
-    @apply bg-white/70 backdrop-blur-3xl border border-white/50 shadow-glass;
+    @apply bg-white border border-border;
+    box-shadow: var(--shadow-glass);
   }
 
   .glass-dark {
-    @apply bg-navy/80 backdrop-blur-2xl border border-navy/20 shadow-lg shadow-black/20;
+    @apply bg-navy border border-white/10 shadow-lg shadow-black/20;
   }
 
+  /* Primary action = vivid blue with a top-light sheen. */
   .gradient-primary {
-    @apply bg-linear-to-br from-indigo to-[#6366F1];
+    @apply bg-linear-to-b from-[#3B82F6] to-indigo;
   }
 
   .gradient-yellow {
-    @apply bg-linear-to-br from-yellow to-[#EAB308];
+    @apply bg-linear-to-b from-[#F59E0B] to-yellow;
   }
 
   .gradient-directors {
-    @apply bg-linear-to-br from-slate-900 via-[#111827] to-[#0B1C30];
+    @apply bg-linear-to-br from-[#1B3050] to-navy;
   }
 
   .gradient-gms {
-    @apply bg-linear-to-br from-indigo-950 via-[#1E1B4B] to-[#0B1C30];
+    @apply bg-linear-to-br from-[#1E3A5F] to-[#13263F];
   }
 
   .no-border {
     @apply border-none shadow-none;
   }
 
-  /* Slightly deeper press + shadow collapse for physical feel */
+  /* Subtle press — premium UIs shift a whisper, not a jolt. */
   .tactile-press {
     @apply active:scale-[0.98] transition-all duration-150 cursor-pointer;
   }
 
-  /* Layered shadow: ambient + direct, gives natural lift */
+  /* Soft layered card shadow: tight key + wide ambient. */
   .card-shadow {
     box-shadow:
-      0 1px 2px rgb(11 28 48 / 0.04),
-      0 4px 12px rgb(11 28 48 / 0.06),
-      0 12px 32px rgb(11 28 48 / 0.04);
+      0 1px 2px rgb(15 28 46 / 0.05),
+      0 4px 12px rgb(15 28 46 / 0.06);
   }
 
-  /* Cards that elevate on hover */
+  /* Cards that elevate on hover — gentle 2px lift, deeper ambient. */
   .hover-lift {
-    @apply transition-all duration-300;
+    @apply transition-all duration-200;
   }
   .hover-lift:hover {
     box-shadow:
-      0 4px 6px rgb(11 28 48 / 0.05),
-      0 12px 24px rgb(11 28 48 / 0.10),
-      0 24px 56px rgb(11 28 48 / 0.06);
-    transform: translateY(-4px);
+      0 2px 4px rgb(15 28 46 / 0.05),
+      0 12px 28px rgb(15 28 46 / 0.10);
+    transform: translateY(-2px);
   }
 
   .input-base {
-    @apply transition-all duration-200 outline-none w-full px-4 py-3 bg-white/50 border border-navy/5 rounded-2xl font-medium focus:ring-4 focus:ring-indigo/5 focus:border-indigo/20 focus:bg-white;
+    @apply transition-all duration-200 outline-none w-full px-4 py-3 bg-white border border-border rounded-xl font-medium focus:ring-2 focus:ring-indigo/20 focus:border-indigo;
   }
 
   /* Layout Container */

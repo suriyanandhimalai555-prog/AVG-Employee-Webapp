@@ -76,7 +76,7 @@ export const BranchFormModal = ({ isOpen, branch, onClose }) => {
             value={form.name}
             onChange={set('name')}
             placeholder="e.g. Chennai North"
-            className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+            className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
           />
         </div>
 
@@ -90,7 +90,7 @@ export const BranchFormModal = ({ isOpen, branch, onClose }) => {
               type="time"
               value={form.shiftStart}
               onChange={set('shiftStart')}
-              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
             />
           </div>
           <div className="space-y-1.5">
@@ -101,7 +101,7 @@ export const BranchFormModal = ({ isOpen, branch, onClose }) => {
               type="time"
               value={form.shiftEnd}
               onChange={set('shiftEnd')}
-              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
             />
           </div>
         </div>

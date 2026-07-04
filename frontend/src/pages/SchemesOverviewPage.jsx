@@ -21,7 +21,7 @@ const VIEWER_ROLES = new Set(['md', 'director']);
 const StatBlock = ({ label, value, tone = 'navy', icon }) => {
   const cls = { navy: 'text-navy', amber: 'text-amber-700', emerald: 'text-emerald-600', indigo: 'text-indigo' }[tone];
   return (
-    <div className="flex-1 min-w-[110px] bg-white/60 rounded-2xl px-3 py-2.5 backdrop-blur-sm">
+    <div className="flex-1 min-w-[110px] bg-white rounded-2xl px-3 py-2.5">
       <div className="flex items-center gap-1.5 mb-1">
         {icon}
         <p className="text-[9px] font-bold text-navy/40 uppercase tracking-widest">{label}</p>
@@ -33,7 +33,7 @@ const StatBlock = ({ label, value, tone = 'navy', icon }) => {
 
 const AccessDenied = () => (
   <div className="px-4 pt-10">
-    <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+    <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
       <ShieldCheck size={32} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
       <p className="text-sm font-bold text-navy">Access denied</p>
       <p className="text-xs text-navy/50 mt-1">Only MD or Director can view the schemes dashboard.</p>
@@ -52,7 +52,7 @@ const SchemeCard = ({ scheme, onClick }) => {
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-3xl overflow-hidden card-shadow border border-navy/5 text-left tactile-press ${meta.bg}`}
+      className={`w-full rounded-3xl overflow-hidden card-shadow border border-border text-left tactile-press ${meta.bg}`}
     >
       <div className="p-4 flex items-center gap-3">
         {/* Icon */}
@@ -136,7 +136,7 @@ export const SchemesOverviewPage = () => {
 
       {/* Org-wide headline strip */}
       <div className="px-4 mb-6">
-        <div className="rounded-3xl p-4 card-shadow border border-navy/5 bg-gradient-to-br from-indigo/5 to-indigo/[0.02] flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="rounded-3xl p-4 card-shadow border border-border bg-gradient-to-br from-indigo/5 to-indigo/[0.02] flex items-center gap-2 overflow-x-auto scrollbar-none">
           <StatBlock
             label="Collected"
             value={formatCurrency(headlineTotals.collected)}
@@ -171,7 +171,7 @@ export const SchemesOverviewPage = () => {
             <Loader2 className="animate-spin text-indigo" size={28} aria-hidden="true" />
           </div>
         ) : schemes.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 card-shadow border border-navy/5 text-center">
+          <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <CircleSlash size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No scheme activity</p>
             <p className="text-xs text-navy/40 mt-1">No collections or commissions recorded yet.</p>
@@ -201,7 +201,7 @@ export const SchemesOverviewPage = () => {
 
       {/* Footer hint */}
       <div className="px-4 mb-8">
-        <div className="bg-white rounded-2xl p-4 border border-navy/5 card-shadow flex items-start gap-3">
+        <div className="bg-white rounded-2xl p-4 border border-border card-shadow flex items-start gap-3">
           <TrendingUp size={16} className="text-navy/40 flex-shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <p className="text-xs font-bold text-navy">Scheme operations</p>

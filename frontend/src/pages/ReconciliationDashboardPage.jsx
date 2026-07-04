@@ -98,7 +98,7 @@ const EditBranchModal = ({ branch, businessDate, onClose }) => {
       {/* Sheet */}
       <div className="bg-white rounded-t-3xl w-full max-h-[88vh] flex flex-col">
         {/* Handle + header */}
-        <div className="px-6 pt-4 pb-3 border-b border-navy/5 flex-shrink-0">
+        <div className="px-6 pt-4 pb-3 border-b border-border flex-shrink-0">
           <div className="w-10 h-1 rounded-full bg-navy/15 mx-auto mb-4" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -137,7 +137,7 @@ const EditBranchModal = ({ branch, businessDate, onClose }) => {
               return (
                 <div
                   key={code}
-                  className="flex items-center gap-3 bg-navy/[0.02] rounded-2xl px-4 py-3 border border-navy/5"
+                  className="flex items-center gap-3 bg-navy/[0.02] rounded-2xl px-4 py-3 border border-border"
                 >
                   <div className={`w-9 h-9 rounded-xl ${meta.bg} flex items-center justify-center flex-shrink-0`}>
                     <Icon size={16} className={meta.color} aria-hidden="true" />
@@ -169,7 +169,7 @@ const EditBranchModal = ({ branch, businessDate, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 pb-8 pt-3 border-t border-navy/5 flex-shrink-0">
+        <div className="px-6 pb-8 pt-3 border-t border-border flex-shrink-0">
           {error && (
             <div className="flex items-center gap-2 text-red-600 mb-3">
               <AlertCircle size={13} aria-hidden="true" />
@@ -267,7 +267,7 @@ const BranchCard = ({ branch, businessDate, canEdit, onEdit }) => {
   const diffCls = diff > 0.005 ? 'text-amber-600' : diff < -0.005 ? 'text-red-500' : 'text-emerald-600';
 
   return (
-    <div className="bg-white rounded-2xl border border-navy/8 card-shadow overflow-hidden">
+    <div className="bg-white rounded-2xl border border-border card-shadow overflow-hidden">
       {/* Top accent */}
       <div className={`h-0.5 ${cfg.dot}`} />
 
@@ -328,7 +328,7 @@ const BranchCard = ({ branch, businessDate, canEdit, onEdit }) => {
       </div>
 
       {expanded && (
-        <div className="border-t border-navy/5 bg-navy/[0.005]">
+        <div className="border-t border-border bg-navy/[0.005]">
           <BranchSchemeDetail
             branchId={branch.branchId}
             businessDate={businessDate}
@@ -385,7 +385,7 @@ export const ReconciliationDashboardPage = () => {
   if (!canView) {
     return (
       <div className="px-6 pt-16 text-center">
-        <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow">
+        <div className="bg-white rounded-2xl p-8 border border-border card-shadow">
           <ShieldCheck size={32} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
           <p className="text-sm font-bold text-navy">Access denied</p>
           <p className="text-xs text-navy/40 mt-1">Only MD, Director, or Management can view this dashboard.</p>
@@ -417,7 +417,7 @@ export const ReconciliationDashboardPage = () => {
 
       {/* Date + search in one row */}
       <div className="px-6 mb-4 flex gap-3">
-        <div className="flex items-center gap-2 bg-white rounded-2xl border border-navy/8 card-shadow px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-2 bg-white rounded-2xl border border-border card-shadow px-4 py-3 flex-shrink-0">
           <Calendar size={14} className="text-navy/40 flex-shrink-0" aria-hidden="true" />
           <input
             type="date"
@@ -426,7 +426,7 @@ export const ReconciliationDashboardPage = () => {
             className="text-sm font-bold text-navy bg-transparent outline-none w-[130px]"
           />
         </div>
-        <div className="flex-1 flex items-center gap-2 bg-white rounded-2xl border border-navy/8 card-shadow px-4 py-3">
+        <div className="flex-1 flex items-center gap-2 bg-white rounded-2xl border border-border card-shadow px-4 py-3">
           <Search size={14} className="text-navy/30 flex-shrink-0" aria-hidden="true" />
           <input
             type="text"
@@ -445,7 +445,7 @@ export const ReconciliationDashboardPage = () => {
 
       {/* Summary strip */}
       <div className="px-6 mb-4">
-        <div className="bg-gradient-to-br from-indigo/5 to-indigo/[0.02] rounded-3xl p-4 border border-navy/5 card-shadow grid grid-cols-4 gap-2">
+        <div className="bg-gradient-to-br from-indigo/5 to-indigo/[0.02] rounded-3xl p-4 border border-border card-shadow grid grid-cols-4 gap-2">
           {[
             { label: 'Branches',   value: stats.total,      cls: 'text-navy'        },
             { label: 'Filed',      value: stats.submitted,  cls: 'text-navy'        },
@@ -471,7 +471,7 @@ export const ReconciliationDashboardPage = () => {
               type="button"
               onClick={() => setFilter(f.key)}
               className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold tactile-press whitespace-nowrap transition-all ${
-                active ? 'bg-navy text-white shadow-sm' : 'bg-white text-navy/50 border border-navy/8 card-shadow'
+                active ? 'bg-navy text-white shadow-sm' : 'bg-white text-navy/50 border border-border card-shadow'
               }`}
             >
               {f.label}
@@ -492,7 +492,7 @@ export const ReconciliationDashboardPage = () => {
             <Loader2 className="animate-spin text-indigo" size={28} aria-hidden="true" />
           </div>
         ) : visibleBranches.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
             <Building2 size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">
               {filter === 'mismatch'   ? 'No mismatches — all filed branches are reconciled'  :

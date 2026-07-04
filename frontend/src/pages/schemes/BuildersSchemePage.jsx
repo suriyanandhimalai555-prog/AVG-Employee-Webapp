@@ -112,7 +112,7 @@ export const BuildersSchemePage = () => {
       {/* Summary strip */}
       {summary && (
         <div className="px-4 mb-5">
-          <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
+          <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
               { label: 'Invested',   val: formatCurrency(summary.totalInvested || 0),  cls: 'text-sky-600' },
               { label: 'Paid Out',   val: formatCurrency(summary.totalPaidOut   || 0),  cls: 'text-emerald-600' },
@@ -156,7 +156,7 @@ export const BuildersSchemePage = () => {
             <Loader2 className="animate-spin text-navy/20" size={32} aria-hidden="true" />
           </div>
         ) : plans.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
             <Building2 size={28} className="text-navy/20 mb-3" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No Plans Found</p>
             <p className="text-xs font-medium text-navy/40 mt-1">
@@ -177,7 +177,7 @@ export const BuildersSchemePage = () => {
               <button
                 key={plan.id}
                 onClick={() => navigate(`/money/schemes/builders/${plan.id}`)}
-                className="w-full bg-white rounded-3xl p-4 card-shadow border border-navy/5 text-left hover:border-sky-100 transition-colors tactile-press"
+                className="w-full bg-white rounded-3xl p-4 card-shadow border border-border text-left hover:border-sky-100 transition-colors tactile-press"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -264,15 +264,15 @@ export const BuildersSchemePage = () => {
           <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">
             Package Reference
           </p>
-          <div className="bg-white rounded-2xl border border-navy/5 card-shadow overflow-hidden">
-            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-navy/5">
+          <div className="bg-white rounded-2xl border border-border card-shadow overflow-hidden">
+            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-border">
               <span>Plan</span>
               <span className="text-right">Investment</span>
               <span className="text-right">M1–60</span>
               <span className="text-right">M51–60 Total</span>
             </div>
             {Object.entries(packages).map(([num, pkg]) => (
-              <div key={num} className="grid grid-cols-4 px-4 py-2.5 border-b border-navy/5 last:border-0">
+              <div key={num} className="grid grid-cols-4 px-4 py-2.5 border-b border-border last:border-0">
                 <span className="text-xs font-bold text-navy">
                   {(pkg.investmentAmount / 100_000)}L
                 </span>

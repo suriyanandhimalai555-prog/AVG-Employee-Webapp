@@ -107,7 +107,7 @@ export const MdAddEntryPage = () => {
 
         <form onSubmit={handleMdEntrySubmit} className="px-4 space-y-4">
           {/* Branch */}
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-3">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border space-y-3">
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Branch *</p>
             <select
               className="w-full p-3 bg-navy/3 rounded-2xl text-sm font-bold text-navy outline-none appearance-none border border-transparent focus:border-indigo/20 transition-all"
@@ -123,7 +123,7 @@ export const MdAddEntryPage = () => {
           </div>
 
           {/* Project */}
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-3">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border space-y-3">
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Project *</p>
             <select
               className="w-full p-3 bg-navy/3 rounded-2xl text-sm font-bold text-navy outline-none appearance-none border border-transparent focus:border-indigo/20 transition-all"
@@ -139,7 +139,7 @@ export const MdAddEntryPage = () => {
           </div>
 
           {/* Date + Payment Type */}
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-4">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border space-y-4">
             <div className="space-y-2">
               <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Date *</p>
               <PeriodDateInput
@@ -171,7 +171,7 @@ export const MdAddEntryPage = () => {
           </div>
 
           {/* Amount */}
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-2">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border space-y-2">
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Amount (₹) *</p>
             <input
               type="number"
@@ -186,7 +186,7 @@ export const MdAddEntryPage = () => {
           </div>
 
           {/* Notes */}
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 space-y-2">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border space-y-2">
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 font-mono">Notes (optional)</p>
             <textarea
               className="w-full p-3 bg-navy/3 rounded-2xl text-sm text-navy outline-none border border-transparent focus:border-indigo/20 transition-all resize-none"
@@ -200,7 +200,7 @@ export const MdAddEntryPage = () => {
           <button
             type="submit"
             disabled={isMdEntrySubmitting}
-            className="w-full bg-gradient-to-br from-indigo to-indigo/80 text-white py-4 rounded-[24px] text-sm font-bold card-shadow tactile-press disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-gradient-to-br from-indigo to-indigo/80 text-white py-4 rounded-xl text-sm font-bold card-shadow tactile-press disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isMdEntrySubmitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
             {isMdEntrySubmitting ? 'Submitting...' : 'Add Collection Entry'}

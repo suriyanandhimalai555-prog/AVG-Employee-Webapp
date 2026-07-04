@@ -210,7 +210,7 @@ export const HistoryCalendar = ({
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-navy/5 flex-wrap">
+        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border flex-wrap">
           {Object.entries(DOT_CONFIG).map(([key, cfg]) => (
             <div key={key} className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${cfg.bg}`} />
@@ -270,7 +270,7 @@ export const HistoryCalendar = ({
                     <p className="text-lg font-bold text-emerald font-mono">{selectedRecord.field ?? 0}</p>
                     <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mt-0.5">Field</p>
                   </div>
-                  <div className="col-span-3 pt-2 border-t border-navy/5 text-center">
+                  <div className="col-span-3 pt-2 border-t border-border text-center">
                     <p className="text-[10px] font-bold text-navy/40 font-mono">
                       {selectedRecord.total ?? 0} total marked
                       {selectedRecord.halfDay > 0 ? ` · ${selectedRecord.halfDay} half-day` : ''}
@@ -341,7 +341,7 @@ export const HistoryCalendar = ({
                   )}
 
                   {selectedRecord.field_note && (
-                    <div className="flex items-start gap-2 pt-3 border-t border-navy/5">
+                    <div className="flex items-start gap-2 pt-3 border-t border-border">
                       <FileText size={13} className="text-navy/25 mt-0.5 shrink-0" />
                       <p className="text-xs text-navy/45 leading-relaxed">{selectedRecord.field_note}</p>
                     </div>

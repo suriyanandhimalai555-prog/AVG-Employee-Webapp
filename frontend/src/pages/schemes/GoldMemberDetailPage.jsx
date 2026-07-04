@@ -89,7 +89,7 @@ export const GoldMemberDetailPage = () => {
 
       {/* Member info card */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-3xl p-5 card-shadow border border-navy/5 space-y-3">
+        <div className="bg-white rounded-3xl p-5 card-shadow border border-border space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center">
@@ -141,7 +141,7 @@ export const GoldMemberDetailPage = () => {
 
       {/* Payment progress */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+        <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
           <div className="flex justify-between items-center mb-2">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">Payment Progress</p>
             <p className="text-xs font-bold text-navy">{paidCount} / {member.total_months} months</p>
@@ -186,7 +186,7 @@ export const GoldMemberDetailPage = () => {
               return (
                 <div
                   key={month}
-                  className={`rounded-2xl p-3 border text-center ${p ? 'bg-emerald-50 border-emerald-200' : 'bg-navy/2 border-navy/5'}`}
+                  className={`rounded-2xl p-3 border text-center ${p ? 'bg-emerald-50 border-emerald-200' : 'bg-navy/2 border-border'}`}
                 >
                   <p className="text-[9px] font-bold uppercase tracking-wider text-navy/40">Month</p>
                   <p className={`text-base font-bold mt-0.5 ${p ? 'text-emerald-600' : 'text-navy/30'}`}>{month}</p>
@@ -215,10 +215,10 @@ export const GoldMemberDetailPage = () => {
           <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">
             Payment History · {period.label}
           </p>
-          <div className="bg-white rounded-3xl card-shadow border border-navy/5 overflow-hidden">
+          <div className="bg-white rounded-3xl card-shadow border border-border overflow-hidden">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-navy/5 bg-navy/2">
+                <tr className="border-b border-border bg-navy/2">
                   <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40">Month</th>
                   <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40">Date</th>
                   <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 text-right">Amount</th>
@@ -228,7 +228,7 @@ export const GoldMemberDetailPage = () => {
               <tbody>
                 {periodPayments.map((p, idx) => (
                   <>
-                    <tr key={p.id} className={`border-b border-navy/5 ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}>
+                    <tr key={p.id} className={`border-b border-border ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}>
                       <td className="px-4 py-3 text-sm font-bold text-navy">Month {p.month_number}</td>
                       <td className="px-4 py-3 text-xs font-medium text-navy/60">{formatDate(p.paid_date)}</td>
                       <td className="px-4 py-3 text-sm font-bold text-navy text-right">{formatCurrency(p.amount)}</td>
@@ -239,7 +239,7 @@ export const GoldMemberDetailPage = () => {
                       </td>
                     </tr>
                     {(p.proof_key || p.transaction_id || p.payment_mode === 'cash_bank') && (
-                      <tr key={`${p.id}-proof`} className="border-b border-navy/5">
+                      <tr key={`${p.id}-proof`} className="border-b border-border">
                         <td colSpan={4} className="px-4 pb-3 space-y-2">
                           {p.payment_mode === 'cash_bank' && (
                             <p className="text-[10px] font-medium text-navy/50">

@@ -295,7 +295,7 @@ export const GoldCoinRoomDetailPage = () => {
 
       {/* Status + key facts */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-2xl p-4 card-shadow border border-navy/5">
+        <div className="bg-white rounded-2xl p-4 card-shadow border border-border">
           <div className="flex items-center justify-between mb-3">
             <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${style.className}`}>
               <StatusIcon size={12} aria-hidden="true" />
@@ -419,7 +419,7 @@ export const GoldCoinRoomDetailPage = () => {
       {/* Slots */}
       <div className="px-4 mb-6">
         <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mb-3">Slots</p>
-        <div className="bg-white rounded-2xl card-shadow border border-navy/5 divide-y divide-navy/5 overflow-hidden">
+        <div className="bg-white rounded-2xl card-shadow border border-border divide-y divide-border overflow-hidden">
           {room.slots.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-navy/40">No slots yet.</p>
           ) : (
@@ -505,7 +505,7 @@ export const GoldCoinRoomDetailPage = () => {
       {room.draws.length > 0 && (
         <div className="px-4 mb-10">
           <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mb-3">Draw history</p>
-          <div className="bg-white rounded-2xl card-shadow border border-navy/5 divide-y divide-navy/5 overflow-hidden">
+          <div className="bg-white rounded-2xl card-shadow border border-border divide-y divide-border overflow-hidden">
             {room.draws.map((d, idx) => {
               // Only the last draw in the list (highest draw_number) can be undone
               const isLatest = idx === room.draws.length - 1;

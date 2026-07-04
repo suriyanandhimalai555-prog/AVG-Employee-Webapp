@@ -66,7 +66,7 @@ export const BranchDetailPage = () => {
       className="flex-1 bg-surface"
     >
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-4 flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
           className="p-2 rounded-xl text-navy/40 hover:text-navy hover:bg-navy/5 transition-all tactile-press shrink-0"
@@ -88,7 +88,7 @@ export const BranchDetailPage = () => {
       <div className="max-w-2xl mx-auto px-5 py-6 pb-24 space-y-6">
         {/* Stats strip */}
         <div className="bg-white rounded-3xl card-shadow overflow-hidden">
-          <div className="grid grid-cols-3 divide-x divide-navy/5">
+          <div className="grid grid-cols-3 divide-x divide-border">
             <div className="flex flex-col items-center justify-center p-5 group">
               <p className="text-2xl font-bold text-indigo font-mono group-hover:scale-110 transition-transform duration-200">
                 {present}
@@ -177,7 +177,7 @@ export const BranchDetailPage = () => {
               </p>
             </div>
           ) : (
-            <div className={`bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden transition-opacity duration-200 ${isFetching ? 'opacity-60' : 'opacity-100'}`}>
+            <div className={`bg-white rounded-3xl card-shadow divide-y divide-border overflow-hidden transition-opacity duration-200 ${isFetching ? 'opacity-60' : 'opacity-100'}`}>
               {employees.map((emp) => (
                 <button
                   key={emp.id}

@@ -175,7 +175,7 @@ export const ChitAddMemberPage = () => {
               </div>
             </div>
           ) : (
-            <div className="w-full bg-navy/3 border border-navy/5 rounded-3xl p-4 text-center">
+            <div className="w-full bg-navy/3 border border-border rounded-3xl p-4 text-center">
               <p className="text-xs font-medium text-navy/40">No referrer — no commission this enrollment.</p>
             </div>
           )}

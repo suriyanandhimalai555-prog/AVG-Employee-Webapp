@@ -63,7 +63,7 @@ export const LandAddBookingPage = () => {
       <SchemePageWrapper>
         <SchemePageHeader backTo="/money/schemes/land/bookings" title="New Booking" />
         <div className="px-4 pt-8">
-          <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
             <ShieldCheck size={28} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">Branch Admin only</p>
           </div>

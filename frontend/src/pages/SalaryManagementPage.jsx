@@ -67,7 +67,7 @@ const OwnSalaryView = () => {
 
   if (!salary) {
     return (
-      <div className="bg-white p-8 rounded-2xl card-shadow border border-navy/5 text-center">
+      <div className="bg-white p-8 rounded-2xl card-shadow border border-border text-center">
         <Banknote size={32} className="text-navy/20 mx-auto mb-2" />
         <p className="text-sm font-medium text-navy/40">No salary assigned yet</p>
       </div>
@@ -75,7 +75,7 @@ const OwnSalaryView = () => {
   }
 
   return (
-    <div className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-[32px] card-shadow relative overflow-hidden">
+    <div className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-2xl card-shadow relative overflow-hidden">
       <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
       <div className="relative z-10">
         <p className="text-xs font-semibold text-white/60 uppercase tracking-widest mb-1">Your Salary</p>
@@ -111,7 +111,7 @@ const SalaryHistory = ({ userId }) => {
       <p className="text-xs font-semibold text-navy/40 uppercase tracking-widest mb-3">Salary History</p>
       <div className="space-y-2">
         {rows.map((row) => (
-          <div key={row.id} className="bg-white p-4 rounded-2xl border border-navy/5 card-shadow flex justify-between items-center">
+          <div key={row.id} className="bg-white p-4 rounded-2xl border border-border card-shadow flex justify-between items-center">
             <div>
               <p className="text-sm font-bold text-navy">
                 {fmt(row.base_salary)}<span className="text-xs font-normal text-navy/40">/mo</span>
@@ -156,14 +156,14 @@ const SetSalaryForm = ({ selectedUser, onSuccess }) => {
 
   if (!selectedUser) {
     return (
-      <div className="bg-white p-6 rounded-2xl border border-navy/5 card-shadow text-center text-sm text-navy/40">
+      <div className="bg-white p-6 rounded-2xl border border-border card-shadow text-center text-sm text-navy/40">
         Select an employee above to set their salary
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-navy/5 card-shadow space-y-4">
+    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-border card-shadow space-y-4">
       <p className="text-sm font-semibold text-navy">
         Set salary for <span className="text-indigo">{selectedUser.name}</span>
       </p>
@@ -254,7 +254,7 @@ const SetSalaryByRoleForm = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-navy/5 card-shadow space-y-4">
+    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-border card-shadow space-y-4">
       <p className="text-sm font-semibold text-navy">Set a common salary for all employees of a role</p>
 
       <div>
@@ -463,7 +463,7 @@ export const SalaryManagementPage = () => {
                           </p>
                         </div>
                       ) : (
-                        <div className="bg-white p-4 rounded-2xl border border-navy/5 text-sm text-navy/40 text-center">
+                        <div className="bg-white p-4 rounded-2xl border border-border text-sm text-navy/40 text-center">
                           No salary set yet
                         </div>
                       )}

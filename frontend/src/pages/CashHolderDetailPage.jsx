@@ -30,7 +30,7 @@ export const CashHolderDetailPage = () => {
       {/* Back button */}
       <button
         onClick={() => navigate(-1)}
-        className="fixed top-4 left-4 z-[200] flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-md border border-navy/5 rounded-2xl shadow-xl text-[10px] font-bold text-navy uppercase tracking-widest tactile-press"
+        className="fixed top-4 left-4 z-[200] flex items-center gap-2 px-4 py-2 bg-white border border-border rounded-2xl shadow-xl text-[10px] font-bold text-navy uppercase tracking-widest tactile-press"
       >
         <ArrowRight className="rotate-180" size={14} /> Back
       </button>
@@ -62,7 +62,7 @@ export const CashHolderDetailPage = () => {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-[28px] p-6 shadow-lg shadow-amber-200/60"
+            className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl p-6 shadow-lg shadow-amber-200/60"
           >
             <div className="flex items-start justify-between">
               <div>
@@ -122,7 +122,7 @@ export const CashHolderDetailPage = () => {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
-                className="bg-white rounded-[22px] card-shadow border border-navy/5 overflow-hidden"
+                className="bg-white rounded-xl card-shadow border border-border overflow-hidden"
               >
                 {/* Top strip: amount + mode badge */}
                 <div className="flex items-center justify-between px-5 pt-5 pb-3">

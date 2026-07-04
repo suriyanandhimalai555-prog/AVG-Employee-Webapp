@@ -172,13 +172,13 @@ const SiteCommissionPanel = ({ layoutId }) => {
   const sorted = [...rules].sort((a,b) => LAND_ROLE_ORDER.indexOf(a.role) - LAND_ROLE_ORDER.indexOf(b.role));
 
   return (
-    <div className="bg-white rounded-xl border border-navy/5 overflow-x-auto">
+    <div className="bg-white rounded-xl border border-border overflow-x-auto">
       {isLoading ? (
         <div className="flex justify-center py-4"><Loader2 className="animate-spin text-navy/20" size={18} /></div>
       ) : (
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-navy/[0.02] border-b border-navy/5">
+            <tr className="bg-navy/[0.02] border-b border-border">
               <th className="px-3 py-2 text-left text-[9px] font-bold uppercase tracking-wider text-navy/30">Role</th>
               <th className="px-2 py-2 text-right text-[9px] font-bold uppercase tracking-wider text-navy/30">Spot (₹)</th>
               <th className="px-2 py-2 text-right text-[9px] font-bold uppercase tracking-wider text-navy/30">Monthly (₹)</th>
@@ -186,7 +186,7 @@ const SiteCommissionPanel = ({ layoutId }) => {
               <th className="px-2 py-2 w-16"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-navy/5">
+          <tbody className="divide-y divide-border">
             {sorted.map(rule => (
               <LandCommissionRow key={rule.role} layoutId={layoutId} rule={rule} />
             ))}
@@ -251,7 +251,7 @@ export const LandSiteDetailPage = () => {
 
       {/* Site details card */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 space-y-2">
+        <div className="bg-white rounded-2xl p-4 card-shadow border border-border space-y-2">
           {[
             { label: 'Location',    val: site.location },
             { label: 'Address',     val: site.address },
@@ -283,7 +283,7 @@ export const LandSiteDetailPage = () => {
         </div>
 
         {layouts.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
             <p className="text-sm font-bold text-navy">No layouts yet</p>
             {isSiteAdmin && <p className="text-xs text-navy/40 mt-1">Tap "Add Layout" to define the first layout.</p>}
           </div>
@@ -372,7 +372,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
+    <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
       {/* Layout header */}
       <div className="px-4 py-3 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -420,7 +420,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
       {/* Layout pricing edit (Management/MD) — buyback values here drive the payout
           schedule generated at full payment; plot-level buyback is display-only legacy. */}
       {editLayout && isSiteAdmin && (
-        <div className="border-t border-navy/5 px-4 py-3 bg-stone-50 space-y-2">
+        <div className="border-t border-border px-4 py-3 bg-stone-50 space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Edit Layout Pricing</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -469,7 +469,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
 
       {/* Plots */}
       {plots.length > 0 && (
-        <div className="border-t border-navy/5 divide-y divide-navy/5">
+        <div className="border-t border-border divide-y divide-border">
           {plots.map(plot => (
             <div key={plot.id} className="px-4 py-2.5">
               {editingPlotId === plot.id && isSiteAdmin ? (
@@ -535,7 +535,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
 
       {/* Add Plot form */}
       {isSiteAdmin && (
-        <div className="border-t border-navy/5 px-4 py-3">
+        <div className="border-t border-border px-4 py-3">
           {addingPlot ? (
             <AddPlotForm layoutId={layout.id} onSuccess={() => setAddingPlot(false)} />
           ) : (
@@ -549,7 +549,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
 
       {/* Commission rules (Management/MD only) */}
       {isSiteAdmin && (
-        <div className="border-t border-navy/5">
+        <div className="border-t border-border">
           <button type="button"
             onClick={() => setShowCommission(v => !v)}
             className="w-full px-4 py-2.5 flex items-center justify-between text-[10px] font-bold text-navy/40 hover:text-navy/60 transition-colors">

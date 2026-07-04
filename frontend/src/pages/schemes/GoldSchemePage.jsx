@@ -78,7 +78,7 @@ export const GoldSchemePage = () => {
       {/* Summary strip */}
       {summary && (
         <div className="px-4 mb-5">
-          <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
+          <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
               { label: 'Total',   val: summary.totalChits },
               { label: 'Active',  val: summary.activeChits,    cls: 'text-emerald-600' },
@@ -128,7 +128,7 @@ export const GoldSchemePage = () => {
             <Loader2 className="animate-spin text-navy/20" size={32} aria-hidden="true" />
           </div>
         ) : members.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
             <Users size={28} className="text-navy/20 mb-3" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">
               {isReferrerView ? 'No referrals yet' : 'No Members Found'}
@@ -140,11 +140,11 @@ export const GoldSchemePage = () => {
             </p>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl card-shadow border border-navy/5 overflow-hidden">
+          <div className="bg-white rounded-3xl card-shadow border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[580px] text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-navy/5 bg-navy/2">
+                  <tr className="border-b border-border bg-navy/2">
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">S.No</th>
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Customer</th>
                     <th className="px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-navy/40 whitespace-nowrap">Contact</th>
@@ -161,7 +161,7 @@ export const GoldSchemePage = () => {
                     <tr
                       key={m.id}
                       onClick={() => navigate(`/money/schemes/gold/${m.id}`)}
-                      className={`border-b border-navy/5 cursor-pointer hover:bg-amber-50/60 transition-colors ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}
+                      className={`border-b border-border cursor-pointer hover:bg-amber-50/60 transition-colors ${idx % 2 === 0 ? '' : 'bg-navy/[0.01]'}`}
                     >
                       <td className="px-4 py-3 text-xs font-bold text-amber-600 whitespace-nowrap">{m.chit_number}</td>
                       <td className="px-4 py-3 whitespace-nowrap">

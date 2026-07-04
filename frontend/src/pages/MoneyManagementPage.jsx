@@ -77,21 +77,21 @@ export const MoneyManagementPage = () => {
         {/* KPI Strip */}
         <div className="px-4 mb-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center"><TrendingUp size={14} /></div>
                 <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Collected</p>
               </div>
               <p className="text-xl font-bold text-navy">₹{ovTotals.collected.toLocaleString()}</p>
             </div>
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center"><CheckCircle2 size={14} /></div>
                 <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Verified</p>
               </div>
               <p className="text-xl font-bold text-navy">₹{ovTotals.verified.toLocaleString()}</p>
             </div>
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center"><Clock size={14} /></div>
                 <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Pending</p>
@@ -107,7 +107,7 @@ export const MoneyManagementPage = () => {
                 <p className="text-xl font-bold text-white">₹{(ov?.cashOnHand || 0).toLocaleString()}</p>
               </div>
             ) : (
-              <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5">
+              <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="w-7 h-7 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><XCircle size={14} /></div>
                   <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Rejected</p>
@@ -120,7 +120,7 @@ export const MoneyManagementPage = () => {
 
         {/* Mode breakdown strip */}
         <div className="px-4 mb-6">
-          <div className="bg-white rounded-[24px] p-4 card-shadow border border-navy/5">
+          <div className="bg-white rounded-xl p-4 card-shadow border border-border">
             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
             <div className="grid grid-cols-3 gap-2">
               {[
@@ -151,7 +151,7 @@ export const MoneyManagementPage = () => {
                 <button
                   key={h.id}
                   onClick={() => navigate(`/money/holders/${h.id}`)}
-                  className="w-full bg-white rounded-[22px] p-4 card-shadow border border-amber-100/60 flex items-center gap-4 group tactile-press text-left hover:border-amber-200 transition-colors"
+                  className="w-full bg-white rounded-xl p-4 card-shadow border border-amber-100/60 flex items-center gap-4 group tactile-press text-left hover:border-amber-200 transition-colors"
                 >
                   {/* Rank badge */}
                   <div className="w-7 h-7 rounded-xl bg-amber-50 flex items-center justify-center text-[11px] font-bold text-amber-500 shrink-0">
@@ -199,7 +199,7 @@ export const MoneyManagementPage = () => {
             <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Administration</p>
             <button
               onClick={() => navigate('/money/projects')}
-              className="w-full bg-white rounded-[28px] p-5 flex items-center justify-between card-shadow border border-navy/5 group tactile-press"
+              className="w-full bg-white rounded-2xl p-5 flex items-center justify-between card-shadow border border-border group tactile-press"
             >
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -218,7 +218,7 @@ export const MoneyManagementPage = () => {
         {/* Stuck Cash Alerts (MD-only) */}
         {isMd && stuckCash.length > 0 && (
           <div className="px-4 mb-6">
-            <div className="bg-red-50 border border-red-200 rounded-[24px] p-4 space-y-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle size={16} className="text-red-500" />
                 <p className="text-xs font-bold text-red-700">{stuckCash.length} cash alert{stuckCash.length > 1 ? 's' : ''} — held &gt;3 days</p>
@@ -254,7 +254,7 @@ export const MoneyManagementPage = () => {
                 <button
                   key={b.branchId}
                   onClick={() => setDrillBranchId(b.branchId)}
-                  className="w-full bg-white rounded-[24px] p-4 card-shadow border border-navy/5 text-left tactile-press group"
+                  className="w-full bg-white rounded-xl p-4 card-shadow border border-border text-left tactile-press group"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -285,7 +285,7 @@ export const MoneyManagementPage = () => {
                     {b.rejected > 0 && <span className="text-red-400">₹{b.rejected.toLocaleString()} rejected</span>}
                   </div>
                   {/* Mode breakdown */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-navy/5">
+                  <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-border">
                     {[
                       { label: 'GPay', val: b.byMode?.gpay || 0, cls: 'text-indigo bg-indigo/5' },
                       { label: 'Bank', val: b.byMode?.bankReceipt || 0, cls: 'text-emerald-600 bg-emerald-50' },
@@ -323,7 +323,7 @@ export const MoneyManagementPage = () => {
           <div className="px-4 mb-6 grid grid-cols-2 gap-3">
             <button
               onClick={() => navigate('/money/rankings')}
-              className="bg-gradient-to-br from-indigo to-indigo/80 rounded-[24px] p-4 flex flex-col items-start gap-3 card-shadow tactile-press group"
+              className="bg-gradient-to-br from-indigo to-indigo/80 rounded-xl p-4 flex flex-col items-start gap-3 card-shadow tactile-press group"
             >
               <div className="w-9 h-9 rounded-2xl bg-white/10 flex items-center justify-center">
                 <BarChart3 size={18} className="text-white" />
@@ -335,7 +335,7 @@ export const MoneyManagementPage = () => {
             </button>
             <button
               onClick={() => navigate('/money/add-entry')}
-              className="bg-white rounded-[24px] p-4 flex flex-col items-start gap-3 card-shadow border border-navy/5 tactile-press group"
+              className="bg-white rounded-xl p-4 flex flex-col items-start gap-3 card-shadow border border-border tactile-press group"
             >
               <div className="w-9 h-9 rounded-2xl bg-emerald-50 flex items-center justify-center">
                 <PenLine size={18} className="text-emerald-600" />
@@ -351,10 +351,10 @@ export const MoneyManagementPage = () => {
           <div className="px-4 mb-6">
             <button
               onClick={() => navigate('/money/pending-transfers')}
-              className={`w-full rounded-[28px] p-5 tactile-press group text-left space-y-3 border ${
+              className={`w-full rounded-2xl p-5 tactile-press group text-left space-y-3 border ${
                 mdPendingToVerify.length > 0
                   ? 'bg-amber-50 border-amber-200'
-                  : 'bg-white border-navy/5 card-shadow'
+                  : 'bg-white border-border card-shadow'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -408,9 +408,9 @@ export const MoneyManagementPage = () => {
                   exit={{ scale: 0.92, opacity: 0 }}
                   transition={{ type: 'spring', damping: 28, stiffness: 280 }}
                   onClick={e => e.stopPropagation()}
-                  className="bg-white w-full max-w-lg rounded-[32px] overflow-hidden shadow-2xl pointer-events-auto"
+                  className="bg-white w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
                 >
-                  <div className="flex items-center justify-between p-5 border-b border-navy/5">
+                  <div className="flex items-center justify-between p-5 border-b border-border">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
                       <div>
@@ -438,7 +438,7 @@ export const MoneyManagementPage = () => {
                             { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
                             { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
                           ].map(({ label, val, icon, bg }) => (
-                            <div key={label} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                            <div key={label} className="bg-white rounded-xl p-4 card-shadow border border-border">
                               <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
                               <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
                               <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
@@ -447,7 +447,7 @@ export const MoneyManagementPage = () => {
                         </div>
 
                         {/* Mode breakdown */}
-                        <div className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                        <div className="bg-white rounded-xl p-4 card-shadow border border-border">
                           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
                           <div className="grid grid-cols-3 gap-2">
                             {[
@@ -469,7 +469,7 @@ export const MoneyManagementPage = () => {
                             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
                             <div className="space-y-2">
                               {drilldown.holders.map(h => (
-                                <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
+                                <div key={h.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center justify-between">
                                   <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
                                     <div>
@@ -490,7 +490,7 @@ export const MoneyManagementPage = () => {
                             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
                             <div className="space-y-2">
                               {drilldown.topCollectors.map((c, idx) => (
-                                <div key={c.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center gap-3">
+                                <div key={c.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center gap-3">
                                   <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-xs font-bold text-navy truncate">{c.name}</p>
@@ -513,7 +513,7 @@ export const MoneyManagementPage = () => {
                                   ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
                                   : 0;
                                 return (
-                                  <div key={p.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                                  <div key={p.id} className="bg-white rounded-xl p-4 card-shadow border border-border">
                                     <div className="flex justify-between items-center mb-2">
                                       <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
                                       <div className="text-right shrink-0">
@@ -537,7 +537,7 @@ export const MoneyManagementPage = () => {
                             <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
                             <div className="space-y-3">
                               {drilldown.collections.map(col => (
-                                <div key={col.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 space-y-3">
+                                <div key={col.id} className="bg-white rounded-xl p-4 card-shadow border border-border space-y-3">
                                   <div className="flex items-start justify-between">
                                     <div>
                                       <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
@@ -597,7 +597,7 @@ export const MoneyManagementPage = () => {
           <div className="px-6 grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
 
             {/* ── SCHEMES (pinned to top, full-width featured) ── */}
-            <button onClick={() => navigate('/money/schemes')} className="md:col-span-2 bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+            <button onClick={() => navigate('/money/schemes')} className="md:col-span-2 bg-gradient-to-br from-amber-400 to-amber-500 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
               <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
@@ -612,7 +612,7 @@ export const MoneyManagementPage = () => {
             </button>
 
             {/* ── INCENTIVE WALLET (below Schemes, full-width featured) ── */}
-            <button onClick={() => navigate('/money/incentives')} className="md:col-span-2 bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+            <button onClick={() => navigate('/money/incentives')} className="md:col-span-2 bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
               <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
@@ -627,7 +627,7 @@ export const MoneyManagementPage = () => {
             </button>
 
             {/* ── EVERYTHING ELSE below ── */}
-            <button onClick={() => navigate('/money/submit')} className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
+            <button onClick={() => navigate('/money/submit')} className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
               <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-white mb-4">
@@ -641,7 +641,7 @@ export const MoneyManagementPage = () => {
               </div>
             </button>
 
-            <button onClick={() => navigate('/money/history')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
+            <button onClick={() => navigate('/money/history')} className="bg-white p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-border">
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy mb-4 group-hover:scale-110 transition-transform">
                   <History size={24} />
@@ -655,7 +655,7 @@ export const MoneyManagementPage = () => {
             </button>
 
             {pendingToVerify.length > 0 && (
-              <button onClick={() => navigate('/money/history')} className="bg-amber-50 p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-amber-200">
+              <button onClick={() => navigate('/money/history')} className="bg-amber-50 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-amber-200">
                 <div className="relative z-10 w-3/4">
                   <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-4 group-hover:scale-110 transition-transform">
                     <CheckCircle2 size={24} />
@@ -670,7 +670,7 @@ export const MoneyManagementPage = () => {
             )}
 
             {user?.role !== 'md' && (
-              <button onClick={() => navigate('/money/wallet')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
+              <button onClick={() => navigate('/money/wallet')} className="bg-white p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-border">
                 <div className="relative z-10 w-3/4">
                   <div className="w-12 h-12 rounded-2xl bg-indigo/5 flex items-center justify-center text-indigo mb-4 group-hover:scale-110 transition-transform">
                     <Briefcase size={24} />
@@ -684,7 +684,7 @@ export const MoneyManagementPage = () => {
               </button>
             )}
 
-            <button onClick={() => navigate('/money/salaries')} className="bg-white p-6 rounded-[32px] card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-navy/5">
+            <button onClick={() => navigate('/money/salaries')} className="bg-white p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-border">
               <div className="relative z-10 w-3/4">
                 <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy mb-4 group-hover:scale-110 transition-transform">
                   <Banknote size={24} />

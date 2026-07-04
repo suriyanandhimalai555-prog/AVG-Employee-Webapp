@@ -597,7 +597,7 @@ const LandPaymentsPanel = ({ entry, branchId }) => {
   const pendingCount = payouts.length - paidPayouts.length;
 
   return (
-    <div className="border-t border-navy/5 pt-3 mt-1 space-y-2">
+    <div className="border-t border-border pt-3 mt-1 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Payments</span>
         <button type="button" onClick={() => setOpen(false)} className="text-navy/30 hover:text-navy/60">
@@ -669,7 +669,7 @@ const PaymentsPanel = ({
   }
 
   return (
-    <div className="border-t border-navy/5 pt-3 mt-1 space-y-2">
+    <div className="border-t border-border pt-3 mt-1 space-y-2">
       {/* Header row */}
       <div className="flex items-center justify-between">
         <span className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Payments</span>
@@ -987,7 +987,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-navy/5 pt-3 space-y-3">
+    <form onSubmit={handleSubmit} className="border-t border-border pt-3 space-y-3">
       <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Correct Entry</p>
       {fields.map((field) => {
         // For referrer fields: always include the entry's current referrer as an option even
@@ -1144,7 +1144,7 @@ const ChitMemberCard = ({ member, groupId, branchId, chitActions }) => {
   };
 
   return (
-    <div className={`bg-navy/3 rounded-2xl px-4 py-3 space-y-2 border ${isVoided ? 'border-gray-200 opacity-60' : 'border-navy/5'}`}>
+    <div className={`bg-navy/3 rounded-2xl px-4 py-3 space-y-2 border ${isVoided ? 'border-gray-200 opacity-60' : 'border-border'}`}>
       {/* Member header */}
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
@@ -1267,7 +1267,7 @@ const ChitGroupCard = ({ entry, branchId, chitActions }) => {
   const members = group?.members ?? [];
 
   return (
-    <div className="bg-white rounded-2xl card-shadow border border-navy/5 px-4 py-3 space-y-3">
+    <div className="bg-white rounded-2xl card-shadow border border-border px-4 py-3 space-y-3">
       {/* Group header row */}
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
@@ -1294,7 +1294,7 @@ const ChitGroupCard = ({ entry, branchId, chitActions }) => {
 
       {/* Members list */}
       {expanded && (
-        <div className="border-t border-navy/5 pt-3 space-y-2">
+        <div className="border-t border-border pt-3 space-y-2">
           {isFetching && (
             <div className="flex justify-center py-4">
               <Loader2 size={18} className="animate-spin text-navy/30" />
@@ -1381,7 +1381,7 @@ const EntryCard = ({ entry, schemeCode, branchId, actions }) => {
   };
 
   return (
-    <div className={`bg-white rounded-2xl card-shadow border px-4 py-3 space-y-2 ${isVoided ? 'border-gray-200 opacity-60' : 'border-navy/5'}`}>
+    <div className={`bg-white rounded-2xl card-shadow border px-4 py-3 space-y-2 ${isVoided ? 'border-gray-200 opacity-60' : 'border-border'}`}>
       <div className="flex items-center gap-3">
         {Row && <Row e={entry} />}
         <div className="flex-shrink-0 text-right space-y-1">
@@ -1594,7 +1594,7 @@ const SlotRow = ({ slot, branchId, schemeCode, slotActions, roomId }) => {
   const fields = SCHEME_FIELDS[schemeCode] ?? [];
 
   return (
-    <div className={`bg-white rounded-xl px-3 py-2.5 border space-y-2 ${isInactive ? 'border-gray-200 opacity-60' : 'border-navy/5'}`}>
+    <div className={`bg-white rounded-xl px-3 py-2.5 border space-y-2 ${isInactive ? 'border-gray-200 opacity-60' : 'border-border'}`}>
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-bold text-navy truncate">{slot.customer_name || '—'}
@@ -1728,7 +1728,7 @@ const RoomSlotsPanel = ({ entry, branchId, schemeCode, slotActions }) => {
   const isGC  = schemeCode === 'gold_coin_scheme';
 
   return (
-    <div className="border-t border-navy/5 pt-2 mt-1">
+    <div className="border-t border-border pt-2 mt-1">
       <button type="button" onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-1.5 text-[10px] font-bold text-navy/50 hover:text-indigo tactile-press">
         <Users size={11} />
@@ -1762,7 +1762,7 @@ const AuditHistory = ({ schemeCode }) => {
   );
 
   return (
-    <div className="border-t border-navy/5 pt-4 mt-6">
+    <div className="border-t border-border pt-4 mt-6">
       <button type="button" onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 text-xs font-bold text-navy/50 tactile-press hover:text-navy/80">
         <History size={14} />
@@ -1776,7 +1776,7 @@ const AuditHistory = ({ schemeCode }) => {
             <p className="text-xs text-navy/40 text-center py-4">No corrections recorded yet.</p>
           )}
           {!isLoading && auditRows?.map((row) => (
-            <div key={row.id} className="bg-white rounded-xl px-4 py-3 border border-navy/5 space-y-1">
+            <div key={row.id} className="bg-white rounded-xl px-4 py-3 border border-border space-y-1">
               <div className="flex items-center justify-between">
                 <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${ACTION_STYLES[row.action] ?? 'bg-navy/5 text-navy/40'}`}>
                   {row.action}
@@ -1915,7 +1915,7 @@ export const SchemeCorrectionsPage = () => {
           )}
 
           {visible.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+            <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
               <p className="text-sm font-bold text-navy">{q ? 'No matches' : 'No entries found'}</p>
               <p className="text-xs text-navy/40 mt-1">{q ? 'Try a different search term.' : 'Try different filters.'}</p>
             </div>
@@ -1936,7 +1936,7 @@ export const SchemeCorrectionsPage = () => {
                   />
                 ) : isRoomScheme ? (
                   // Gold-coin / LSS show rooms; slot-level actions live in RoomSlotsPanel.
-                  <div key={entry.id} className="bg-white rounded-2xl card-shadow border border-navy/5 px-4 py-3 space-y-2">
+                  <div key={entry.id} className="bg-white rounded-2xl card-shadow border border-border px-4 py-3 space-y-2">
                     <div className="flex items-center gap-3">
                       {ENTRY_ROW[schemeCode] && React.createElement(ENTRY_ROW[schemeCode], { e: entry })}
                       <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>

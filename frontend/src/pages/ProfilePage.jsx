@@ -176,7 +176,7 @@ export const ProfilePage = () => {
             </div>
           ) : (
             documents.map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between p-3 rounded-2xl bg-navy/[0.02] border border-navy/5 group">
+              <div key={doc.id} className="flex items-center justify-between p-3 rounded-2xl bg-navy/[0.02] border border-border group">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="p-2 rounded-lg bg-navy/5 text-navy/40">
                     <FileText size={16} />

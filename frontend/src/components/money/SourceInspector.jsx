@@ -19,9 +19,9 @@ export const SourceInspector = ({ transferId, onClose }) => {
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }} 
         animate={{ scale: 1, opacity: 1 }} 
-        className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
+        className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
       >
-        <div className="p-6 border-b border-navy/5 flex justify-between items-center">
+        <div className="p-6 border-b border-border flex justify-between items-center">
           <h4 className="font-bold text-navy">Origin Details</h4>
           <button onClick={onClose} className="p-2 hover:bg-navy/5 rounded-full text-navy/40 hover:text-navy">
             <X size={20}/>
@@ -37,7 +37,7 @@ export const SourceInspector = ({ transferId, onClose }) => {
             <p className="text-center text-sm text-navy/40 py-8">No source records found.</p>
           ) : (
             sources.map(s => (
-              <div key={s.id} className="p-4 bg-navy/2 rounded-2xl border border-navy/5">
+              <div key={s.id} className="p-4 bg-navy/2 rounded-2xl border border-border">
                 <div className="flex justify-between items-start mb-2">
                   <p className="text-sm font-bold text-navy">₹{parseFloat(s.amount).toLocaleString()}</p>
                   <p className="text-[9px] font-bold text-indigo bg-indigo/5 px-2 py-1 rounded-lg uppercase">
@@ -66,7 +66,7 @@ export const SourceInspector = ({ transferId, onClose }) => {
           )}
         </div>
 
-        <div className="p-6 bg-navy/[0.02] border-t border-navy/5">
+        <div className="p-6 bg-navy/[0.02] border-t border-border">
           <button 
             onClick={onClose} 
             className="w-full py-3 bg-navy text-white text-sm font-bold rounded-xl tactile-press"

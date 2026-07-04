@@ -11,10 +11,10 @@ export const Button = ({
   const baseStyles = "px-6 py-3 rounded-xl font-semibold transition-all duration-200 outline-none tactile-press flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
-    primary: "gradient-primary text-white shadow-lg shadow-indigo/20 hover:shadow-xl hover:shadow-indigo/30 hover:brightness-110",
-    secondary: "bg-surface-container text-navy hover:bg-surface-container-low",
+    primary: "gradient-primary text-white shadow-md shadow-indigo/25 hover:shadow-lg hover:shadow-indigo/30 hover:brightness-105",
+    secondary: "bg-white text-navy border border-border hover:bg-surface-container-low",
     tonal: "bg-surface-container-low text-navy hover:bg-surface-container transition-colors",
-    outline: "border border-navy/10 text-navy hover:bg-surface-container-low hover:border-navy/20",
+    outline: "border border-border text-navy hover:bg-surface-container-low hover:border-border-strong",
     ghost: "text-navy hover:bg-surface-container-low",
   };
 

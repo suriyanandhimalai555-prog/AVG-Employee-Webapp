@@ -7,9 +7,9 @@ const NavItem = ({ icon: Icon, label, active, hasAlert, onClick }) => (
     type="button"
     aria-label={label}
     aria-current={active ? 'page' : undefined}
-    className={`relative flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-[18px] transition-all duration-300 tactile-press ${
+    className={`relative flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-all duration-300 tactile-press ${
       active
-        ? 'bg-indigo text-white shadow-lg shadow-indigo/25'
+        ? 'bg-indigo text-white shadow-md shadow-indigo/30'
         : 'text-navy/35 hover:text-navy/70 hover:bg-navy/5'
     }`}
   >
@@ -38,7 +38,7 @@ export const BottomNav = () => {
 
   return (
     <footer className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] px-6 pb-6 pt-2 z-50 pointer-events-none">
-      <nav className="p-1.5 flex items-center justify-around glass rounded-[26px] card-shadow pointer-events-auto overflow-x-auto no-scrollbar">
+      <nav className="p-1.5 flex items-center justify-around glass rounded-2xl card-shadow pointer-events-auto overflow-x-auto no-scrollbar">
         {tabs.map((tab) => (
           <NavItem
             key={tab.key}

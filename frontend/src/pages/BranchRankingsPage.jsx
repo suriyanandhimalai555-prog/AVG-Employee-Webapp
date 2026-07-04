@@ -98,7 +98,7 @@ export const BranchRankingsPage = () => {
 
         {/* Date filter tabs */}
         <div className="px-4 mb-5">
-          <div className="bg-white rounded-2xl p-1 flex gap-1 card-shadow border border-navy/5">
+          <div className="bg-white rounded-2xl p-1 flex gap-1 card-shadow border border-border">
             {[
               { key: 'all', label: 'All Time' },
               { key: 'year', label: 'This Year' },
@@ -117,7 +117,7 @@ export const BranchRankingsPage = () => {
 
         {/* Grand total strip */}
         <div className="px-4 mb-6">
-          <div className="bg-navy rounded-[24px] p-5 flex items-center justify-between">
+          <div className="bg-navy rounded-xl p-5 flex items-center justify-between">
             <div>
               <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mb-1">Grand Total (All Branches)</p>
               <p className="text-2xl font-black text-white">₹{rankTotal.toLocaleString()}</p>
@@ -139,7 +139,7 @@ export const BranchRankingsPage = () => {
               <button
                 key={b.branchId}
                 onClick={() => setDrillBranchId(b.branchId)}
-                className="w-full bg-white rounded-[24px] p-4 card-shadow border border-navy/5 text-left tactile-press group"
+                className="w-full bg-white rounded-xl p-4 card-shadow border border-border text-left tactile-press group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center shrink-0">
@@ -157,7 +157,7 @@ export const BranchRankingsPage = () => {
                     <RankBadge rank={b.rank} />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-1.5 mt-3 pt-3 border-t border-navy/5">
+                <div className="grid grid-cols-3 gap-1.5 mt-3 pt-3 border-t border-border">
                   {[
                     { label: 'GPay', val: b.byMode?.gpay || 0, cls: 'text-indigo bg-indigo/5' },
                     { label: 'Bank', val: b.byMode?.bankReceipt || 0, cls: 'text-emerald-600 bg-emerald-50' },
@@ -188,9 +188,9 @@ export const BranchRankingsPage = () => {
                 initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
                 transition={{ type: 'spring', damping: 28, stiffness: 280 }}
                 onClick={e => e.stopPropagation()}
-                className="bg-white w-full max-w-lg rounded-[32px] overflow-hidden shadow-2xl pointer-events-auto"
+                className="bg-white w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
               >
-                <div className="flex items-center justify-between p-5 border-b border-navy/5">
+                <div className="flex items-center justify-between p-5 border-b border-border">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
                     <div>
@@ -216,7 +216,7 @@ export const BranchRankingsPage = () => {
                           { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
                           { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
                         ].map(({ label, val, icon, bg }) => (
-                          <div key={label} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                          <div key={label} className="bg-white rounded-xl p-4 card-shadow border border-border">
                             <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
                             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
                             <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
@@ -225,7 +225,7 @@ export const BranchRankingsPage = () => {
                       </div>
 
                       {/* Mode breakdown */}
-                      <div className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                      <div className="bg-white rounded-xl p-4 card-shadow border border-border">
                         <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
                         <div className="grid grid-cols-3 gap-2">
                           {[
@@ -247,7 +247,7 @@ export const BranchRankingsPage = () => {
                           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
                           <div className="space-y-2">
                             {drilldown.holders.map(h => (
-                              <div key={h.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center justify-between">
+                              <div key={h.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
                                   <div>
@@ -268,7 +268,7 @@ export const BranchRankingsPage = () => {
                           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
                           <div className="space-y-2">
                             {drilldown.topCollectors.map((c, idx) => (
-                              <div key={c.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 flex items-center gap-3">
+                              <div key={c.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center gap-3">
                                 <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-bold text-navy truncate">{c.name}</p>
@@ -291,7 +291,7 @@ export const BranchRankingsPage = () => {
                                 ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
                                 : 0;
                               return (
-                                <div key={p.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5">
+                                <div key={p.id} className="bg-white rounded-xl p-4 card-shadow border border-border">
                                   <div className="flex justify-between items-center mb-2">
                                     <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
                                     <div className="text-right shrink-0">
@@ -315,7 +315,7 @@ export const BranchRankingsPage = () => {
                           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
                           <div className="space-y-3">
                             {drilldown.collections.map(col => (
-                              <div key={col.id} className="bg-white rounded-[20px] p-4 card-shadow border border-navy/5 space-y-3">
+                              <div key={col.id} className="bg-white rounded-xl p-4 card-shadow border border-border space-y-3">
                                 <div className="flex items-start justify-between">
                                   <div>
                                     <p className="text-xs font-bold text-navy">{col.submitter_name}</p>

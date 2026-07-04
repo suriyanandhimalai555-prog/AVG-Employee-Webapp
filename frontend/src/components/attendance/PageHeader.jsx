@@ -124,7 +124,7 @@ export const PageHeader = () => {
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b border-navy/[0.06] px-5 md:px-8 h-[68px] flex items-center gap-3">
+    <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-xl border-b border-border px-5 md:px-8 h-[68px] flex items-center gap-3">
 
       {/* ── Mobile: back button + brand logo (always visible) ── */}
       <div className="flex md:hidden items-center gap-2 shrink-0">
@@ -140,7 +140,7 @@ export const PageHeader = () => {
         <img
           src="/AVGLOGO.jpeg"
           alt="AgilaVetri Groups"
-          className="w-9 h-9 rounded-[14px] object-cover shadow-md shrink-0"
+          className="w-9 h-9 rounded-2xl object-cover shadow-md shrink-0"
         />
       </div>
 
@@ -201,7 +201,7 @@ export const PageHeader = () => {
         </button>
         <button
           onClick={() => navigate('/profile')}
-          className="w-9 h-9 rounded-[12px] overflow-hidden ring-2 ring-indigo/15 hover:ring-indigo/35 transition-all duration-200 shrink-0 tactile-press"
+          className="w-9 h-9 rounded-xl overflow-hidden ring-2 ring-indigo/15 hover:ring-indigo/35 transition-all duration-200 shrink-0 tactile-press"
         >
           <Avatar url={user?.profilePhotoUrl} name={user?.name} size={36} />
         </button>

@@ -45,7 +45,7 @@ export const Login = () => {
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.1, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-            className="w-[88px] h-[88px] rounded-[28px] overflow-hidden shadow-2xl shadow-indigo/15 mb-5 ring-4 ring-white"
+            className="w-[88px] h-[88px] rounded-2xl overflow-hidden shadow-2xl shadow-indigo/15 mb-5 ring-4 ring-white"
           >
             <img src="/AVGLOGO.jpeg" alt="AgilaVetri Groups" className="w-full h-full object-cover" />
           </motion.div>
@@ -56,7 +56,7 @@ export const Login = () => {
         </div>
 
         {/* Login card */}
-        <div className="glass p-8 rounded-[36px] card-shadow border border-white/70 backdrop-blur-2xl">
+        <div className="glass p-8 rounded-2xl card-shadow">
 
           <div className="mb-7">
             <h2 className="text-xl font-bold text-navy tracking-tight">Welcome back</h2>

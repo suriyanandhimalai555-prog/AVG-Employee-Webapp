@@ -22,7 +22,7 @@ export const SchemeCard = ({ project, onNavigate }) => {
   };
 
   return (
-    <div className="rounded-[32px] overflow-hidden card-shadow">
+    <div className="rounded-2xl overflow-hidden card-shadow">
       <button
         onClick={handleClick}
         className={`${gradient} p-6 w-full flex items-start justify-between relative overflow-hidden text-left tactile-press group`}
@@ -49,7 +49,7 @@ export const SchemeCard = ({ project, onNavigate }) => {
       </button>
 
       {showPanel && (
-        <div className="bg-white border-t border-navy/5 px-5 py-4">
+        <div className="bg-white border-t border-border px-5 py-4">
           <p className="text-[10px] font-bold text-navy/30 uppercase tracking-widest mb-3">
             Commission per deal
           </p>

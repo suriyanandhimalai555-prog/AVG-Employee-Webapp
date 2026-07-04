@@ -449,7 +449,7 @@ export const ChitGroupDetailPage = () => {
 
       {/* Status strip */}
       <div className="px-4 mb-4">
-        <div className={`rounded-3xl p-4 card-shadow border ${isForming ? 'border-blue-100 bg-blue-50/30' : isPending ? 'border-amber-100 bg-amber-50/30' : 'border-navy/5 bg-white'}`}>
+        <div className={`rounded-3xl p-4 card-shadow border ${isForming ? 'border-blue-100 bg-blue-50/30' : isPending ? 'border-amber-100 bg-amber-50/30' : 'border-border bg-white'}`}>
           <div className="grid grid-cols-4 divide-x divide-navy/10 mb-3">
             {[
               { label: 'Members', val: `${memberCount}/20` },
@@ -576,7 +576,7 @@ export const ChitGroupDetailPage = () => {
 
             return (
               <div key={member.id}
-                className={`bg-white rounded-3xl p-4 card-shadow border ${isCancelled ? 'border-red-100' : hasWon ? 'border-amber-100' : 'border-navy/5'}`}>
+                className={`bg-white rounded-3xl p-4 card-shadow border ${isCancelled ? 'border-red-100' : hasWon ? 'border-amber-100' : 'border-border'}`}>
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -680,7 +680,7 @@ export const ChitGroupDetailPage = () => {
           })}
 
           {memberCount === 0 && (
-            <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl card-shadow border border-navy/5">
+            <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl card-shadow border border-border">
               <Users size={24} className="text-navy/20 mb-2" aria-hidden="true" />
               <p className="text-xs font-bold text-navy">No members yet</p>
               {isAdmin && <p className="text-[10px] font-medium text-navy/40 mt-1">Tap "Add Member" to start enrolling.</p>}

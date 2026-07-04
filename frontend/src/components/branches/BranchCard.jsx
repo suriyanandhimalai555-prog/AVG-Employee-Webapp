@@ -29,7 +29,7 @@ export const BranchCard = ({ branch, onEdit, onLocation }) => {
   };
 
   return (
-    <div className="relative p-6 bg-white rounded-[28px] card-shadow border border-navy/5 group">
+    <div className="relative p-6 bg-white rounded-2xl card-shadow border border-border group">
 
       {/* ── Card body ─────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-4">
@@ -106,7 +106,7 @@ export const BranchCard = ({ branch, onEdit, onLocation }) => {
             </span>
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-navy/[0.03] border border-navy/5">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-navy/[0.03] border border-border">
             <MapPin size={9} className="text-navy/20" />
             <span className="text-[9px] font-bold text-navy/25 italic">No geofence — unrestricted</span>
           </span>
@@ -115,7 +115,7 @@ export const BranchCard = ({ branch, onEdit, onLocation }) => {
 
       {/* ── Inline deactivate confirmation overlay ───────── */}
       {confirming && (
-        <div className="absolute inset-0 bg-white/96 backdrop-blur-sm rounded-[28px] flex flex-col items-center justify-center gap-3 p-5">
+        <div className="absolute inset-0 bg-white/96 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-3 p-5">
           <p className="text-xs font-bold text-navy text-center">
             Deactivate &ldquo;{branch.name}&rdquo;?
           </p>

@@ -211,7 +211,7 @@ const BranchEntries = ({ schemeCode, branchId }) => {
   if (entries.length === 0) return <p className="px-4 py-6 text-xs text-navy/40 text-center">No entries for this branch.</p>;
 
   return (
-    <div className="divide-y divide-navy/5">
+    <div className="divide-y divide-border">
       {entries.map(e => Row ? <Row key={e.id} entry={e} /> : (
         <div key={e.id} className="px-4 py-3 text-xs text-navy/40">{e.id}</div>
       ))}
@@ -232,7 +232,7 @@ const UNIT_LABEL = {
 };
 
 const BranchCard = ({ branch, schemeCode, meta, expanded, onToggle }) => (
-  <div className={`bg-white rounded-2xl card-shadow border overflow-hidden transition-all ${expanded ? 'border-indigo/20' : 'border-navy/5'}`}>
+  <div className={`bg-white rounded-2xl card-shadow border overflow-hidden transition-all ${expanded ? 'border-indigo/20' : 'border-border'}`}>
     <button
       type="button"
       onClick={onToggle}
@@ -258,7 +258,7 @@ const BranchCard = ({ branch, schemeCode, meta, expanded, onToggle }) => (
       />
     </button>
     {expanded && (
-      <div className="border-t border-navy/5 bg-navy/[0.015]">
+      <div className="border-t border-border bg-navy/[0.015]">
         <BranchEntries schemeCode={schemeCode} branchId={branch.branchId} />
       </div>
     )}
@@ -294,7 +294,7 @@ export const SchemeBranchListPage = () => {
   if (!VIEWER_ROLES.has(user?.role)) {
     return (
       <div className="px-4 pt-10">
-        <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+        <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
           <ShieldCheck size={32} className="text-navy/30 mx-auto mb-2" aria-hidden="true" />
           <p className="text-sm font-bold text-navy">Access denied</p>
         </div>
@@ -324,7 +324,7 @@ export const SchemeBranchListPage = () => {
       {/* Totals strip */}
       {totals && (
         <div className="px-4 mb-5">
-          <div className={`rounded-3xl p-4 card-shadow border border-navy/5 ${meta.bg} grid grid-cols-3 divide-x divide-navy/10`}>
+          <div className={`rounded-3xl p-4 card-shadow border border-border ${meta.bg} grid grid-cols-3 divide-x divide-navy/10`}>
             {[
               { label: 'Collected',  val: formatCurrency(totals.collected),  cls: 'text-navy'       },
               { label: 'Commission', val: formatCurrency(totals.commission),  cls: 'text-emerald-700' },
@@ -360,7 +360,7 @@ export const SchemeBranchListPage = () => {
             <Loader2 className="animate-spin text-indigo" size={28} aria-hidden="true" />
           </div>
         ) : filteredBranches.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 card-shadow border border-navy/5 text-center">
+          <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <MapPin size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">
               {search ? `No branches match "${search}"` : 'No activity yet'}

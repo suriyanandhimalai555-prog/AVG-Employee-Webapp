@@ -230,7 +230,7 @@ export const MoneyPendingTransfersPage = () => {
 
         {/* Total summary */}
         {incomingTransfers.length > 0 && (
-          <div className="bg-white rounded-[24px] p-5 card-shadow border border-navy/5 flex items-center justify-between">
+          <div className="bg-white rounded-xl p-5 card-shadow border border-border flex items-center justify-between">
             <div>
               <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Total Awaiting Your Approval</p>
               <p className="text-2xl font-bold text-navy mt-0.5">₹{totalPending.toLocaleString()}</p>
@@ -255,8 +255,8 @@ export const MoneyPendingTransfersPage = () => {
             <Loader2 className="animate-spin text-navy/20" size={32} />
           </div>
         ) : (incomingTransfers.length === 0 && outgoingTransfers.length === 0 && inTransitTransfers.length === 0) ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-navy/5">
-            <div className="w-16 h-16 rounded-[20px] bg-emerald-50 flex items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
+            <div className="w-16 h-16 rounded-xl bg-emerald-50 flex items-center justify-center mb-4">
               <Check size={28} className="text-emerald-500" />
             </div>
             <p className="text-base font-bold text-navy mb-1">All Caught Up</p>

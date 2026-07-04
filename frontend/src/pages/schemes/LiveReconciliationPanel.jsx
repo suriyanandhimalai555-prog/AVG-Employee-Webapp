@@ -13,7 +13,7 @@ const SchemeRow = ({ row }) => {
   const chip = STATUS_CHIP[row.status] ?? STATUS_CHIP.pending;
   const pct  = Math.min(row.percent ?? 0, 100);
   return (
-    <div className="py-3 border-b border-navy/5 last:border-0">
+    <div className="py-3 border-b border-border last:border-0">
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <p className="text-xs font-bold text-navy truncate flex-1">{row.schemeName}</p>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${chip.cls}`}>
@@ -59,7 +59,7 @@ export const LiveReconciliationPanel = ({ branchId, businessDate }) => {
 
   return (
     <div className="px-6 mb-5">
-      <div className={`rounded-2xl border overflow-hidden transition-colors ${allDone ? 'border-emerald-200 bg-emerald-50/60' : 'border-navy/8 bg-white'} card-shadow`}>
+      <div className={`rounded-2xl border overflow-hidden transition-colors ${allDone ? 'border-emerald-200 bg-emerald-50/60' : 'border-border bg-white'} card-shadow`}>
 
         {/* Compact header — always visible, click to toggle detail */}
         <button
@@ -95,7 +95,7 @@ export const LiveReconciliationPanel = ({ branchId, businessDate }) => {
 
         {/* Expanded detail */}
         {expanded && (
-          <div className="border-t border-navy/5 px-4">
+          <div className="border-t border-border px-4">
             {isLoading ? (
               <div className="flex justify-center py-5">
                 <Loader2 className="animate-spin text-indigo" size={18} aria-hidden="true" />

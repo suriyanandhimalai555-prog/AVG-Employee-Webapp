@@ -75,12 +75,12 @@ export const BranchManagement = () => {
       <header className="flex items-center gap-4 mb-10">
         <button
           onClick={() => navigate(-1)}
-          className="p-3 rounded-2xl bg-white card-shadow border border-navy/5 text-navy/40 hover:text-navy tactile-press"
+          className="p-3 rounded-2xl bg-white card-shadow border border-border text-navy/40 hover:text-navy tactile-press"
         >
           <ChevronLeft size={20} />
         </button>
         <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-[20px] bg-white card-shadow border border-navy/5 text-indigo">
+          <div className="p-3.5 rounded-xl bg-white card-shadow border border-border text-indigo">
             <ShieldCheck size={24} />
           </div>
           <div>
@@ -111,7 +111,7 @@ export const BranchManagement = () => {
           {branches.map((branch) => (
             <div
               key={branch.id}
-              className="p-6 bg-white rounded-[28px] card-shadow border border-navy/5 relative group"
+              className="p-6 bg-white rounded-2xl card-shadow border border-border relative group"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="p-2.5 bg-indigo/5 rounded-xl text-indigo">
@@ -149,7 +149,7 @@ export const BranchManagement = () => {
 
               {/* Inline confirm-delete overlay */}
               {confirmDeleteId === branch.id && (
-                <div className="absolute inset-0 bg-white/96 backdrop-blur-sm rounded-[28px] flex flex-col items-center justify-center gap-3 p-5">
+                <div className="absolute inset-0 bg-white/96 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-3 p-5">
                   <p className="text-xs font-bold text-navy text-center">Deactivate "{branch.name}"?</p>
                   <p className="text-[10px] text-navy/40 text-center leading-relaxed">
                     Employees stay. History is preserved.
@@ -193,7 +193,7 @@ export const BranchManagement = () => {
               value={form.name}
               onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="e.g. Chennai North"
-              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+              className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -203,7 +203,7 @@ export const BranchManagement = () => {
                 type="time"
                 value={form.shiftStart}
                 onChange={(e) => setForm(f => ({ ...f, shiftStart: e.target.value }))}
-                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
               />
             </div>
             <div className="space-y-1.5">
@@ -212,7 +212,7 @@ export const BranchManagement = () => {
                 type="time"
                 value={form.shiftEnd}
                 onChange={(e) => setForm(f => ({ ...f, shiftEnd: e.target.value }))}
-                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
               />
             </div>
           </div>

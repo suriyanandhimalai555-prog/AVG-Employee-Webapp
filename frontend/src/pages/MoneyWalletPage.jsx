@@ -77,7 +77,7 @@ export const MoneyWalletPage = () => {
 
       <div className="px-6 space-y-4">
         {selectedForTransfer.length > 0 && (
-          <div className="bg-white rounded-[32px] p-6 shadow-sm border border-indigo/10 space-y-4 mb-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-indigo/10 space-y-4 mb-6">
             <p className="text-[10px] uppercase tracking-widest font-bold text-navy/30">Transfer to Hierarchy</p>
             <div className="flex flex-col gap-4">
               <div className="relative">
@@ -119,7 +119,7 @@ export const MoneyWalletPage = () => {
               <button
                 key={item.id}
                 onClick={() => toggleSelection(item.id)}
-                className={`bg-white p-4 rounded-[28px] border transition-all text-left flex items-center justify-between ${selectedForTransfer.includes(item.id) ? 'border-indigo shadow-md shadow-indigo/5 ring-1 ring-indigo/20' : 'border-navy/5 hover:border-navy/10 shadow-sm'}`}
+                className={`bg-white p-4 rounded-2xl border transition-all text-left flex items-center justify-between ${selectedForTransfer.includes(item.id) ? 'border-indigo shadow-md shadow-indigo/5 ring-1 ring-indigo/20' : 'border-border hover:border-navy/10 shadow-sm'}`}
               >
                 <div className="flex gap-4 items-center">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${selectedForTransfer.includes(item.id) ? 'bg-indigo text-white' : 'bg-navy/5 text-navy/30'}`}>

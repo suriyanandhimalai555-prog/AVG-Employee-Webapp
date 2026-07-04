@@ -73,12 +73,12 @@ export const ProjectManagementPage = () => {
       <header className="flex items-center gap-4 mb-10">
         <button
           onClick={() => navigate('/money')}
-          className="p-3 rounded-2xl bg-white card-shadow border border-navy/5 text-navy/40 hover:text-navy tactile-press"
+          className="p-3 rounded-2xl bg-white card-shadow border border-border text-navy/40 hover:text-navy tactile-press"
         >
           <ChevronLeft size={20} />
         </button>
         <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-[20px] bg-white card-shadow border border-navy/5 text-indigo">
+          <div className="p-3.5 rounded-xl bg-white card-shadow border border-border text-indigo">
             <Layers size={24} />
           </div>
           <div>
@@ -127,8 +127,8 @@ export const ProjectManagementPage = () => {
           {projects.map((project) => (
             <div
               key={project.id}
-              className={`p-6 bg-white rounded-[28px] card-shadow border relative group transition-all duration-300 ${
-                project.is_active ? 'border-navy/5' : 'border-red-100 opacity-75'
+              className={`p-6 bg-white rounded-2xl card-shadow border relative group transition-all duration-300 ${
+                project.is_active ? 'border-border' : 'border-red-100 opacity-75'
               }`}
             >
               <div className="flex items-start justify-between mb-4">
@@ -193,7 +193,7 @@ export const ProjectManagementPage = () => {
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Adyar Housing Block"
-                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-navy/5 focus:ring-4 ring-indigo/5 focus:border-indigo/10"
+                className="w-full p-4 bg-surface-container-low rounded-2xl text-navy font-bold outline-none border border-border focus:ring-4 ring-indigo/5 focus:border-indigo/10"
               />
               <Layers className="absolute right-4 top-1/2 -translate-y-1/2 text-navy/10" size={20} />
             </div>

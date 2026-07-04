@@ -27,7 +27,7 @@ export const Sidebar = () => {
   return (
     <aside
       className="hidden md:flex sticky top-0 h-screen w-[260px] lg:w-[280px] shrink-0 flex-col z-40 select-none"
-      style={{ background: 'linear-gradient(175deg, #0e2240 0%, #0B1C30 55%, #07131f 100%)' }}
+      style={{ background: 'linear-gradient(175deg, #132A47 0%, #0F1C2E 55%, #0B1524 100%)' }}
       aria-label="Primary navigation"
     >
       {/* ── Brand ── */}
@@ -58,14 +58,14 @@ export const Sidebar = () => {
               onClick={() => navigate(path)}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-semibold tactile-press transition-all duration-200 ${
                 active
-                  ? 'bg-indigo text-white shadow-lg shadow-indigo/40'
+                  ? 'bg-indigo text-white shadow-lg shadow-indigo/30'
                   : 'text-white/45 hover:text-white/90 hover:bg-white/[0.07]'
               }`}
             >
               <span className="relative inline-flex shrink-0">
                 <Icon size={18} strokeWidth={active ? 2.5 : 2} aria-hidden="true" />
                 {showAlert && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-400 border-2 border-[#0B1C30]" />
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-400 border-2 border-[#0F1C2E]" />
                 )}
               </span>
               <span className="truncate">{label}</span>

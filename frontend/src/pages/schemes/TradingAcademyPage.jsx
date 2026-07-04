@@ -69,7 +69,7 @@ export const TradingAcademyPage = () => {
             { label: 'Total Collected', value: formatCurrency(summary.totalCollected), Icon: IndianRupee },
             { label: 'Today',           value: summary.enrolledToday,               Icon: Calendar },
           ].map(({ label, value, Icon }) => (
-            <div key={label} className="bg-white p-3 rounded-2xl card-shadow border border-navy/5 text-center">
+            <div key={label} className="bg-white p-3 rounded-2xl card-shadow border border-border text-center">
               <Icon size={16} className="text-indigo mx-auto mb-1" aria-hidden="true" />
               <p className="text-lg font-bold text-navy">{value}</p>
               <p className="text-[10px] text-navy/40 leading-tight">{label}</p>
@@ -117,7 +117,7 @@ export const TradingAcademyPage = () => {
       ) : (
         <div className="px-4 space-y-3">
           {members.map((m) => (
-            <div key={m.id} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5">
+            <div key={m.id} className="bg-white p-4 rounded-2xl card-shadow border border-border">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export const TradingAcademyPage = () => {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-[32px] max-h-[90vh] overflow-y-auto"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl max-h-[90vh] overflow-y-auto"
             >
               <AddMemberSheet onClose={() => setShowAdd(false)} employees={employees}
                 branchId={isManagement ? branchId : undefined} />

@@ -4,10 +4,10 @@
 import { Loader2 } from 'lucide-react';
 
 const TONES = {
-  indigo: 'text-indigo-600',
+  indigo: 'text-indigo',
   navy:   'text-navy',
   white:  'text-white',
-  slate:  'text-slate-500',
+  slate:  'text-navy/40',
 };
 
 const SIZES = {

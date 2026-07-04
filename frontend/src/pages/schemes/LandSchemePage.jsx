@@ -90,7 +90,7 @@ export const LandSchemePage = () => {
           {/* Plot stats strip */}
           {dash && (
             <div className="px-4 mb-5">
-              <div className="bg-white rounded-3xl p-4 card-shadow border border-navy/5 grid grid-cols-4 divide-x divide-navy/5">
+              <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
                 {[
                   { label: 'Available', val: dash.plots?.available ?? 0,  cls: 'text-emerald-600' },
                   { label: 'Booked',    val: dash.plots?.booked    ?? 0,  cls: 'text-amber-600' },
@@ -141,7 +141,7 @@ export const LandSchemePage = () => {
             <button
               type="button"
               onClick={() => navigate('/money/schemes/land/bookings')}
-              className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 text-left tactile-press hover:border-stone-200 transition-colors"
+              className="bg-white rounded-2xl p-4 card-shadow border border-border text-left tactile-press hover:border-stone-200 transition-colors"
             >
               <BookOpen size={20} className="text-stone-600 mb-2" aria-hidden="true" />
               <p className="text-sm font-bold text-navy">Bookings</p>
@@ -168,7 +168,7 @@ export const LandSchemePage = () => {
               <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">
                 Recent Bookings
               </p>
-              <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden divide-y divide-navy/5">
+              <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden divide-y divide-border">
                 {dash.recentBookings.map((b) => (
                   <button
                     key={b.booking_ref}

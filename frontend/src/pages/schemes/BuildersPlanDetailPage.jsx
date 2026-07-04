@@ -427,7 +427,7 @@ export const BuildersPlanDetailPage = () => {
 
       {/* Plan details card */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-3xl p-5 card-shadow border border-navy/5">
+        <div className="bg-white rounded-3xl p-5 card-shadow border border-border">
           {/* Progress bar */}
           {plan.current_month > 0 && (
             <div className="mb-4">
@@ -469,7 +469,7 @@ export const BuildersPlanDetailPage = () => {
 
           {/* Notes */}
           {plan.notes && (
-            <div className="mt-4 pt-3 border-t border-navy/5">
+            <div className="mt-4 pt-3 border-t border-border">
               <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-0.5">Notes</p>
               <p className="text-xs text-navy/60">{plan.notes}</p>
             </div>
@@ -523,14 +523,14 @@ export const BuildersPlanDetailPage = () => {
           <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">
             Payout History · {payouts.length}/60
           </p>
-          <div className="bg-white rounded-2xl border border-navy/5 card-shadow overflow-hidden">
-            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-navy/5">
+          <div className="bg-white rounded-2xl border border-border card-shadow overflow-hidden">
+            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-border">
               <span>Month</span>
               <span className="text-right">Amount</span>
               <span className="text-right">Date</span>
               <span className="text-right">Mode</span>
             </div>
-            <div className="divide-y divide-navy/5 max-h-72 overflow-y-auto">
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
               {[...payouts].reverse().map(p => (
                 <div key={p.id} className="px-4 py-2.5">
                   <div className="grid grid-cols-4">

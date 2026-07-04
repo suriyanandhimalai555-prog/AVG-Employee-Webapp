@@ -70,7 +70,7 @@ export const EmployeeHistoryModal = ({ isOpen, onClose, employee }) => {
 
         {/* Photo — shown below the calendar when a field record with a photo is selected */}
         {selectedRecord?.photo_key && (
-          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5">
+          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-border">
             {photoLoading ? (
               <div className="h-48 flex items-center justify-center">
                 <Loader2 className="animate-spin text-navy/30" size={24} />

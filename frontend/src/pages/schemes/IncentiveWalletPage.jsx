@@ -55,7 +55,7 @@ export const IncentiveWalletPage = () => {
 
         <div className="px-6 space-y-5">
           {/* Balance card */}
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-[32px] card-shadow relative overflow-hidden">
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-2xl card-shadow relative overflow-hidden">
             <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
             <div className="relative z-10">
               <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white mb-4">
@@ -82,7 +82,7 @@ export const IncentiveWalletPage = () => {
                   const meta      = SOURCE_META[key] || SOURCE_META.other;
                   const { Icon }  = meta;
                   return (
-                    <div key={key} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5">
+                    <div key={key} className="bg-white p-4 rounded-2xl card-shadow border border-border">
                       <div className={`w-9 h-9 rounded-xl ${meta.bg} flex items-center justify-center mb-2`}>
                         <Icon size={18} className={meta.color} aria-hidden="true" />
                       </div>
@@ -104,7 +104,7 @@ export const IncentiveWalletPage = () => {
                 <Loader2 className="animate-spin text-indigo" size={28} aria-hidden="true" />
               </div>
             ) : rows.length === 0 ? (
-              <div className="bg-white p-8 rounded-2xl card-shadow border border-navy/5 text-center">
+              <div className="bg-white p-8 rounded-2xl card-shadow border border-border text-center">
                 <Sparkles size={32} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
                 <p className="text-sm font-medium text-navy/40">No incentives yet</p>
               </div>
@@ -114,7 +114,7 @@ export const IncentiveWalletPage = () => {
                   const meta     = SOURCE_META[item.scheme_code] || SOURCE_META[item.source_type] || SOURCE_META.other;
                   const { Icon } = meta;
                   return (
-                    <div key={item.id} className="bg-white p-4 rounded-2xl card-shadow border border-navy/5 flex items-center gap-3">
+                    <div key={item.id} className="bg-white p-4 rounded-2xl card-shadow border border-border flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl ${meta.bg} flex items-center justify-center flex-shrink-0`}>
                         <Icon size={18} className={meta.color} aria-hidden="true" />
                       </div>

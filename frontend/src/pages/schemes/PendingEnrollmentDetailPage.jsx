@@ -67,7 +67,7 @@ export const PendingEnrollmentDetailPage = () => {
 
       <div className="px-4 space-y-4">
         {/* Customer + status */}
-        <div className="bg-white rounded-2xl border border-navy/5 card-shadow p-4">
+        <div className="bg-white rounded-2xl border border-border card-shadow p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-base font-bold text-navy">{pe.customer_name}</p>
@@ -119,7 +119,7 @@ export const PendingEnrollmentDetailPage = () => {
           <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40 mb-2">Part-payments</p>
           <div className="space-y-2">
             {(pe.payments || []).map((p) => (
-              <div key={p.id} className="bg-white rounded-2xl border border-navy/5 p-3">
+              <div key={p.id} className="bg-white rounded-2xl border border-border p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-navy">{formatCurrency(p.amount)}</span>
                   <span className="flex items-center gap-2">

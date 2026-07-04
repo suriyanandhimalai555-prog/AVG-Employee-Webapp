@@ -410,7 +410,7 @@ export const LandBookingDetailPage = () => {
 
       {/* Booking details card */}
       <div className="px-4 mb-4">
-        <div className="bg-white rounded-3xl p-5 card-shadow border border-navy/5">
+        <div className="bg-white rounded-3xl p-5 card-shadow border border-border">
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
             {[
               { label: 'Plot',          val: `${booking.site_number} — ${booking.site_name}` },
@@ -510,14 +510,14 @@ export const LandBookingDetailPage = () => {
               </span>
             )}
           </div>
-          <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden">
-            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-navy/5">
+          <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
+            <div className="grid grid-cols-4 text-[9px] font-bold uppercase tracking-wider text-navy/30 px-4 py-2.5 bg-navy/[0.02] border-b border-border">
               <span>Month</span>
               <span className="text-right">Due</span>
               <span className="text-right">Amount</span>
               <span className="text-right">Status</span>
             </div>
-            <div className="divide-y divide-navy/5 max-h-96 overflow-y-auto">
+            <div className="divide-y divide-border max-h-96 overflow-y-auto">
               {payouts.map(p => {
                 const isOverduePayment = p.status === 'pending' && p.due_date < today;
                 return (

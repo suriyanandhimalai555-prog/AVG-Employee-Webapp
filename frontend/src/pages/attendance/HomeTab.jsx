@@ -24,7 +24,7 @@ import {
 /** Today's stats card — shared by BM / GM / Director / MD / BranchAdmin home views. */
 const TeamStatsCard = ({ summary, isLoading, thirdStat }) => (
   <Card className="p-0 border-none shadow-none bg-white rounded-3xl overflow-hidden card-shadow">
-    <div className="flex divide-x divide-navy/5">
+    <div className="flex divide-x divide-border">
       <div className="flex-1 p-5 text-center group">
         <p className="text-2xl font-bold text-indigo font-mono transition-transform duration-200 group-hover:scale-105">
           {isLoading ? '—' : (summary?.present ?? 0)}
@@ -85,7 +85,7 @@ const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) =>
         <p className="text-[10px] font-bold text-navy/25 uppercase tracking-widest">No members yet</p>
       </div>
     ) : (
-      <div className="bg-white rounded-3xl card-shadow divide-y divide-navy/5 overflow-hidden">
+      <div className="bg-white rounded-3xl card-shadow divide-y divide-border overflow-hidden">
         {members.map((emp) => (
           <button
             key={emp.id}
@@ -134,12 +134,12 @@ const LeadershipSection = ({ title, members = [], onOpenList, variant = 'indigo'
       card: 'gradient-gms border-l-4 border-sky-500 shadow-sky/10', 
       text: 'text-white', 
       subtext: 'text-white/50', 
-      icon: 'text-indigo-950', 
+      icon: 'text-navy', 
       iconBg: 'bg-white',
       chevron: 'text-white/20'
     },
     indigo: { 
-      card: 'bg-white border border-navy/5 card-shadow', 
+      card: 'bg-white border border-border card-shadow', 
       text: 'text-navy', 
       subtext: 'text-navy/40', 
       icon: 'text-indigo', 
@@ -149,7 +149,7 @@ const LeadershipSection = ({ title, members = [], onOpenList, variant = 'indigo'
   }[variant];
 
   return (
-    <div className={`${styles.card} rounded-[28px] overflow-hidden transition-all duration-300`}>
+    <div className={`${styles.card} rounded-2xl overflow-hidden transition-all duration-300`}>
       <button
         onClick={onOpenList}
         className="w-full flex items-center gap-4 px-5 py-5 text-left tactile-press hover:bg-white/3 transition-all duration-200"
@@ -568,7 +568,7 @@ const ManagementHomeSection = ({ navigate }) => {
         <button
           type="button"
           onClick={() => navigate('/money')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+          className="bg-white rounded-2xl p-4 card-shadow border border-border tactile-press text-left"
         >
           <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center mb-3">
             <IndianRupee size={18} className="text-amber-600" aria-hidden="true" />
@@ -580,7 +580,7 @@ const ManagementHomeSection = ({ navigate }) => {
         <button
           type="button"
           onClick={() => navigate('/user-management')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+          className="bg-white rounded-2xl p-4 card-shadow border border-border tactile-press text-left"
         >
           <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center mb-3">
             <Users size={18} className="text-indigo" aria-hidden="true" />
@@ -592,7 +592,7 @@ const ManagementHomeSection = ({ navigate }) => {
         <button
           type="button"
           onClick={() => navigate('/branches')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+          className="bg-white rounded-2xl p-4 card-shadow border border-border tactile-press text-left"
         >
           <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center mb-3">
             <Building2 size={18} className="text-stone-600" aria-hidden="true" />
@@ -604,7 +604,7 @@ const ManagementHomeSection = ({ navigate }) => {
         <button
           type="button"
           onClick={() => navigate('/control-center')}
-          className="bg-white rounded-2xl p-4 card-shadow border border-navy/5 tactile-press text-left"
+          className="bg-white rounded-2xl p-4 card-shadow border border-border tactile-press text-left"
         >
           <div className="w-9 h-9 rounded-xl bg-stone-800/10 flex items-center justify-center mb-3">
             <Settings2 size={18} className="text-stone-700" aria-hidden="true" />

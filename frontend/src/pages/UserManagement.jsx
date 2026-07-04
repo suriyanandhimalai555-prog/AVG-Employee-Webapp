@@ -306,7 +306,7 @@ export const UserManagement = () => {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 md:w-16 md:h-16 rounded-[20px] md:rounded-[24px] bg-white shadow-premium flex items-center justify-center text-indigo border border-navy/5 shrink-0">
+          <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-xl bg-white shadow-premium flex items-center justify-center text-indigo border border-border shrink-0">
             <Users size={24} className="md:hidden" />
             <Users size={32} className="hidden md:block" />
           </div>
@@ -343,7 +343,7 @@ export const UserManagement = () => {
       </div>
 
       {/* Filters Bar */}
-      <div className="bg-white/60 backdrop-blur-md rounded-[24px] card-shadow border border-white/50 overflow-hidden">
+      <div className="bg-white rounded-xl card-shadow border border-border overflow-hidden">
         {/* Search row */}
         <div className="relative group">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-navy/20 group-focus-within:text-indigo transition-colors" size={18} />
@@ -375,7 +375,7 @@ export const UserManagement = () => {
         {users.map((u) => (
           <Card
             key={u.id}
-            className="group hover-lift border-white/50 bg-white/70 backdrop-blur-sm cursor-default p-0 overflow-hidden"
+            className="group hover-lift border-border bg-white cursor-default p-0 overflow-hidden"
           >
             <div className="p-5 sm:p-6">
               {/* Top row: avatar + name + role chip */}
@@ -491,7 +491,7 @@ export const UserManagement = () => {
               : `${editOversightUser?.role?.replace(/_/g, ' ')} · select all branches this person oversees`}
           </p>
           {editOversightUser?.role === 'director' ? (
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-border p-3 space-y-2">
               {gmOptions.map((gm) => (
                 <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
                   <input
@@ -510,7 +510,7 @@ export const UserManagement = () => {
               )}
             </div>
           ) : (
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-white border border-border p-3 space-y-2">
               {branches.map((b) => (
                 <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
                   <input
@@ -531,7 +531,7 @@ export const UserManagement = () => {
             <Button
               type="button"
               variant="outline"
-              className="flex-1 border-navy/5 text-navy/40 hover:bg-navy/5"
+              className="flex-1 border-border text-navy/40 hover:bg-navy/5"
               onClick={() => setEditOversightUser(null)}
             >
               Cancel
@@ -574,7 +574,7 @@ export const UserManagement = () => {
                   required
                   type="text"
                   placeholder="Enter full name..."
-                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
+                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-border rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                 />
@@ -589,7 +589,7 @@ export const UserManagement = () => {
                   required
                   type="email"
                   placeholder="name@company.com"
-                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
+                  className="w-full pl-12 pr-4 py-3.5 bg-white border border-border rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                 />
@@ -600,7 +600,7 @@ export const UserManagement = () => {
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Role</label>
                 <select
-                  className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value, branchId: '', managerId: '', oversightBranchIds: [], oversightGmIds: [] })}
                 >
@@ -616,7 +616,7 @@ export const UserManagement = () => {
                   </label>
                   <select
                     required={MANAGER_REQUIRED.has(formData.role)}
-                    className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
+                    className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                     value={formData.managerId}
                     onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
                   >
@@ -639,7 +639,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Assigned GMs <span className="text-red-400">*</span>
                   </label>
-                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-border p-3 space-y-2">
                     {gmOptions.map((gm) => (
                       <label key={gm.id} className="flex items-center gap-3 cursor-pointer group">
                         <input
@@ -669,7 +669,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                     Oversight Branches <span className="text-red-400">*</span>
                   </label>
-                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-navy/8 p-3 space-y-2">
+                  <div className="max-h-40 overflow-y-auto rounded-xl bg-white border border-border p-3 space-y-2">
                     {branches.map((b) => (
                       <label key={b.id} className="flex items-center gap-3 cursor-pointer group">
                         <input
@@ -697,7 +697,7 @@ export const UserManagement = () => {
                   <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Branch Assignment</label>
                   <select
                     required
-                    className="w-full px-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
+                    className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all cursor-pointer outline-none appearance-none"
                     value={formData.branchId}
                     onChange={(e) => setFormData({ ...formData, branchId: e.target.value, managerId: '' })}
                   >
@@ -717,7 +717,7 @@ export const UserManagement = () => {
                     required
                     type="password"
                     placeholder="Set password..."
-                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-navy/8 rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-border rounded-xl text-navy placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 focus:border-indigo/20 transition-all font-bold outline-none"
                     value={formData.password}
                     onChange={(e) => setFormData({...formData, password: e.target.value})}
                   />
@@ -725,7 +725,7 @@ export const UserManagement = () => {
               </div>
 
               <div
-                className="space-y-1.5 flex flex-col justify-center bg-white border border-navy/8 rounded-xl px-4 mt-5 cursor-pointer select-none transition-colors hover:bg-navy/[0.02]"
+                className="space-y-1.5 flex flex-col justify-center bg-white border border-border rounded-xl px-4 mt-5 cursor-pointer select-none transition-colors hover:bg-navy/[0.02]"
                 onClick={() => setFormData({...formData, hasSmartphone: !formData.hasSmartphone})}
               >
                 <div className="flex items-center justify-between">
@@ -745,7 +745,7 @@ export const UserManagement = () => {
             <Button 
               type="button" 
               variant="outline" 
-              className="flex-1 border-navy/5 text-navy/40 hover:bg-navy/5"
+              className="flex-1 border-border text-navy/40 hover:bg-navy/5"
               onClick={() => setIsModalOpen(false)}
             >
               Cancel
@@ -793,9 +793,9 @@ export const UserManagement = () => {
           ) : (
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
               {userDocs.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-4 rounded-2xl bg-navy/[0.02] border border-navy/5 group">
+                <div key={doc.id} className="flex items-center justify-between p-4 rounded-2xl bg-navy/[0.02] border border-border group">
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="p-2.5 rounded-xl bg-white shadow-sm text-indigo border border-navy/5">
+                    <div className="p-2.5 rounded-xl bg-white shadow-sm text-indigo border border-border">
                       <FileText size={18} />
                     </div>
                     <div className="min-w-0">
@@ -809,7 +809,7 @@ export const UserManagement = () => {
                     href={doc.downloadUrl} 
                     target="_blank" 
                     rel="noreferrer" 
-                    className="p-3 rounded-xl bg-white border border-navy/5 text-indigo hover:bg-indigo hover:text-white transition-all tactile-press flex items-center gap-2 text-xs font-bold shadow-sm"
+                    className="p-3 rounded-xl bg-white border border-border text-indigo hover:bg-indigo hover:text-white transition-all tactile-press flex items-center gap-2 text-xs font-bold shadow-sm"
                   >
                     <ExternalLink size={14} />
                     View
@@ -820,7 +820,7 @@ export const UserManagement = () => {
           )}
           <Button 
             variant="outline" 
-            className="w-full mt-2 border-navy/5 text-navy/40"
+            className="w-full mt-2 border-border text-navy/40"
             onClick={() => setViewDocsUserId(null)}
           >
             Close

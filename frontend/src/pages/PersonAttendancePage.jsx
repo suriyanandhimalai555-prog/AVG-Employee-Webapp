@@ -45,7 +45,7 @@ export const PersonAttendancePage = () => {
       transition={{ duration: 0.2 }}
       className="flex-1 bg-surface"
     >
-      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-navy/5 px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-border px-4 py-4 flex items-center gap-3">
         <button
           onClick={() => navigate('/')}
           className="p-2 rounded-xl text-navy/40 hover:text-navy hover:bg-navy/5 transition-all tactile-press shrink-0"
@@ -81,7 +81,7 @@ export const PersonAttendancePage = () => {
         />
 
         {selectedRecord?.photo_key && (
-          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-navy/5">
+          <div className="mt-4 rounded-3xl overflow-hidden bg-navy/5 border border-border">
             {photoLoading ? (
               <div className="h-52 flex items-center justify-center">
                 <Loader2 className="animate-spin text-navy/30" size={24} />

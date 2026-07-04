@@ -56,7 +56,7 @@ export const LandAddLayoutPage = () => {
       <SchemePageWrapper>
         <SchemePageHeader backTo={`/money/schemes/land/sites/${siteId}`} title="Add Layout" />
         <div className="px-4 pt-8">
-          <div className="bg-white rounded-2xl p-8 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
             <ShieldCheck size={28} className="text-navy/30 mx-auto mb-2" />
             <p className="text-sm font-bold text-navy">Admin only</p>
             <p className="text-xs text-navy/40 mt-1">Only MD or Management can create layouts.</p>
@@ -247,7 +247,7 @@ export const LandAddLayoutPage = () => {
           </div>
 
           {ROLES.map(({ key, label }) => (
-            <div key={key} className="grid grid-cols-4 gap-2 bg-white rounded-xl px-3 py-2.5 border border-navy/5">
+            <div key={key} className="grid grid-cols-4 gap-2 bg-white rounded-xl px-3 py-2.5 border border-border">
               <div className="flex items-center">
                 <span className="text-xs font-bold text-navy/70">{label.split(' ')[0]}</span>
               </div>

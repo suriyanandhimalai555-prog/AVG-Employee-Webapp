@@ -46,7 +46,7 @@ export const LandSitesPage = () => {
         </div>
       ) : sites.length === 0 ? (
         <div className="px-4">
-          <div className="bg-white rounded-2xl p-10 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-10 border border-border card-shadow text-center">
             <Landmark size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No Sites Yet</p>
             {isSiteAdmin && (
@@ -61,7 +61,7 @@ export const LandSitesPage = () => {
               key={site.id}
               type="button"
               onClick={() => navigate(`/money/schemes/land/sites/${site.id}`)}
-              className="w-full bg-white rounded-3xl p-4 card-shadow border border-navy/5 text-left tactile-press hover:border-stone-200 transition-colors"
+              className="w-full bg-white rounded-3xl p-4 card-shadow border border-border text-left tactile-press hover:border-stone-200 transition-colors"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">

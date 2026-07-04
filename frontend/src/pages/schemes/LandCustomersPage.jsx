@@ -147,7 +147,7 @@ export const LandCustomersPage = () => {
         </div>
       ) : customers.length === 0 ? (
         <div className="px-4">
-          <div className="bg-white rounded-2xl p-10 border border-navy/5 card-shadow text-center">
+          <div className="bg-white rounded-2xl p-10 border border-border card-shadow text-center">
             <Users size={28} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">No Customers</p>
             {isBranchAdmin && <p className="text-xs text-navy/40 mt-1">Tap + to add a customer.</p>}
@@ -155,7 +155,7 @@ export const LandCustomersPage = () => {
         </div>
       ) : (
         <div className="px-4">
-          <div className="bg-white rounded-2xl card-shadow border border-navy/5 overflow-hidden divide-y divide-navy/5">
+          <div className="bg-white rounded-2xl card-shadow border border-border overflow-hidden divide-y divide-border">
             {customers.map(c => (
               <div key={c.id} className="px-4 py-3 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center text-xs font-bold flex-shrink-0">

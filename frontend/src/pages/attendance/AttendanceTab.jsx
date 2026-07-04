@@ -153,7 +153,7 @@ export const AttendanceTab = () => {
           <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => navigate('/attendance/office')}
-              className="p-6 rounded-[32px] bg-white card-shadow border-2 border-indigo flex flex-col items-center gap-3 tactile-press"
+              className="p-6 rounded-2xl bg-white card-shadow border-2 border-indigo flex flex-col items-center gap-3 tactile-press"
             >
               <div className="w-12 h-12 rounded-2xl bg-indigo/10 flex items-center justify-center text-indigo">
                 <Home size={24} />
@@ -162,7 +162,7 @@ export const AttendanceTab = () => {
             </button>
             <button
               onClick={() => navigate('/attendance/field')}
-              className="p-6 rounded-[32px] bg-white card-shadow border-2 border-transparent flex flex-col items-center gap-3 opacity-60 hover:opacity-100 transition-all tactile-press"
+              className="p-6 rounded-2xl bg-white card-shadow border-2 border-transparent flex flex-col items-center gap-3 opacity-60 hover:opacity-100 transition-all tactile-press"
             >
               <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy">
                 <MapPin size={24} />

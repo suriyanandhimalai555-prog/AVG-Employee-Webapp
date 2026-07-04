@@ -41,7 +41,7 @@ export const CorrectionModal = ({
 
       {/* Field photo — visible to branch admin and above */}
       {employee?.photo_key && (
-        <div className="rounded-2xl overflow-hidden bg-navy/5 border border-navy/5 relative h-44 flex items-center justify-center">
+        <div className="rounded-2xl overflow-hidden bg-navy/5 border border-border relative h-44 flex items-center justify-center">
           {photoLoading ? (
             <Loader2 className="animate-spin text-navy/30" size={24} />
           ) : photo?.downloadUrl ? (

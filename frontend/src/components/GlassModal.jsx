@@ -17,7 +17,7 @@ export const GlassModal = ({ isOpen, onClose, title, children }) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="absolute inset-0 bg-navy/25 backdrop-blur-sm pointer-events-auto"
+            className="absolute inset-0 bg-navy/40 backdrop-blur-sm pointer-events-auto"
           />
 
           {/* Sheet — slides up on mobile, scales in on desktop */}
@@ -26,10 +26,10 @@ export const GlassModal = ({ isOpen, onClose, title, children }) => {
             animate={{ opacity: 1, y: 0,  scale: 1 }}
             exit={{  opacity: 0, y: 40, scale: 0.98 }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="relative w-full max-w-lg glass rounded-t-[32px] sm:rounded-[32px] overflow-hidden shadow-2xl shadow-navy/15 max-h-[90vh] flex flex-col pointer-events-auto"
+            className="relative w-full max-w-lg glass rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl shadow-navy/20 max-h-[90vh] flex flex-col pointer-events-auto"
           >
             {/* Header */}
-            <div className="px-7 pt-6 pb-5 border-b border-navy/6 flex items-center justify-between shrink-0">
+            <div className="px-7 pt-6 pb-5 border-b border-border flex items-center justify-between shrink-0">
               <h2 className="text-xl font-bold text-navy tracking-tight">{title}</h2>
               <button
                 onClick={onClose}

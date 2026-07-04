@@ -110,7 +110,7 @@ export const SchemeCalendar = ({ onPeriodChange, initialDate, compact = false, a
 
   if (compact) {
     return (
-      <div className="bg-white rounded-2xl card-shadow border border-navy/5 p-3">
+      <div className="bg-white rounded-2xl card-shadow border border-border p-3">
         <div className="flex items-center justify-between">
           <button
             onClick={handlePrev}
@@ -145,9 +145,9 @@ export const SchemeCalendar = ({ onPeriodChange, initialDate, compact = false, a
   }
 
   return (
-    <div className="bg-white rounded-3xl card-shadow border border-navy/5 overflow-hidden">
+    <div className="bg-white rounded-3xl card-shadow border border-border overflow-hidden">
       {/* Period header */}
-      <div className="p-4 flex items-center justify-between border-b border-navy/5">
+      <div className="p-4 flex items-center justify-between border-b border-border">
         <button
           onClick={handlePrev}
           className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-navy/5 text-navy/40 hover:text-navy/70 transition-all tactile-press"
