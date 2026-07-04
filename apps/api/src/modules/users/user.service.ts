@@ -400,8 +400,9 @@ export const UserService = {
       paramIndex++;
     }
 
-    if (requesterRole === 'md') {
-      // MD sees everyone — no extra scope condition needed
+    if (requesterRole === 'md' || requesterRole === 'management') {
+      // MD and management see everyone — management sits outside the manager_id
+      // tree, so hierarchy scoping would return nothing for it.
     } else if (requesterRole === 'branch_admin') {
       const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
       conditions.push(`u.branch_id = $${paramIndex++}`);

@@ -218,8 +218,10 @@ export default async function userRoutes(fastify: FastifyInstance) {
     try {
       const req = request as AuthenticatedRequest;
       
-      // Basic access control — users can only see others if they're high-level staff
-      const allowedRoles = ['md', 'director', 'gm', 'branch_admin'];
+      // Basic access control — users can only see others if they're high-level staff.
+      // management is the org-wide back-office account (same treatment as MD here,
+      // matching the branches module).
+      const allowedRoles = ['md', 'management', 'director', 'gm', 'branch_admin'];
       if (!allowedRoles.includes(req.user.role)) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
