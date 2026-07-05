@@ -71,6 +71,7 @@ const PersonAttendancePage     = lazy(() => import('./pages/PersonAttendancePage
 const BranchManagement         = lazy(() => import('./pages/BranchManagement').then(m => ({ default: m.BranchManagement })));
 const ManagementBranches       = lazy(() => import('./pages/ManagementBranches').then(m => ({ default: m.ManagementBranches })));
 const UserManagement           = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
+const CustomersPage            = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })));
 const BranchDetailPage         = lazy(() => import('./pages/BranchDetailPage').then(m => ({ default: m.BranchDetailPage })));
 const EmployeeCalendarPage     = lazy(() => import('./pages/EmployeeCalendarPage').then(m => ({ default: m.EmployeeCalendarPage })));
 
@@ -142,6 +143,9 @@ function App() {
 
         {/* Staff management */}
         <Route path="/user-management"           element={<UserManagement />} />
+
+        {/* Customer WhatsApp notification management */}
+        <Route path="/customers"                 element={<CustomersPage />} />
 
         {/* People */}
         <Route path="/people/:userId"            element={<PersonAttendancePage />} />

@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { getISTToday } from '../../lib/date';
-import { ArrowRight, AlertCircle, Building2, Users, ChevronRight, TrendingUp, CheckCircle2, AlertTriangle, Settings2, IndianRupee } from 'lucide-react';
+import { ArrowRight, AlertCircle, Building2, Users, ChevronRight, TrendingUp, CheckCircle2, AlertTriangle, Settings2, IndianRupee, MessageCircle } from 'lucide-react';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { AlertCard } from '../../components/attendance/AlertCard';
 import { StatsGrid } from '../../components/attendance/StatsGrid';
 import { StaffCard } from '../../components/attendance/StaffCard';
+import { CustomersCard } from '../../components/attendance/CustomersCard';
 import { HistoryCalendar } from '../../components/HistoryCalendar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
@@ -482,6 +483,7 @@ export const HomeTab = () => {
           )}
 
           <StaffCard onOpen={() => navigate('/user-management')} />
+          <CustomersCard onOpen={() => navigate('/customers')} />
 
           <TeamListSection
             title="Sales Officers"
@@ -611,6 +613,18 @@ const ManagementHomeSection = ({ navigate }) => {
           </div>
           <p className="text-sm font-bold text-navy">Control Center</p>
           <p className="text-[10px] text-navy/40 mt-0.5">Config &amp; settings</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/customers')}
+          className="bg-white rounded-2xl p-4 card-shadow border border-border tactile-press text-left"
+        >
+          <div className="w-9 h-9 rounded-xl bg-emerald/10 flex items-center justify-center mb-3">
+            <MessageCircle size={18} className="text-emerald" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-bold text-navy">Customers</p>
+          <p className="text-[10px] text-navy/40 mt-0.5">WhatsApp opt-ins</p>
         </button>
       </div>
 

@@ -22,6 +22,7 @@ const getPageTitle = (pathname) => {
   if (matchPath('/attendance/office', pathname))           return 'Office Check-In';
   if (matchPath('/attendance/field', pathname))            return 'Field Check-In';
   if (matchPath('/user-management', pathname))             return 'Staff';
+  if (matchPath('/customers', pathname))                   return 'Customers';
   if (matchPath('/profile', pathname))                     return 'Profile';
   if (matchPath('/money/submit', pathname))                return 'Submit Collection';
   if (matchPath('/money/history', pathname))               return 'History';
@@ -72,6 +73,7 @@ const getParentRoute = (pathname) => {
     '/control-center/corrections': '/control-center',
     '/profile':                    '/',
     '/user-management':            '/',
+    '/customers':                  '/',
     '/control-center':             '/',
   };
   if (exact[pathname]) return exact[pathname];
