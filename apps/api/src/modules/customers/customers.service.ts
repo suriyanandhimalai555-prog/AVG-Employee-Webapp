@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { NotFoundError } from '../../shared/errors';
+import { NotFoundError, ConflictError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import type { CreateCustomerInput, UpdateCustomerInput, SearchCustomersQuery } from './customers.schema';
 
@@ -30,8 +30,30 @@ export const CustomerService = {
     return `${prefix}${String(seq).padStart(4, '0')}`;
   },
 
+  // ─── FIND BY PHONE (digit-normalised, branch-scoped) ─────────────────────
+  // Strips all non-digit characters before comparing so "98765 43210" and
+  // "9876543210" are treated as the same number.  Returns null when not found.
+  async findByPhone(
+    client: PoolClient,
+    branchId: string,
+    phone: string
+  ): Promise<{ id: string; name: string; customer_code: string; phone: string } | null> {
+    const result = await client.query(
+      `SELECT id, name, customer_code, phone
+       FROM customers
+       WHERE branch_id = $1
+         AND phone IS NOT NULL
+         AND regexp_replace(phone, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
+       LIMIT 1`,
+      [branchId, phone]
+    );
+    return result.rows[0] ?? null;
+  },
+
   // ─── CREATE ──────────────────────────────────────────────────────────────
   // Runs inside a transaction to guarantee the code is unique.
+  // Checks for a duplicate phone (per branch) before generating the code so
+  // a rejected attempt never wastes a sequence number.
   async create(
     db: Pool,
     branchId: string,
@@ -41,6 +63,19 @@ export const CustomerService = {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
+
+      // Duplicate-phone guard — only when a phone with at least one digit is provided
+      if (payload.phone && /\d/.test(payload.phone)) {
+        const existing = await CustomerService.findByPhone(client, branchId, payload.phone);
+        if (existing) {
+          // Throw before nextCustomerCode so no sequence number is consumed
+          throw new ConflictError(
+            `This number already belongs to ${existing.name} (${existing.customer_code}).`,
+            'CUSTOMER_PHONE_EXISTS',
+            { customer: existing }
+          );
+        }
+      }
 
       const customerCode = await CustomerService.nextCustomerCode(client, branchId);
 

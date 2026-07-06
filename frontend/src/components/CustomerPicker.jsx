@@ -15,10 +15,12 @@ const inputClass = "w-full px-4 py-3 bg-white rounded-2xl border border-navy/10 
  *                passed to search + create so the server scopes to the right branch.
  */
 export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
-  const [query, setQuery]       = useState('');
-  const [showNew, setShowNew]   = useState(false);
-  const [newForm, setNewForm]   = useState({ name: '', phone: '', address: '', hasWhatsapp: false });
-  const [newError, setNewError] = useState(null);
+  const [query, setQuery]           = useState('');
+  const [showNew, setShowNew]       = useState(false);
+  const [newForm, setNewForm]       = useState({ name: '', phone: '', address: '', hasWhatsapp: false });
+  const [newError, setNewError]     = useState(null);
+  // dupCustomer holds the existing customer object returned by the 409 CUSTOMER_PHONE_EXISTS response
+  const [dupCustomer, setDupCustomer] = useState(null);
 
   const [searchCustomers, { data: searchResult, isFetching }] = useLazySearchCustomersQuery();
   const [createCustomer, { isLoading: creating }]             = useCreateCustomerMutation();
@@ -40,6 +42,7 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
 
   const handleCreate = async () => {
     setNewError(null);
+    setDupCustomer(null);
     if (!newForm.name.trim()) { setNewError('Name is required'); return; }
     try {
       const customer = await createCustomer({
@@ -55,8 +58,23 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
       setQuery('');
       setNewForm({ name: '', phone: '', address: '', hasWhatsapp: false });
     } catch (err) {
-      setNewError(err?.data?.error?.message || 'Failed to create customer');
+      if (err?.data?.error?.code === 'CUSTOMER_PHONE_EXISTS') {
+        // Surface the existing customer so the user can select it instead of duplicating
+        setDupCustomer(err.data.error.details?.customer ?? null);
+        setNewError(err.data.error.message);
+      } else {
+        setNewError(err?.data?.error?.message || 'Failed to create customer');
+      }
     }
+  };
+
+  // When the existing customer card's "Use this customer" is clicked
+  const handleUseDuplicate = (customer) => {
+    handleSelect(customer);
+    setShowNew(false);
+    setDupCustomer(null);
+    setNewError(null);
+    setNewForm({ name: '', phone: '', address: '', hasWhatsapp: false });
   };
 
   // ── Selected state ──
@@ -153,7 +171,12 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
             type="tel"
             placeholder="Phone number"
             value={newForm.phone}
-            onChange={e => setNewForm(f => ({ ...f, phone: e.target.value }))}
+            onChange={e => {
+              // clear any duplicate warning when the user edits the phone
+              setDupCustomer(null);
+              setNewError(null);
+              setNewForm(f => ({ ...f, phone: e.target.value }));
+            }}
             className={inputClass}
           />
 
@@ -195,6 +218,26 @@ export const CustomerPicker = ({ value, onChange, onClear, branchId }) => {
           />
 
           {newError && <p className="text-xs text-red-500 font-medium">{newError}</p>}
+
+          {/* Existing-customer card — shown when the phone belongs to someone already */}
+          {dupCustomer && (
+            <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-2xl">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <User size={16} className="text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-amber-800 truncate">{dupCustomer.name}</p>
+                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">{dupCustomer.customer_code}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUseDuplicate(dupCustomer)}
+                className="shrink-0 px-3 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-xl tactile-press"
+              >
+                Use this customer
+              </button>
+            </div>
+          )}
 
           <button
             type="button"

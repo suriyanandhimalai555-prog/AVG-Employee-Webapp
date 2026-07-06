@@ -22,7 +22,8 @@ export const handleError = (error: unknown, reply: FastifyReply): FastifyReply =
   if (error instanceof AppError) {
     return reply.code(error.statusCode).send({
       success: false,
-      error: { code: error.code, message: error.message },
+      // include details when present (e.g. existing customer for CUSTOMER_PHONE_EXISTS)
+      error: { code: error.code, message: error.message, ...(error.details !== undefined ? { details: error.details } : {}) },
     });
   }
 

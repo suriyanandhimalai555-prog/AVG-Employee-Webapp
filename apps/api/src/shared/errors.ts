@@ -1,7 +1,8 @@
 // Define a base class for custom application errors that extends the built-in Error class
 export class AppError extends Error {
   // Use 'public' in the constructor to automatically declare and assign properties to the class instance
-  constructor(public message: string, public statusCode: number, public code: string) {
+  // details is optional structured payload (e.g. the existing customer record for a 409 conflict)
+  constructor(public message: string, public statusCode: number, public code: string, public details?: unknown) {
     // Call the parent 'Error' constructor with the provided error message
     super(message);
     // Explicitly set the prototype to ensure 'instanceof' checks work correctly with custom error classes
@@ -35,9 +36,10 @@ export class UnauthorizedError extends AppError {
 
 // Define a specific error class for resource conflict situations, such as duplicate entries (409)
 export class ConflictError extends AppError {
-  constructor(message: string, code: string = 'CONFLICT') {
+  // details carries structured payload (e.g. the existing customer object) so callers can act on it
+  constructor(message: string, code: string = 'CONFLICT', details?: unknown) {
     // Invoke the parent constructor with the message, HTTP status code 409, and the provided or default error code
-    super(message, 409, code);
+    super(message, 409, code, details);
   }
 }
 
