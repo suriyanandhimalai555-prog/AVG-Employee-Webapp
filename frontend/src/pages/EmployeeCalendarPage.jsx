@@ -80,7 +80,7 @@ export const EmployeeCalendarPage = () => {
       </div>
 
       {/* Calendar + detail cards */}
-      <div className="max-w-2xl mx-auto px-5 py-6 pb-24">
+      <div className="px-5 py-6 pb-24 md:max-w-2xl">
         <HistoryCalendar
           month={month}
           year={year}

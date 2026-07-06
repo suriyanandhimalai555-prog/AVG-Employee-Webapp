@@ -4,6 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { CustomerService } from './customers.service';
 import { CreateCustomerSchema, UpdateCustomerSchema, SearchCustomersQuerySchema } from './customers.schema';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
+import { CUSTOMER_EDITOR_ROLES } from '../../shared/role-constants';
 
 interface AuthUser { id: string; role: string; branchId: string; }
 interface AuthReq extends FastifyRequest { user: AuthUser; }
@@ -77,14 +78,19 @@ export default async function customerRoutes(fastify: FastifyInstance): Promise<
 
   // ─── PATCH /customers/:id — update mutable fields (name, phone, address, notes, has_whatsapp) ───
   // Scoped to caller's branch — same resolution as create/search.
-  // Exists primarily so existing customers can be flagged has_whatsapp=true
-  // after the column is added (before create time they couldn't set it).
+  // Editing is narrower than creating: WhatsApp consent + contact changes are
+  // restricted to branch leadership and management (CUSTOMER_EDITOR_ROLES);
+  // enrollment staff keep create/search only. Every change is audited
+  // (customers_audit, migration 080) with the caller as changed_by.
   fastify.patch('/:id', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthReq;
-      if (!ALLOWED_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+      // TS: readonly RoleValue[] — cast the JWT string to check membership
+      if (!CUSTOMER_EDITOR_ROLES.includes(req.user.role as (typeof CUSTOMER_EDITOR_ROLES)[number])) {
+        throw new ForbiddenError('Only branch managers, branch admins and management can edit customers');
+      }
 
       const branchId = await resolveCustomerBranch(
         fastify.db, req, (req.body as any).branchId
@@ -93,7 +99,7 @@ export default async function customerRoutes(fastify: FastifyInstance): Promise<
 
       const { id } = req.params as { id: string };
       const body   = UpdateCustomerSchema.parse(req.body);
-      const data   = await CustomerService.update(fastify.db, id, branchId, body);
+      const data   = await CustomerService.update(fastify.db, id, branchId, body, req.user.id);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
@@ -111,8 +117,9 @@ export default async function customerRoutes(fastify: FastifyInstance): Promise<
       );
 
       const { id } = req.params as { id: string };
-      // TS: branchId may be null for MD/management — pass empty string so service falls through to no-filter
-      const customer = await CustomerService.getById(fastify.db, id, branchId ?? '');
+      // branchId null (MD, or management without ?branchId) → org-wide read;
+      // getById drops the branch filter for null.
+      const customer = await CustomerService.getById(fastify.db, id, branchId);
       const history  = await CustomerService.getSchemeHistory(fastify.db, id);
       return reply.send({ success: true, data: { ...customer, schemeHistory: history } });
     } catch (error) { return handleError(error, reply); }

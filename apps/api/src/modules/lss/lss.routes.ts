@@ -315,6 +315,22 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
     }
   );
 
+  // ─── DELETE /lss/rooms/:id — permanently delete a room (admin) ──────────
+  fastify.delete('/rooms/:id', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_rooms WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new NotFoundError('Room not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (req.body as any)?.branchId);
+        const data = await RoomsService.deleteRoom(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
   // ─── PATCH /lss/rooms/:id/void — soft-void a room (admin) ───────────────
   fastify.patch('/rooms/:id/void', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply) => {

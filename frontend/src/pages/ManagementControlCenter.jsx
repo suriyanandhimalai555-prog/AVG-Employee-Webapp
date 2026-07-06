@@ -1092,7 +1092,7 @@ export const ManagementControlCenter = () => {
   }
 
   return (
-    <div className="pb-32 pt-4 max-w-5xl mx-auto">
+    <div className="pb-32 pt-4 md:max-w-5xl">
 
       {/* Header */}
       <div className="px-4 md:px-0 mb-6 flex items-center gap-3">

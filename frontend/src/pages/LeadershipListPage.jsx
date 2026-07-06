@@ -57,7 +57,7 @@ export const LeadershipListPage = () => {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-5 py-6 pb-24">
+      <div className="px-5 py-6 pb-24 md:max-w-2xl">
         <div className="bg-white rounded-3xl card-shadow divide-y divide-border overflow-hidden">
           {members.map((member) => (
             <button

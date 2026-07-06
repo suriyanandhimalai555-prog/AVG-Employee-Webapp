@@ -334,10 +334,20 @@ frontend/src/
 └── main.jsx
 ```
 
-### Design system (never change these)
-Colors: navy (#0B1C30), indigo, emerald, surface
-CSS classes: gradient-primary, gradient-yellow,
-             card-shadow, glass, tactile-press
+### Design system
+See **DESIGN.md** (repo root) for the authoritative design token table, muted-text
+contrast tiers, card-vs-list rules, radii, and motion vocabulary.
+
+Summary of active tokens (values live in `frontend/src/index.css` @theme):
+- navy #0F1C2E · indigo #2563EB · emerald #059669 · surface #F8FAFC · border #E2E8F0
+- CSS utilities: gradient-primary, gradient-yellow, card-shadow, glass, tactile-press
+
+Motion rules (see DESIGN.md § Motion vocabulary):
+- All motion constants import from `frontend/src/lib/motion.js` — no ad-hoc transition objects.
+- `page` variant is enter-only (no exit). Never wrap `<Outlet/>` in `<AnimatePresence>` —
+  doing so causes a mid-exit Suspense tear with React Router 7 lazy routes (blank screen bug).
+- `GlassModal` uses the `modal` + `fade` variants from lib/motion.js.
+
 Mobile-first, max-width 390px for AttendanceHome
 AdminDashboard is full-width desktop layout
 

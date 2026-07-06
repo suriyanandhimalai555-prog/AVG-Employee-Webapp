@@ -910,6 +910,12 @@ export const apiSlice = createApi({
       invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
 
+    deleteLssRoom: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/rooms/${id}`, method: 'DELETE', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
     removeLssSlot: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/lss/slots/${id}/remove`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
@@ -2218,6 +2224,7 @@ export const {
   useVoidLssSlotMutation,
   useDeleteLssSlotMutation,
   useVoidLssRoomMutation,
+  useDeleteLssRoomMutation,
   useRemoveLssSlotMutation,
   useUnpayGoldPaymentMutation,
   useCorrectLandBookingMutation,

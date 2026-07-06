@@ -90,6 +90,14 @@ function BranchesRoute() {
   return role === 'management' ? <ManagementBranches /> : <BranchManagement />;
 }
 
+// CustomersRoute — WhatsApp opt-in management. Only roles that can edit customer
+// records (PATCH /customers/:id) should reach this page; others land on home.
+const CUSTOMER_PAGE_ROLES = new Set(['branch_admin', 'branch_manager', 'management']);
+function CustomersRoute() {
+  const role = useSelector(selectCurrentUser)?.role;
+  return CUSTOMER_PAGE_ROLES.has(role) ? <CustomersPage /> : <Navigate to="/" replace />;
+}
+
 function ProtectedLayout() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -145,7 +153,7 @@ function App() {
         <Route path="/user-management"           element={<UserManagement />} />
 
         {/* Customer WhatsApp notification management */}
-        <Route path="/customers"                 element={<CustomersPage />} />
+        <Route path="/customers"                 element={<CustomersRoute />} />
 
         {/* People */}
         <Route path="/people/:userId"            element={<PersonAttendancePage />} />

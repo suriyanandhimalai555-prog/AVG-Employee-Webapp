@@ -20,6 +20,7 @@ import {
   useUndoLssDrawMutation,
   useSendLssRoomToHeadBranchMutation,
   useVoidLssRoomMutation,
+  useDeleteLssRoomMutation,
   useRemoveLssSlotMutation,
   useCorrectLssSlotMutation,
   useGetGoldEmployeesQuery,
@@ -179,10 +180,13 @@ export const LssRoomDetailPage = () => {
   const [runDraw,    { isLoading: drawing }]    = useRunLssDrawMutation();
   const [undoDraw,   { isLoading: undoing }]    = useUndoLssDrawMutation();
   const [sendToHead, { isLoading: sending }]    = useSendLssRoomToHeadBranchMutation();
-  const [voidRoom,   { isLoading: voiding }]   = useVoidLssRoomMutation();
+  const [voidRoom,    { isLoading: voiding }]   = useVoidLssRoomMutation();
+  const [deleteRoom,  { isLoading: deleting }]  = useDeleteLssRoomMutation();
   const [hideIneligible, setHideIneligible]     = useState(true);
   const [voidConfirm,    setVoidConfirm]        = useState(false);
   const [voidError,      setVoidError]          = useState('');
+  const [deleteConfirm,  setDeleteConfirm]      = useState(false);
+  const [deleteError,    setDeleteError]        = useState('');
 
   // Management can bypass the 30-day eligibility wait via the Control Center toggle.
   // When ON, every held slot is treated as eligible client-side so the Eliminate button renders.
@@ -221,6 +225,7 @@ export const LssRoomDetailPage = () => {
   const canSendToHead = canWrite && room.status === 'filling' && heldSlots < SLOTS_PER_ROOM;
   const canDraw       = canWrite && room.status === 'active';
   const canVoidRoom   = isAdmin && room.status !== 'voided' && room.status !== 'completed';
+  const canDeleteRoom = isAdmin;
 
   // Next draw number = draws done + 1; used to show projected payout
   const nextDrawNumber   = room.draws.length + 1;
@@ -259,6 +264,14 @@ export const LssRoomDetailPage = () => {
       await voidRoom({ id, branchId: room.branch_id }).unwrap();
       setVoidConfirm(false);
     } catch (err) { setVoidError(err?.data?.error?.message || 'Failed to void room.'); }
+  };
+
+  const onDeleteRoom = async () => {
+    setDeleteError('');
+    try {
+      await deleteRoom({ id, branchId: room.branch_id }).unwrap();
+      navigate('/money/schemes/lss');
+    } catch (err) { setDeleteError(err?.data?.error?.message || 'Failed to delete room.'); }
   };
 
   const onPickWinner = async (slot) => {
@@ -392,6 +405,35 @@ export const LssRoomDetailPage = () => {
                 </button>
                 <button type="button" onClick={() => setVoidConfirm(false)}
                   className="px-4 py-2.5 rounded-xl bg-white border border-red-200 text-red-600 text-sm font-bold tactile-press">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Delete room permanently — admin only */}
+      {canDeleteRoom && (
+        <div className="px-4 mb-4">
+          {!deleteConfirm ? (
+            <button type="button" onClick={() => setDeleteConfirm(true)}
+              className="w-full py-2.5 rounded-2xl border border-red-400 text-red-700 text-sm font-semibold tactile-press hover:bg-red-50 bg-red-50/50">
+              <Trash2 size={14} className="inline mr-1.5" /> Delete Room Permanently
+            </button>
+          ) : (
+            <div className="bg-red-100 border border-red-400 rounded-2xl px-4 py-4 space-y-3">
+              <p className="text-sm font-bold text-red-800">Permanently delete this room?</p>
+              <p className="text-xs text-red-700">
+                The room, all {room.slots.length} slots, and all draw history will be <span className="font-bold">permanently removed</span> from the database.
+                All incentive credits earned from this room will be clawed back. <span className="font-bold">This cannot be undone.</span>
+              </p>
+              {deleteError && <p className="text-xs text-red-800 font-semibold">{deleteError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={onDeleteRoom} disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Yes, Delete Permanently
+                </button>
+                <button type="button" onClick={() => { setDeleteConfirm(false); setDeleteError(''); }}
+                  className="px-4 py-2.5 rounded-xl bg-white border border-red-300 text-red-700 text-sm font-bold tactile-press">Cancel</button>
               </div>
             </div>
           )}

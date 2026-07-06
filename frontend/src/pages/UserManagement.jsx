@@ -301,7 +301,7 @@ export const UserManagement = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-6xl mx-auto px-4 py-6">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 px-4 py-6 md:max-w-6xl">
 
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">

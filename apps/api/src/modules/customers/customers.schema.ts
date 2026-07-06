@@ -7,6 +7,8 @@ export const CreateCustomerSchema = z.object({
   notes:        z.string().max(1000).optional(),
   // TS: opt-in flag for WhatsApp notifications; defaults false to match the DB column default
   has_whatsapp: z.boolean().optional().default(false),
+  // Management passes branchId in the body (their JWT has no branch_id)
+  branchId:     z.string().uuid().optional(),
 });
 
 // TS: partial update — all fields optional; at least one must be present to be meaningful
@@ -16,6 +18,8 @@ export const UpdateCustomerSchema = z.object({
   address:      z.string().max(500).optional(),
   notes:        z.string().max(1000).optional(),
   has_whatsapp: z.boolean().optional(),
+  // Management passes branchId in the body (their JWT has no branch_id)
+  branchId:     z.string().uuid().optional(),
 }).refine(
   (data) => Object.values(data).some((v) => v !== undefined),
   { message: 'At least one field must be provided to update' }
@@ -25,6 +29,8 @@ export const SearchCustomersQuerySchema = z.object({
   search:   z.string().max(100).optional(),
   page:     z.coerce.number().min(1).default(1),
   limit:    z.coerce.number().min(1).max(100).default(20),
+  // Management passes branchId as a query param (their JWT has no branch_id)
+  branchId: z.string().uuid().optional(),
 });
 
 export type CreateCustomerInput  = z.infer<typeof CreateCustomerSchema>;

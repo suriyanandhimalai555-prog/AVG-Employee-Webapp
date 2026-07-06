@@ -455,6 +455,61 @@ export const RoomsService = {
     });
   },
 
+  // ─── DELETE ROOM (admin: MD / Management) ──────────────────────────────────
+  // Permanently removes the room row and all child draws + slots from the DB,
+  // clawing back every slot's incentive credits first. Allowed on any room status.
+  // Deletion order resolves the FK cycle: NULL won_in_draw_id before deleting
+  // draws, then slots, then the room itself.
+  async deleteRoom(
+    db: Pool,
+    actorId: string,
+    roomId: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const roomRow = await client.query(
+        `SELECT * FROM lss_rooms WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [roomId, branchId]
+      );
+      if (roomRow.rows.length === 0) throw new NotFoundError('Room not found');
+      const room = roomRow.rows[0];
+
+      const slots = await client.query(
+        `SELECT id FROM lss_slots WHERE room_id = $1`,
+        [roomId]
+      );
+
+      // Claw back incentives for every slot before destroying any rows.
+      for (const slot of slots.rows) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode: SCHEME_CODE,
+          sourceId:   slot.id,
+        });
+      }
+
+      // Break the lss_slots.won_in_draw_id → lss_draws FK cycle so draws can be deleted.
+      await client.query(`UPDATE lss_slots SET won_in_draw_id = NULL WHERE room_id = $1`, [roomId]);
+
+      // If other rooms were combined into this one, NULL their pointer so this delete doesn't cascade-block.
+      await client.query(`UPDATE lss_rooms SET combined_into_room_id = NULL WHERE combined_into_room_id = $1`, [roomId]);
+
+      await client.query(`DELETE FROM lss_draws WHERE room_id = $1`, [roomId]);
+      await client.query(`DELETE FROM lss_slots WHERE room_id = $1`, [roomId]);
+      await client.query(`DELETE FROM lss_rooms WHERE id = $1`, [roomId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'room',
+        entityId:   roomId,
+        actorId,
+        action:     'delete',
+        oldValues:  { room, slotCount: slots.rows.length },
+      });
+
+      return { deleted: true, id: roomId };
+    });
+  },
+
 };
 
 export const LSS_FILL_WINDOW_DAYS = FILL_WINDOW_DAYS;

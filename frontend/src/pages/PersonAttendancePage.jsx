@@ -71,7 +71,7 @@ export const PersonAttendancePage = () => {
         {isFetching && <Loader2 className="animate-spin text-indigo shrink-0" size={16} />}
       </div>
 
-      <div className="max-w-2xl mx-auto px-5 py-6 pb-24">
+      <div className="px-5 py-6 pb-24 md:max-w-2xl">
         <HistoryCalendar
           month={month}
           year={year}

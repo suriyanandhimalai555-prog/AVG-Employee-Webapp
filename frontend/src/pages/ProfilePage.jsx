@@ -121,7 +121,7 @@ export const ProfilePage = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-5 py-6 space-y-5">
+    <div className="px-5 py-6 space-y-5 md:max-w-2xl">
       <h1 className="text-2xl font-bold text-navy">Profile</h1>
 
       <div className="bg-white rounded-3xl card-shadow p-5">

@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { NotFoundError } from '../../shared/errors';
+import { runInTransaction } from '../../shared/transaction-helper';
 import type { CreateCustomerInput, UpdateCustomerInput, SearchCustomersQuery } from './customers.schema';
 
 export const CustomerService = {
@@ -96,13 +97,21 @@ export const CustomerService = {
   },
 
   // ─── GET BY ID ────────────────────────────────────────────────────────────
-  async getById(db: Pool, id: string, branchId: string): Promise<any> {
+  // branchId null = org-wide read (md / management without a branch param):
+  // the branch filter is dropped. Branch-scoped roles always pass a branchId.
+  async getById(db: Pool, id: string, branchId: string | null): Promise<any> {
+    const params: unknown[] = [id];
+    let where = 'c.id = $1';
+    if (branchId !== null) {
+      where += ' AND c.branch_id = $2';
+      params.push(branchId);
+    }
     const result = await db.query(
       `SELECT c.*, u.name AS created_by_name
        FROM customers c
        JOIN users u ON c.created_by = u.id
-       WHERE c.id = $1 AND c.branch_id = $2`,
-      [id, branchId]
+       WHERE ${where}`,
+      params
     );
     if (result.rows.length === 0) throw new NotFoundError('Customer not found');
     return result.rows[0];
@@ -111,42 +120,69 @@ export const CustomerService = {
   // ─── UPDATE ───────────────────────────────────────────────────────────────
   // Partial update — only the provided fields are changed.  Scoped to the
   // caller's branch so cross-branch edits are impossible even if id is guessed.
+  //
+  //   BEGIN
+  //     SELECT … FOR UPDATE          (lock row, capture old values)
+  //     UPDATE customers SET …       (only fields whose value actually changed)
+  //     INSERT customers_audit ×N    (one row per changed field — consent evidence)
+  //   COMMIT                         (audit exists ⇔ change committed)
   async update(
     db: Pool,
     id: string,
     branchId: string,
-    payload: UpdateCustomerInput
+    payload: UpdateCustomerInput,
+    changedBy: string | null = null
   ): Promise<any> {
-    // TS: build SET clause dynamically from whichever fields are supplied
-    const fields: string[] = [];
-    const vals: unknown[]  = [];
-    let idx = 1;
-
     // Optional text columns are nullable in the DB — store cleared values ('')
     // as NULL so "no phone" has a single representation (IS NULL queries stay correct).
     const orNull = (v: string) => (v.trim() === '' ? null : v);
 
-    if (payload.name         !== undefined) { fields.push(`name = $${idx++}`);         vals.push(payload.name); }
-    if (payload.phone        !== undefined) { fields.push(`phone = $${idx++}`);        vals.push(orNull(payload.phone)); }
-    if (payload.address      !== undefined) { fields.push(`address = $${idx++}`);      vals.push(orNull(payload.address)); }
-    if (payload.notes        !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(orNull(payload.notes)); }
-    if (payload.has_whatsapp !== undefined) { fields.push(`has_whatsapp = $${idx++}`); vals.push(payload.has_whatsapp); }
+    // Normalised desired values, keyed by column name.
+    const desired: Record<string, string | boolean | null> = {};
+    if (payload.name         !== undefined) desired.name         = payload.name;
+    if (payload.phone        !== undefined) desired.phone        = orNull(payload.phone);
+    if (payload.address      !== undefined) desired.address      = orNull(payload.address);
+    if (payload.notes        !== undefined) desired.notes        = orNull(payload.notes);
+    if (payload.has_whatsapp !== undefined) desired.has_whatsapp = payload.has_whatsapp;
 
     // Schema .refine() already rejects empty payloads, but guard here for safety
-    if (fields.length === 0) throw new NotFoundError('No fields to update');
+    if (Object.keys(desired).length === 0) throw new NotFoundError('No fields to update');
 
-    vals.push(id, branchId);
+    return runInTransaction(db, async (client) => {
+      const current = await client.query(
+        `SELECT * FROM customers WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [id, branchId]
+      );
+      if (current.rows.length === 0) throw new NotFoundError('Customer not found');
+      const before = current.rows[0];
 
-    const result = await db.query(
-      `UPDATE customers
-       SET ${fields.join(', ')}
-       WHERE id = $${idx} AND branch_id = $${idx + 1}
-       RETURNING *`,
-      vals
-    );
+      // Only write (and audit) fields whose value actually changes.
+      const changed = Object.entries(desired).filter(([col, val]) => before[col] !== val);
+      if (changed.length === 0) return before;
 
-    if (result.rows.length === 0) throw new NotFoundError('Customer not found');
-    return result.rows[0];
+      const fields = changed.map(([col], i) => `${col} = $${i + 1}`);
+      const vals: unknown[] = changed.map(([, val]) => val);
+      vals.push(id, branchId);
+
+      const result = await client.query(
+        `UPDATE customers
+         SET ${fields.join(', ')}
+         WHERE id = $${changed.length + 1} AND branch_id = $${changed.length + 2}
+         RETURNING *`,
+        vals
+      );
+
+      // Audit trail: who changed what, from what, to what (see migration 080).
+      for (const [col, val] of changed) {
+        await client.query(
+          `INSERT INTO customers_audit (customer_id, field, old_value, new_value, changed_by)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, col, before[col] === null ? null : String(before[col]), val === null ? null : String(val), changedBy]
+        );
+      }
+
+      return result.rows[0];
+    });
   },
 
   // ─── SCHEME HISTORY ───────────────────────────────────────────────────────

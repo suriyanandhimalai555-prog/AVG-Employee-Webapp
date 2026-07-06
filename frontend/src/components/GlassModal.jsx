@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import { modal, fade } from '../lib/motion';
 
 export const GlassModal = ({ isOpen, onClose, title, children }) => {
   if (typeof document === 'undefined') return null;
@@ -12,20 +13,20 @@ export const GlassModal = ({ isOpen, onClose, title, children }) => {
         <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center sm:p-6 pointer-events-none">
           {/* Backdrop */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            variants={fade}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             onClick={onClose}
             className="absolute inset-0 bg-navy/40 backdrop-blur-sm pointer-events-auto"
           />
 
-          {/* Sheet — slides up on mobile, scales in on desktop */}
+          {/* Sheet — slides up on mobile, settles with a spring on desktop */}
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0,  scale: 1 }}
-            exit={{  opacity: 0, y: 40, scale: 0.98 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            variants={modal}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             className="relative w-full max-w-lg glass rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl shadow-navy/20 max-h-[90vh] flex flex-col pointer-events-auto"
           >
             {/* Header */}

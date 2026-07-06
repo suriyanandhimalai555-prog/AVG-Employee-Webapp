@@ -35,7 +35,7 @@ export const CashHolderDetailPage = () => {
         <ArrowRight className="rotate-180" size={14} /> Back
       </button>
 
-      <div className="max-w-lg mx-auto px-4 pt-20 space-y-5">
+      <div className="px-4 pt-20 space-y-5 md:max-w-lg">
 
         {/* Header */}
         <div className="pt-2">

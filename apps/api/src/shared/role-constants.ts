@@ -59,6 +59,14 @@ export const GOLD_COIN_VIEWER_ROLES: readonly RoleValue[] = [
   Role.MD, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN, Role.MANAGEMENT,
 ];
 
+// Roles allowed to EDIT customer records (contact details + WhatsApp consent)
+// via PATCH /customers/:id. Deliberately narrower than customer create/search:
+// enrollment staff (abm/oa/…) create customers, but only branch leadership and
+// the management back-office may change consent or contact data afterwards.
+export const CUSTOMER_EDITOR_ROLES: readonly RoleValue[] = [
+  Role.BRANCH_MANAGER, Role.BRANCH_ADMIN, Role.MANAGEMENT,
+];
+
 // Roles allowed to list users via GET /users (the personnel directory).
 // MD + management see the whole org; director/gm see their subtrees;
 // branch_admin sees their branch.

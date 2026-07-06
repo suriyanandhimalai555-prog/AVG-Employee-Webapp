@@ -85,7 +85,7 @@ export const BranchDetailPage = () => {
         {isFetching && <Loader2 className="animate-spin text-indigo shrink-0" size={16} />}
       </div>
 
-      <div className="max-w-2xl mx-auto px-5 py-6 pb-24 space-y-6">
+      <div className="px-5 py-6 pb-24 space-y-6 md:max-w-2xl">
         {/* Stats strip */}
         <div className="bg-white rounded-3xl card-shadow overflow-hidden">
           <div className="grid grid-cols-3 divide-x divide-border">
