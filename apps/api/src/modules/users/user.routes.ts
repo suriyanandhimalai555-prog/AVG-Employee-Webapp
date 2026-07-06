@@ -4,6 +4,7 @@ import { UserService } from './user.service';
 import { CreateUserSchema, UpdateOversightBranchesSchema } from './user.schema';
 import { AppError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
+import { USER_DIRECTORY_ROLES } from '../../shared/role-constants';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
@@ -219,10 +220,8 @@ export default async function userRoutes(fastify: FastifyInstance) {
       const req = request as AuthenticatedRequest;
       
       // Basic access control — users can only see others if they're high-level staff.
-      // management is the org-wide back-office account (same treatment as MD here,
-      // matching the branches module).
-      const allowedRoles = ['md', 'management', 'director', 'gm', 'branch_admin'];
-      if (!allowedRoles.includes(req.user.role)) {
+      // TS: readonly RoleValue[] narrows includes() — cast the JWT string to check membership
+      if (!USER_DIRECTORY_ROLES.includes(req.user.role as (typeof USER_DIRECTORY_ROLES)[number])) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
 

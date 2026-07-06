@@ -55,23 +55,6 @@ const TeamStatsCard = ({ summary, isLoading, thirdStat }) => (
 
 const TEAM_LIST_ROLES = ['abm', 'branch_manager', 'oa'];
 
-/** Navigation card for an OA's own salary / incentive self-views. */
-const OwnEarningsCard = ({ icon: Icon, title, subtitle, onClick }) => (
-  <button
-    onClick={onClick}
-    className="w-full p-5 bg-white rounded-3xl card-shadow flex items-center gap-4 tactile-press group hover:shadow-lg hover:shadow-navy/6 transition-all duration-300"
-  >
-    <div className="w-12 h-12 rounded-2xl bg-indigo/8 flex items-center justify-center text-indigo transition-all duration-300 group-hover:bg-indigo group-hover:text-white group-hover:shadow-lg group-hover:shadow-indigo/25">
-      <Icon size={22} />
-    </div>
-    <div className="flex-1 text-left min-w-0">
-      <p className="text-sm font-bold text-navy">{title}</p>
-      <p className="text-[10px] font-medium text-navy/40 mt-0.5">{subtitle}</p>
-    </div>
-    <ArrowRight size={16} className="text-navy/25 transition-all duration-300 group-hover:text-navy/50 group-hover:translate-x-1 shrink-0" />
-  </button>
-);
-
 const TeamListSection = ({ title = 'My Team', members = [], onOpenCalendar }) => (
   <div className="px-6 pb-4">
     <div className="flex items-center justify-between mb-3">
@@ -295,17 +278,17 @@ export const HomeTab = () => {
             <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">
               My Earnings
             </p>
-            <OwnEarningsCard
+            <StaffCard
               icon={IndianRupee}
               title="My Salary"
               subtitle="Your current salary & history"
-              onClick={() => navigate('/money/salaries')}
+              onOpen={() => navigate('/money/salaries')}
             />
-            <OwnEarningsCard
+            <StaffCard
               icon={TrendingUp}
               title="My Incentives"
               subtitle="Scheme commissions & wallet"
-              onClick={() => navigate('/money/incentives')}
+              onOpen={() => navigate('/money/incentives')}
             />
           </div>
 

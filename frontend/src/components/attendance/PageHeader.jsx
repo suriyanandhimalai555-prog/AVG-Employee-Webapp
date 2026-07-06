@@ -10,7 +10,8 @@ const TAB_ROUTES = new Set(['/', '/attendance', '/alerts', '/branches', '/money'
 
 // These route prefixes manage their own back navigation (SchemePageHeader / inline arrows).
 // PageHeader stays in brand-only mode so there is never a duplicate back button.
-const SELF_NAVIGATING_PREFIXES = ['/money/schemes', '/money/incentives'];
+// /money/salaries has a role-aware in-page arrow (OA goes home, others to /money).
+const SELF_NAVIGATING_PREFIXES = ['/money/schemes', '/money/incentives', '/money/salaries'];
 
 const pageManagesOwnBack = (pathname) =>
   SELF_NAVIGATING_PREFIXES.some(

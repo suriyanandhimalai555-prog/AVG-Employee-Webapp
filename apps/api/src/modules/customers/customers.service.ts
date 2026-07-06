@@ -122,10 +122,14 @@ export const CustomerService = {
     const vals: unknown[]  = [];
     let idx = 1;
 
+    // Optional text columns are nullable in the DB — store cleared values ('')
+    // as NULL so "no phone" has a single representation (IS NULL queries stay correct).
+    const orNull = (v: string) => (v.trim() === '' ? null : v);
+
     if (payload.name         !== undefined) { fields.push(`name = $${idx++}`);         vals.push(payload.name); }
-    if (payload.phone        !== undefined) { fields.push(`phone = $${idx++}`);        vals.push(payload.phone); }
-    if (payload.address      !== undefined) { fields.push(`address = $${idx++}`);      vals.push(payload.address); }
-    if (payload.notes        !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(payload.notes); }
+    if (payload.phone        !== undefined) { fields.push(`phone = $${idx++}`);        vals.push(orNull(payload.phone)); }
+    if (payload.address      !== undefined) { fields.push(`address = $${idx++}`);      vals.push(orNull(payload.address)); }
+    if (payload.notes        !== undefined) { fields.push(`notes = $${idx++}`);        vals.push(orNull(payload.notes)); }
     if (payload.has_whatsapp !== undefined) { fields.push(`has_whatsapp = $${idx++}`); vals.push(payload.has_whatsapp); }
 
     // Schema .refine() already rejects empty payloads, but guard here for safety

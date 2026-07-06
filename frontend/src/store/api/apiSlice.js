@@ -1842,7 +1842,28 @@ export const apiSlice = createApi({
     updateCustomer: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/customers/${id}`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: ['Customers'],
+      // Patch the updated row into every cached customer list instead of
+      // invalidating ['Customers'] — a toggle changes one row, so refetching
+      // whole lists per click wastes a request and leaves a stale-read window
+      // (a rapid second toggle would resend the old value). Using the server's
+      // returned row also picks up its normalisation (trim, '' → null).
+      async onQueryStarted({ id }, { dispatch, getState, queryFulfilled }) {
+        try {
+          const { data: updated } = await queryFulfilled;
+          for (const args of apiSlice.util.selectCachedArgsForQuery(getState(), 'searchCustomers')) {
+            dispatch(apiSlice.util.updateQueryData('searchCustomers', args, (draft) => {
+              const row = (draft.data || []).find((c) => c.id === id);
+              if (row) Object.assign(row, updated);
+            }));
+          }
+          // Keep the single-customer cache (detail page) in sync too.
+          dispatch(apiSlice.util.updateQueryData('getCustomer', id, (draft) => {
+            Object.assign(draft, updated);
+          }));
+        } catch {
+          // Mutation failed — caches were never touched, nothing to roll back.
+        }
+      },
     }),
 
     // ─── App Settings (backdated-entry permission) ───

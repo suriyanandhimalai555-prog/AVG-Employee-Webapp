@@ -65,7 +65,7 @@ export const CustomersPage = () => {
 
   const { data: branches = [] } = useGetBranchesQuery(undefined, { skip: !isManagement });
 
-  const { data: result, isLoading, isFetching } = useSearchCustomersQuery(
+  const { data: result, isLoading, isFetching, isError, error } = useSearchCustomersQuery(
     {
       search: search || undefined,
       page,
@@ -108,8 +108,10 @@ export const CustomersPage = () => {
     if (!editCustomer) return;
     const phone = editForm.phone.trim();
     const address = editForm.address.trim();
-    if (phone && !/^[0-9+\-() ]{6,20}$/.test(phone)) {
-      setEditError('Enter a valid phone number (digits, 6–20 characters).');
+    // Allowed characters AND at least 6 real digits — '++++++' is not a phone.
+    const digitCount = phone.replace(/\D/g, '').length;
+    if (phone && (!/^[0-9+\-() ]{6,20}$/.test(phone) || digitCount < 6 || digitCount > 15)) {
+      setEditError('Enter a valid phone number (at least 6 digits).');
       return;
     }
     setEditError(null);
@@ -119,6 +121,9 @@ export const CustomersPage = () => {
         id: editCustomer.id,
         phone,
         address,
+        // Removing the phone makes the opt-in meaningless — clear it so the
+        // customer doesn't linger as "opted in but unreachable".
+        ...(!phone && editCustomer.has_whatsapp ? { has_whatsapp: false } : {}),
         ...(isManagement ? { branchId } : {}),
       }).unwrap();
       setEditCustomer(null);
@@ -222,6 +227,12 @@ export const CustomersPage = () => {
           />
         ) : isLoading ? (
           <LoadingSpinner size="lg" />
+        ) : isError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load customers"
+            message={error?.data?.error?.message || 'Something went wrong — please try again.'}
+          />
         ) : customers.length === 0 ? (
           <EmptyState
             icon={Users}
@@ -286,7 +297,10 @@ export const CustomersPage = () => {
                   <button
                     type="button"
                     onClick={() => handleToggle(c)}
-                    disabled={saving || !hasPhone}
+                    // A phone is required to opt IN, but opting OUT must always
+                    // be possible — otherwise a customer whose phone was removed
+                    // would be stuck opted-in forever.
+                    disabled={saving || (!hasPhone && !c.has_whatsapp)}
                     aria-label={c.has_whatsapp
                       ? `Disable WhatsApp messages for ${c.name}`
                       : `Enable WhatsApp messages for ${c.name}`}

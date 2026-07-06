@@ -59,6 +59,13 @@ export const GOLD_COIN_VIEWER_ROLES: readonly RoleValue[] = [
   Role.MD, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN, Role.MANAGEMENT,
 ];
 
+// Roles allowed to list users via GET /users (the personnel directory).
+// MD + management see the whole org; director/gm see their subtrees;
+// branch_admin sees their branch.
+export const USER_DIRECTORY_ROLES: readonly RoleValue[] = [
+  Role.MD, Role.MANAGEMENT, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN,
+];
+
 // Helper: O(1) membership test against any of the sets above.
 export const hasRole = (
   role: string,

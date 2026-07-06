@@ -10,6 +10,7 @@ import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
+import { Role } from '../../shared/role-constants';
 
 export interface UserDocument {
   id: string;
@@ -400,26 +401,15 @@ export const UserService = {
       paramIndex++;
     }
 
-    if (requesterRole === 'md' || requesterRole === 'management') {
+    if (requesterRole === Role.MD || requesterRole === Role.MANAGEMENT) {
       // MD and management see everyone — management sits outside the manager_id
       // tree, so hierarchy scoping would return nothing for it.
-    } else if (requesterRole === 'branch_admin') {
+    } else if (requesterRole === Role.BRANCH_ADMIN) {
       const branchId = await resolveBranchAdminBranchId(db, requesterId, requesterBranchId);
       conditions.push(`u.branch_id = $${paramIndex++}`);
       params.push(branchId);
-    } else if (requesterRole === 'director' || requesterRole === 'gm') {
-      const scopeIds = await getHierarchyVisibleUserIds(db, {
-        id: requesterId,
-        role: requesterRole,
-        branchId: requesterBranchId,
-      }, {
-        includeSelf: false,
-        allowAbmBranchFallback: true,
-      });
-      if (scopeIds.length === 0) return { data: [], total: 0, page, limit, totalPages: 0 };
-      conditions.push(`u.id = ANY($${paramIndex++}::uuid[])`);
-      params.push(scopeIds);
     } else {
+      // Everyone else (director / gm / bm / abm / …) sees their hierarchy subtree.
       const scopeIds = await getHierarchyVisibleUserIds(db, {
         id: requesterId,
         role: requesterRole,
