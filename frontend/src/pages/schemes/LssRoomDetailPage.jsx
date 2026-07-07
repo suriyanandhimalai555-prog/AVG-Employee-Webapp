@@ -11,7 +11,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Loader2, Trophy, CircleSlash, User, Clock, CheckCircle2, AlertTriangle, Edit2, UserMinus, Trash2, X, Check } from 'lucide-react';
+import { Loader2, Trophy, CircleSlash, User, Clock, CheckCircle2, AlertTriangle, Edit2, UserMinus, Trash2, X, Check, CalendarDays } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetLssRoomQuery,
@@ -25,6 +25,8 @@ import {
   useCorrectLssSlotMutation,
   useGetGoldEmployeesQuery,
   useGetLssEligibilityBypassSettingQuery,
+  useUpdateLssDrawDateMutation,
+  useUpdateLssRoomDatesMutation,
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -33,6 +35,7 @@ import { CustomerPicker } from '../../components/CustomerPicker';
 import { isSchemeAdmin } from '../../lib/schemeAuth';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
+import { BackdateDateInput } from '../../components/BackdateDateInput';
 
 const SLOTS_PER_ROOM = 20;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -51,7 +54,13 @@ const IC = 'w-full px-3 py-2.5 bg-navy/3 rounded-xl border border-navy/10 text-s
 const PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt'];
 const MODE_LABEL    = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt' };
 
-const SlotAdminActions = ({ slot, branchId }) => {
+// Derive a YYYY-MM-DD string from a slot's created_at timestamp for the date input
+const toDateValue = (ts) => {
+  if (!ts) return '';
+  return new Date(ts).toISOString().slice(0, 10);
+};
+
+const SlotAdminActions = ({ slot, branchId, roomStatus }) => {
   const { data: employees = [] } = useGetGoldEmployeesQuery();
   const [correctSlot] = useCorrectLssSlotMutation();
   const [removeSlot]  = useRemoveLssSlotMutation();
@@ -65,7 +74,11 @@ const SlotAdminActions = ({ slot, branchId }) => {
     referrerId:  slot.referrer_id || '',
     paymentMode: slot.payment_mode || 'cash',
     notes:       slot.notes || '',
+    saleDate:    toDateValue(slot.created_at),
   });
+
+  // Sale date is editable only before draws begin (filling/pending_combine) and only on non-won slots
+  const canEditSaleDate = ['filling', 'pending_combine'].includes(roomStatus) && slot.status !== 'won';
 
   const handleEdit = async (e) => {
     e.preventDefault();
@@ -76,6 +89,10 @@ const SlotAdminActions = ({ slot, branchId }) => {
       if (form.referrerId !== undefined)  payload.referrerId = form.referrerId || null;
       if (form.paymentMode)              payload.paymentMode = form.paymentMode;
       if (form.notes !== undefined)      payload.notes       = form.notes;
+      // Only include saleDate when it has actually changed to avoid unnecessary incentive re-point
+      if (canEditSaleDate && form.saleDate && form.saleDate !== toDateValue(slot.created_at)) {
+        payload.saleDate = form.saleDate;
+      }
       await correctSlot(payload).unwrap();
       setEditOpen(false);
     } catch (err) { setError(err?.data?.error?.message || 'Failed to save.'); }
@@ -133,6 +150,17 @@ const SlotAdminActions = ({ slot, branchId }) => {
             <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               className={`${IC} text-xs`} placeholder="Correction note…" />
           </div>
+          {canEditSaleDate && (
+            <div>
+              <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Sale date</label>
+              <BackdateDateInput
+                value={form.saleDate}
+                onChange={e => setForm(f => ({ ...f, saleDate: e.target.value }))}
+                className={`${IC} text-xs`}
+              />
+              <p className="text-[8px] text-navy/30 mt-0.5">Moves the incentive to the new period. Only available before draws begin.</p>
+            </div>
+          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={busy}
@@ -166,6 +194,157 @@ const SlotAdminActions = ({ slot, branchId }) => {
 const isEligible = (s) => Date.now() - new Date(s.paid_at).getTime() >= THIRTY_DAYS_MS;
 const daysUntilEligible = (s) =>
   Math.max(1, Math.ceil((THIRTY_DAYS_MS - (Date.now() - new Date(s.paid_at).getTime())) / 86400000));
+
+// Draw row with optional inline draw-date editor for admins
+const DrawRow = ({ draw: d, isLatest, isAdmin, roomId, branchId, undoing, onUndo }) => {
+  const [updateDrawDate]   = useUpdateLssDrawDateMutation();
+  const [editingDate,      setEditingDate]      = useState(false);
+  const [drawDateVal,      setDrawDateVal]      = useState(toDateValue(d.draw_date));
+  const [savingDate,       setSavingDate]       = useState(false);
+  const [saveDateError,    setSaveDateError]    = useState('');
+
+  const handleSaveDrawDate = async () => {
+    if (!drawDateVal) { setSaveDateError('Date is required'); return; }
+    setSavingDate(true); setSaveDateError('');
+    try {
+      await updateDrawDate({ roomId, drawId: d.id, drawDate: drawDateVal, branchId }).unwrap();
+      setEditingDate(false);
+    } catch (err) { setSaveDateError(err?.data?.error?.message || 'Failed to save date.'); }
+    finally { setSavingDate(false); }
+  };
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-navy">
+            Draw #{d.draw_number} · Slot {d.winning_slot_number}
+          </p>
+          <p className="text-[11px] text-navy/40">
+            {d.winning_customer_name} ({d.customer_code})
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-right">
+            <p className="text-xs font-bold text-violet-700">{formatCurrency(parseFloat(d.payout_amount))}</p>
+            <div className="flex items-center gap-1 justify-end">
+              <p className="text-[11px] font-medium text-navy/50">{formatDate(d.draw_date)}</p>
+              {isAdmin && !editingDate && (
+                <button type="button" onClick={() => { setEditingDate(true); setSaveDateError(''); setDrawDateVal(toDateValue(d.draw_date)); }}
+                  className="p-0.5 rounded text-navy/20 hover:text-indigo tactile-press" title="Edit draw date">
+                  <CalendarDays size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+          {isAdmin && isLatest && !editingDate && (
+            <button
+              onClick={() => onUndo(d)}
+              disabled={undoing}
+              className="text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg px-2 py-1 hover:bg-red-50 disabled:opacity-40 tactile-press"
+            >
+              Undo
+            </button>
+          )}
+        </div>
+      </div>
+      {editingDate && (
+        <div className="mt-2 flex items-center gap-2">
+          <BackdateDateInput
+            value={drawDateVal}
+            onChange={e => setDrawDateVal(e.target.value)}
+            className="flex-1 px-2.5 py-1.5 bg-navy/3 rounded-lg border border-navy/10 text-xs font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
+          />
+          <button type="button" onClick={handleSaveDrawDate} disabled={savingDate}
+            className="px-2.5 py-1.5 rounded-lg bg-indigo text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center gap-1">
+            {savingDate ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save
+          </button>
+          <button type="button" onClick={() => setEditingDate(false)}
+            className="px-2.5 py-1.5 rounded-lg bg-navy/5 text-[10px] text-navy/60 font-bold tactile-press">
+            <X size={10} />
+          </button>
+        </div>
+      )}
+      {saveDateError && <p className="text-[10px] text-red-500 mt-1">{saveDateError}</p>}
+    </div>
+  );
+};
+
+// Room date editor — admin only, appears in the room header card
+const RoomDatesEditor = ({ room }) => {
+  const [updateRoomDates] = useUpdateLssRoomDatesMutation();
+  const [open,    setOpen]    = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState('');
+  const [form,    setForm]    = useState({
+    createdAt:     toDateValue(room.created_at),
+    fillDeadline:  toDateValue(room.fill_deadline),
+    firstDrawDate: toDateValue(room.first_draw_date),
+  });
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true); setError('');
+    const payload = { id: room.id, branchId: room.branch_id };
+    // Only send fields that have changed
+    if (form.createdAt     && form.createdAt     !== toDateValue(room.created_at))     payload.createdAt     = form.createdAt;
+    if (form.fillDeadline  && form.fillDeadline  !== toDateValue(room.fill_deadline))  payload.fillDeadline  = form.fillDeadline;
+    if (form.firstDrawDate && form.firstDrawDate !== toDateValue(room.first_draw_date))payload.firstDrawDate = form.firstDrawDate;
+    if (!payload.createdAt && !payload.fillDeadline && !payload.firstDrawDate) {
+      setError('No dates changed.'); setSaving(false); return;
+    }
+    try {
+      await updateRoomDates(payload).unwrap();
+      setOpen(false);
+    } catch (err) { setError(err?.data?.error?.message || 'Failed to save dates.'); }
+    finally { setSaving(false); }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-[10px] font-semibold text-navy/30 hover:text-indigo tactile-press mt-2">
+        <CalendarDays size={12} /> Edit room dates
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSave} className="mt-3 space-y-2 border-t border-border pt-3">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40">Room dates</p>
+      <div className="grid grid-cols-1 gap-2">
+        <div>
+          <label className="text-[8px] font-bold uppercase text-navy/30 block mb-0.5">Created / Sale date</label>
+          <BackdateDateInput value={form.createdAt} onChange={e => setForm(f => ({ ...f, createdAt: e.target.value }))}
+            className="w-full px-2.5 py-1.5 bg-navy/3 rounded-lg border border-navy/10 text-xs font-medium text-navy outline-none focus:ring-2 ring-indigo/20" />
+        </div>
+        {room.fill_deadline && (
+          <div>
+            <label className="text-[8px] font-bold uppercase text-navy/30 block mb-0.5">Fill deadline</label>
+            <BackdateDateInput value={form.fillDeadline} onChange={e => setForm(f => ({ ...f, fillDeadline: e.target.value }))}
+              className="w-full px-2.5 py-1.5 bg-navy/3 rounded-lg border border-navy/10 text-xs font-medium text-navy outline-none focus:ring-2 ring-indigo/20" />
+          </div>
+        )}
+        {room.first_draw_date != null && (
+          <div>
+            <label className="text-[8px] font-bold uppercase text-navy/30 block mb-0.5">First draw date</label>
+            <BackdateDateInput value={form.firstDrawDate} onChange={e => setForm(f => ({ ...f, firstDrawDate: e.target.value }))}
+              className="w-full px-2.5 py-1.5 bg-navy/3 rounded-lg border border-navy/10 text-xs font-medium text-navy outline-none focus:ring-2 ring-indigo/20" />
+          </div>
+        )}
+      </div>
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving}
+          className="flex-1 py-1.5 rounded-lg bg-indigo text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+          {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Save dates
+        </button>
+        <button type="button" onClick={() => setOpen(false)}
+          className="px-3 py-1.5 rounded-lg bg-navy/5 text-[10px] text-navy/60 font-bold tactile-press">Cancel</button>
+      </div>
+    </form>
+  );
+};
 
 export const LssRoomDetailPage = () => {
   const { id } = useParams();
@@ -352,6 +531,7 @@ export const LssRoomDetailPage = () => {
               First draw: {formatDate(room.first_draw_date)}
             </p>
           )}
+          {isAdmin && <RoomDatesEditor room={room} />}
         </div>
       </div>
 
@@ -547,7 +727,7 @@ export const LssRoomDetailPage = () => {
                       </div>
                     </div>
                     {isAdmin && isHeld && (
-                      <SlotAdminActions slot={s} branchId={room.branch_id} />
+                      <SlotAdminActions slot={s} branchId={room.branch_id} roomStatus={room.status} />
                     )}
                     <PhotoProof photoKey={s.proof_key} />
                     <TransactionIdList transactionId={s.transaction_id} />
@@ -563,37 +743,18 @@ export const LssRoomDetailPage = () => {
         <div className="px-4 mb-10">
           <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mb-3">Draw history</p>
           <div className="bg-white rounded-2xl card-shadow border border-border divide-y divide-border overflow-hidden">
-            {room.draws.map((d, idx) => {
-              // Only the last draw in the list (highest draw_number) can be undone
-              const isLatest = idx === room.draws.length - 1;
-              return (
-                <div key={d.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-navy">
-                      Draw #{d.draw_number} · Slot {d.winning_slot_number}
-                    </p>
-                    <p className="text-[11px] text-navy/40">
-                      {d.winning_customer_name} ({d.customer_code})
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-violet-700">{formatCurrency(parseFloat(d.payout_amount))}</p>
-                      <p className="text-[11px] font-medium text-navy/50">{formatDate(d.draw_date)}</p>
-                    </div>
-                    {isAdmin && isLatest && (
-                      <button
-                        onClick={() => onUndoDraw(d)}
-                        disabled={undoing}
-                        className="text-[11px] font-semibold text-red-500 border border-red-200 rounded-lg px-2 py-1 hover:bg-red-50 disabled:opacity-40 tactile-press"
-                      >
-                        Undo
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {room.draws.map((d, idx) => (
+              <DrawRow
+                key={d.id}
+                draw={d}
+                isLatest={idx === room.draws.length - 1}
+                isAdmin={isAdmin}
+                roomId={id}
+                branchId={room.branch_id}
+                undoing={undoing}
+                onUndo={onUndoDraw}
+              />
+            ))}
           </div>
         </div>
       )}

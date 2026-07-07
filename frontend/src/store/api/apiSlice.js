@@ -922,6 +922,20 @@ export const apiSlice = createApi({
       invalidatesTags: ['LssRooms', 'LssRoom', 'LssSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
 
+    // Update the date of a specific draw (admin correction, no incentive impact)
+    updateLssDrawDate: builder.mutation({
+      query: ({ roomId, drawId, ...data }) => ({ url: `/lss/rooms/${roomId}/draws/${drawId}`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (_r, _e, { roomId }) => ['LssRooms', { type: 'LssRoom', id: roomId }],
+    }),
+
+    // Update room-level dates: created_at, fill_deadline, first_draw_date (admin correction)
+    updateLssRoomDates: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/lss/rooms/${id}/dates`, method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (_r, _e, { id }) => ['LssRooms', { type: 'LssRoom', id }],
+    }),
+
     // ─── Cross-scheme dashboard (MD / Director) ───
     // Backed by /api/schemes/* which walks the SchemeService registry. Every
     // scheme that implements getOverviewByBranch shows up here automatically.
@@ -2226,6 +2240,8 @@ export const {
   useVoidLssRoomMutation,
   useDeleteLssRoomMutation,
   useRemoveLssSlotMutation,
+  useUpdateLssDrawDateMutation,
+  useUpdateLssRoomDatesMutation,
   useUnpayGoldPaymentMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,

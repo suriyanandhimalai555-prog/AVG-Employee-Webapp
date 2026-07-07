@@ -59,6 +59,7 @@ import {
   useVoidLssSlotMutation,
   useDeleteLssSlotMutation,
   useUndoLssDrawMutation,
+  useDeleteLssRoomMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
@@ -1810,6 +1811,68 @@ const SEARCH_KEYS = {
   land_scheme:       ['customer_name', 'customer_code', 'booking_ref', 'site_number', 'site_name'],
 };
 
+// Room card for Gold Coin and LSS — identical display, but LSS also shows a Delete Room button.
+const LssRoomCorrectionsCard = ({ entry, branchId, schemeCode, schemeActions }) => {
+  const isLss = schemeCode === 'lss_scheme';
+  const [deleteRoom]    = useDeleteLssRoomMutation();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteErr,     setDeleteErr]     = useState('');
+  const [deleting,      setDeleting]      = useState(false);
+
+  const handleDeleteRoom = async () => {
+    setDeleting(true); setDeleteErr('');
+    try {
+      await deleteRoom({ id: entry.id, branchId }).unwrap();
+      setConfirmDelete(false);
+    } catch (err) {
+      setDeleteErr(err?.data?.error?.message || 'Failed to delete room.');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl card-shadow border border-border px-4 py-3 space-y-2">
+      <div className="flex items-center gap-3">
+        {ENTRY_ROW[schemeCode] && React.createElement(ENTRY_ROW[schemeCode], { e: entry })}
+        <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>
+          {(entry.status || '').replace(/_/g, ' ')}
+        </span>
+        {isLss && !confirmDelete && (
+          <button
+            type="button"
+            onClick={() => { setConfirmDelete(true); setDeleteErr(''); }}
+            className="ml-auto p-1.5 rounded-lg bg-red-50 text-red-400 hover:text-red-600 tactile-press flex-shrink-0"
+            title="Delete room permanently"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+      {confirmDelete && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+          <p className="text-xs font-bold text-red-700">Permanently delete this room?</p>
+          <p className="text-[10px] text-red-600">All slots, draws, and incentives will be permanently removed. This cannot be undone.</p>
+          {deleteErr && <p className="text-[10px] text-red-800 font-semibold">{deleteErr}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleDeleteRoom} disabled={deleting}
+              className="flex-1 py-1.5 rounded-lg bg-red-600 text-white text-[10px] font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {deleting ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />} Yes, Delete
+            </button>
+            <button type="button" onClick={() => setConfirmDelete(false)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-[10px] font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
+      <RoomSlotsPanel
+        entry={entry}
+        branchId={branchId}
+        schemeCode={schemeCode}
+        slotActions={schemeActions}
+      />
+    </div>
+  );
+};
+
 export const SchemeCorrectionsPage = () => {
   const user = useSelector(selectCurrentUser);
 
@@ -1936,20 +1999,14 @@ export const SchemeCorrectionsPage = () => {
                   />
                 ) : isRoomScheme ? (
                   // Gold-coin / LSS show rooms; slot-level actions live in RoomSlotsPanel.
-                  <div key={entry.id} className="bg-white rounded-2xl card-shadow border border-border px-4 py-3 space-y-2">
-                    <div className="flex items-center gap-3">
-                      {ENTRY_ROW[schemeCode] && React.createElement(ENTRY_ROW[schemeCode], { e: entry })}
-                      <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>
-                        {(entry.status || '').replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <RoomSlotsPanel
-                      entry={entry}
-                      branchId={branchId}
-                      schemeCode={schemeCode}
-                      slotActions={schemeActions}
-                    />
-                  </div>
+                  // For LSS rooms, a delete-room action is also available here.
+                  <LssRoomCorrectionsCard
+                    key={entry.id}
+                    entry={entry}
+                    branchId={branchId}
+                    schemeCode={schemeCode}
+                    schemeActions={schemeActions}
+                  />
                 ) : (
                   <EntryCard
                     key={entry.id}

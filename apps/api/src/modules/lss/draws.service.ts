@@ -7,7 +7,7 @@
 // AND the chosen slot, recount draws, refuse if already at 20. Auto-marks
 // the room completed when the 20th draw lands.
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { RoomsService, LSS_SLOTS_PER_ROOM } from './rooms.service';
@@ -210,6 +210,56 @@ export const DrawsService = {
       });
 
       return { undone: true, drawNumber: draw.draw_number, slotId: draw.winning_slot_id, payoutAmount: draw.payout_amount };
+    });
+  },
+
+  // ─── UPDATE DRAW DATE (admin: MD / Management) ───────────────────────────────
+  // Back-office date correction. Draws write nothing to employee_incentives so
+  // this is a pure column update — no incentive reversal or redistribution needed.
+  // No ordering constraint is enforced (dates are reference-only after the fact).
+  async updateDrawDate(
+    db: Pool,
+    actorId: string,
+    roomId: string,
+    drawId: string,
+    callerBranchId: string,
+    drawDate: string, // TS: YYYY-MM-DD string, cast to ::date by the UPDATE
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Lock room and verify branch ownership
+      const roomRes = await client.query(
+        `SELECT id, branch_id FROM lss_rooms WHERE id = $1 FOR UPDATE`,
+        [roomId]
+      );
+      if (roomRes.rows.length === 0) throw new NotFoundError('Room not found', 'LSS_ROOM_NOT_FOUND');
+      if (roomRes.rows[0].branch_id !== callerBranchId) {
+        throw new ForbiddenError('Room belongs to a different branch', 'LSS_ROOM_WRONG_BRANCH');
+      }
+
+      // Lock the draw and confirm it belongs to this room
+      const drawRes = await client.query(
+        `SELECT * FROM lss_draws WHERE id = $1 AND room_id = $2 FOR UPDATE`,
+        [drawId, roomId]
+      );
+      if (drawRes.rows.length === 0) throw new NotFoundError('Draw not found', 'LSS_DRAW_NOT_FOUND');
+      const before = drawRes.rows[0];
+
+      const updated = await client.query(
+        `UPDATE lss_draws SET draw_date = $1::date WHERE id = $2 RETURNING *`,
+        [drawDate, drawId]
+      );
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'payout',
+        entityId:   drawId,
+        actorId,
+        action:     'edit',
+        oldValues:  before,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
     });
   },
 

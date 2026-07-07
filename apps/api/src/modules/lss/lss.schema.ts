@@ -88,6 +88,8 @@ export const ListRoomsQuerySchema = z.object({
 
 // Correction schema — MD / Management only (PATCH /lss/slots/:id/correct)
 // customerId lets the admin fix who the slot is attributed to.
+// saleDate allows moving the slot to a different business date — only allowed
+// while the room is still filling/pending_combine and the slot is not won.
 export const CorrectLssSlotSchema = z.object({
   customerId:  z.string().uuid().optional(),
   referrerId:  z.string().uuid().optional().nullable(),
@@ -100,6 +102,9 @@ export const CorrectLssSlotSchema = z.object({
   cashAmount:  z.number().positive().optional().nullable(),
   bankAmount:  z.number().positive().optional().nullable(),
   branchId:    z.string().uuid().optional(),
+  // Move the slot's business date — updates created_at + paid_at and re-points incentives.
+  // Rejected by the server when the room already has draws or the slot is won.
+  saleDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
 }).superRefine((data, ctx) => {
   if (data.paymentMode && data.paymentMode !== 'cash' && !data.proofKey?.length) {
     ctx.addIssue({
@@ -125,6 +130,27 @@ export const CorrectLssSlotSchema = z.object({
   }
 });
 export type CorrectLssSlotInput = z.infer<typeof CorrectLssSlotSchema>;
+
+// ─── Update draw date — MD / Management only (PATCH /rooms/:roomId/draws/:drawId) ───
+// Back-office correction: no ordering constraint enforced (dates are reference-only).
+export const UpdateDrawDateSchema = z.object({
+  drawDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  branchId: z.string().uuid().optional(),
+});
+export type UpdateDrawDateInput = z.infer<typeof UpdateDrawDateSchema>;
+
+// ─── Update room dates — MD / Management only (PATCH /rooms/:id/dates) ─────────
+// Edits created_at, fill_deadline, or first_draw_date — no incentive impact.
+// At least one date field must be provided.
+export const UpdateRoomDatesSchema = z.object({
+  createdAt:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  fillDeadline:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  firstDrawDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  branchId:      z.string().uuid().optional(),
+}).refine(d => d.createdAt || d.fillDeadline || d.firstDrawDate, {
+  message: 'At least one date field (createdAt, fillDeadline, firstDrawDate) must be provided',
+});
+export type UpdateRoomDatesInput = z.infer<typeof UpdateRoomDatesSchema>;
 
 export type CreateSlotInput   = z.infer<typeof CreateSlotSchema>;
 export type ActivateRoomInput = z.infer<typeof ActivateRoomSchema>;

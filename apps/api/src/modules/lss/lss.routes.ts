@@ -1,18 +1,20 @@
 // LSS scheme REST surface.
 //
 // Access control model (mirrors gold-coin):
-//   GET /plans                  → any authenticated user
-//   GET /rooms                  → branch_admin (own branch), md/director/gm (oversight scope)
-//   GET /rooms/awaiting-combine → head-branch admin only
-//   GET /rooms/:id              → same as list; head-branch admin also sees pending_combine rooms
-//   POST /slots                 → branch_admin only
-//   POST /slots/:id/refund      → branch_admin only
-//   POST /rooms/:id/activate    → branch_admin only
-//   POST /rooms/:id/send-to-head→ branch_admin only
-//   POST /rooms/:id/draws       → branch_admin only
-//   POST /rooms/combine         → head-branch admin only
-//   POST /rooms/:id/refund      → head-branch admin only
-//   GET /summary                → branch_admin / md / director / gm / bm / abm / sales_officer
+//   GET /plans                          → any authenticated user
+//   GET /rooms                          → branch_admin (own branch), md/director/gm (oversight scope)
+//   GET /rooms/awaiting-combine         → head-branch admin only
+//   GET /rooms/:id                      → same as list; head-branch admin also sees pending_combine rooms
+//   POST /slots                         → branch_admin only
+//   POST /slots/:id/refund              → branch_admin only
+//   POST /rooms/:id/activate            → branch_admin only
+//   POST /rooms/:id/send-to-head        → branch_admin only
+//   POST /rooms/:id/draws               → branch_admin only
+//   POST /rooms/combine                 → head-branch admin only
+//   POST /rooms/:id/refund              → head-branch admin only
+//   GET /summary                        → branch_admin / md / director / gm / bm / abm / sales_officer
+//   PATCH /rooms/:roomId/draws/:drawId  → MD / management (update draw date, no incentive impact)
+//   PATCH /rooms/:id/dates              → MD / management (update room dates, no incentive impact)
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
@@ -39,6 +41,8 @@ import {
   RefundRoomSchema,
   ListRoomsQuerySchema,
   CorrectLssSlotSchema,
+  UpdateDrawDateSchema,
+  UpdateRoomDatesSchema,
 } from './lss.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string | null; }
@@ -412,6 +416,49 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
         if (rows.rows.length === 0) throw new NotFoundError('Room not found');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (req.body as any)?.branchId);
         const data = await DrawsService.undoDraw(fastify.db, req.user.id, roomId, drawId, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /rooms/:roomId/draws/:drawId — update draw date (admin) ──────────
+  // Back-office correction: no ordering constraint enforced (dates are reference-only).
+  // Gated to MD / management; branch is resolved from the room row, not the caller.
+  fastify.patch('/rooms/:roomId/draws/:drawId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { roomId, drawId } = req.params as { roomId: string; drawId: string };
+        const body = UpdateDrawDateSchema.parse(request.body);
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_rooms WHERE id = $1', [roomId]);
+        if (rows.rows.length === 0) throw new NotFoundError('Room not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, body.branchId);
+        const data = await DrawsService.updateDrawDate(fastify.db, req.user.id, roomId, drawId, branchId, body.drawDate);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── PATCH /rooms/:id/dates — update room dates (admin) ──────────────────────
+  // Back-office correction: updates created_at, fill_deadline, or first_draw_date.
+  // No incentive impact — only reference / deadline dates are changed.
+  // Gated to MD / management; branch is resolved from the room row, not the caller.
+  fastify.patch('/rooms/:id/dates', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        assertCanManageSchemeData(req.user.role as any);
+        const { id } = req.params as { id: string };
+        const body = UpdateRoomDatesSchema.parse(request.body);
+        const rows = await fastify.db.query('SELECT branch_id FROM lss_rooms WHERE id = $1', [id]);
+        if (rows.rows.length === 0) throw new NotFoundError('Room not found');
+        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, body.branchId);
+        const data = await RoomsService.updateRoomDates(fastify.db, req.user.id, id, branchId, {
+          createdAt:     body.createdAt,
+          fillDeadline:  body.fillDeadline,
+          firstDrawDate: body.firstDrawDate,
+        });
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

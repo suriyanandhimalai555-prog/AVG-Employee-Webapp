@@ -218,6 +218,7 @@ export const SlotsService = {
     return runInTransaction(db, async (client: PoolClient) => {
       const beforeRes = await client.query(
         `SELECT s.*, c.name AS customer_name, c.customer_code, p.name AS plan_name,
+                lr.status AS room_status,
                 -- TS: total_amount counts by batch_id so overflow slots in a second room
                 -- are included; the old (room_id, customer_id) count was room-scoped
                 s.amount_paid * (SELECT COUNT(*) FROM lss_slots WHERE batch_id = s.batch_id) AS total_amount
@@ -230,6 +231,25 @@ export const SlotsService = {
       );
       if (beforeRes.rows.length === 0) throw new NotFoundError('LSS slot not found');
       const old = beforeRes.rows[0];
+
+      // Guard: saleDate edits are only safe before draws begin — once the room goes active
+      // and slots start winning, moving the sale date would retroactively break 30-day eligibility
+      // for the affected slot (draws.service.ts reads paid_at for the wait check).
+      if (payload.saleDate !== undefined) {
+        const allowedStatuses = ['filling', 'pending_combine'];
+        if (!allowedStatuses.includes(old.room_status)) {
+          throw new ValidationError(
+            `Sale date cannot be changed once a room is active or completed (current room status: ${old.room_status}).`,
+            'LSS_SLOT_SALE_DATE_LOCKED'
+          );
+        }
+        if (old.status === 'won') {
+          throw new ValidationError(
+            'Sale date cannot be changed on a slot that has already won a draw.',
+            'LSS_SLOT_SALE_DATE_LOCKED'
+          );
+        }
+      }
 
       // Pre-fetch active batch slots for both incentive calc and field propagation.
       // Status filter (Bug 5): excludes refunded/voided so batchAmount isn't inflated.
@@ -266,6 +286,14 @@ export const SlotsService = {
       if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
       // TS: customerId allows admin to re-assign slot to correct customer
       if (payload.customerId !== undefined) { fields.push(`customer_id = $${idx++}`);  vals.push(payload.customerId); }
+      // saleDate moves both created_at (incentive/summary period) and paid_at (draw eligibility wait).
+      // Both must move together so the 30-day eligibility check in draws.service.ts stays consistent.
+      if (payload.saleDate !== undefined) {
+        fields.push(`created_at = $${idx++}::timestamptz`);
+        vals.push(payload.saleDate);
+        fields.push(`paid_at = $${idx++}::timestamptz`);
+        vals.push(payload.saleDate);
+      }
       if (fields.length === 0) throw new ValidationError('No fields to update');
 
       vals.push(slotId);
@@ -294,6 +322,13 @@ export const SlotsService = {
         }
         if (payload.referrerId !== undefined) { batchFields.push(`referrer_id = $${bidx++}`);  batchVals.push(payload.referrerId ?? null); }
         if (payload.customerId !== undefined) { batchFields.push(`customer_id = $${bidx++}`);  batchVals.push(payload.customerId); }
+        // Propagate saleDate to all batch slots so overflow-room slots share the same date
+        if (payload.saleDate !== undefined) {
+          batchFields.push(`created_at = $${bidx++}::timestamptz`);
+          batchVals.push(payload.saleDate);
+          batchFields.push(`paid_at = $${bidx++}::timestamptz`);
+          batchVals.push(payload.saleDate);
+        }
         if (batchFields.length > 0) {
           batchVals.push(otherBatchIds);
           await client.query(
@@ -303,12 +338,17 @@ export const SlotsService = {
         }
       }
 
-      const referrerChanged = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      const referrerChanged  = payload.referrerId !== undefined && payload.referrerId !== old.referrer_id;
+      // TS: saleDateChanged triggers an incentive re-point so the commission lands in the
+      // correct wallet period — same as referrerChanged but the referrer stays the same
+      const saleDateChanged  = payload.saleDate !== undefined;
       const effectiveReferrer = payload.referrerId !== undefined ? payload.referrerId : old.referrer_id;
+      // TS: when the sale date is corrected use the new date; otherwise keep the original
+      const effectiveDate    = saleDateChanged ? payload.saleDate! : old.created_at;
 
-      if (referrerChanged) {
+      if (referrerChanged || saleDateChanged) {
         // anchorSlotId, batchAmount pre-fetched above with status filter (Bug 5 fix).
-        // referrer_id already propagated to all batch slots by the batch update above.
+        // referrer_id and created_at already propagated to all batch slots by the batch update above.
         await IncentiveService.reverseIncentives(client, {
           schemeCode:   SCHEME_CODE,
           sourceId:     anchorSlotId,
@@ -325,7 +365,7 @@ export const SlotsService = {
             sourceId:          anchorSlotId,
             sourceDescription: `LSS (corrected) — ${old.customer_name} (${old.customer_code})`,
             creditedBy:        correctedBy,
-            effectiveDate:     old.created_at,
+            effectiveDate,
           });
         }
       }

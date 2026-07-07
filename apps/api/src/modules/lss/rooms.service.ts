@@ -510,6 +510,54 @@ export const RoomsService = {
     });
   },
 
+  // ─── UPDATE ROOM DATES (admin: MD / Management) ──────────────────────────────
+  // Back-office date correction for created_at, fill_deadline, or first_draw_date.
+  // None of these columns affect employee_incentives so no incentive logic is needed.
+  // At least one date field must be provided (enforced by UpdateRoomDatesSchema upstream).
+  async updateRoomDates(
+    db: Pool,
+    actorId: string,
+    roomId: string,
+    branchId: string,
+    dates: { createdAt?: string; fillDeadline?: string; firstDrawDate?: string }
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      const roomRow = await client.query(
+        `SELECT * FROM lss_rooms WHERE id = $1 AND branch_id = $2 FOR UPDATE`,
+        [roomId, branchId]
+      );
+      if (roomRow.rows.length === 0) throw new NotFoundError('Room not found');
+      const before = roomRow.rows[0];
+
+      // Build the SET clause dynamically — only the provided fields are written
+      const fields: string[] = [];
+      const vals: unknown[] = [];
+      let idx = 1;
+      if (dates.createdAt     != null) { fields.push(`created_at = $${idx++}::timestamptz`); vals.push(dates.createdAt); }
+      if (dates.fillDeadline  != null) { fields.push(`fill_deadline = $${idx++}::date`);      vals.push(dates.fillDeadline); }
+      if (dates.firstDrawDate != null) { fields.push(`first_draw_date = $${idx++}::date`);   vals.push(dates.firstDrawDate); }
+      if (fields.length === 0) throw new ValidationError('No date fields to update');
+
+      vals.push(roomId);
+      const updated = await client.query(
+        `UPDATE lss_rooms SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+
+      await SchemeAudit.log(client, {
+        schemeCode: SCHEME_CODE,
+        entityType: 'room',
+        entityId:   roomId,
+        actorId,
+        action:     'edit',
+        oldValues:  before,
+        newValues:  updated.rows[0],
+      });
+
+      return updated.rows[0];
+    });
+  },
+
 };
 
 export const LSS_FILL_WINDOW_DAYS = FILL_WINDOW_DAYS;
