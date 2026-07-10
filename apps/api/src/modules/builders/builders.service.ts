@@ -196,8 +196,16 @@ export const BuildersService = {
       params.push(query.status);
     }
 
+    if (query.search) {
+      // Match on customer name, phone, or customer code — same param index reused across OR
+      where += ` AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
+      params.push(`%${query.search}%`);
+      idx++;
+    }
+
+    // Join customers so the WHERE clause can reference c.name/c.phone/c.customer_code for search
     const countResult = await db.query(
-      `SELECT COUNT(*) FROM builders_plans p WHERE ${where}`,
+      `SELECT COUNT(*) FROM builders_plans p JOIN customers c ON c.id = p.customer_id WHERE ${where}`,
       params
     );
     const total = parseInt(countResult.rows[0].count, 10);

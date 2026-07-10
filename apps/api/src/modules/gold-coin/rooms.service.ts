@@ -238,7 +238,7 @@ export const RoomsService = {
   // Promotes stale filling rooms in-place before returning.
   async list(
     db: Pool,
-    filters: { status?: RoomStatus; packageId?: string; branchIds: string[] | null; page: number; limit: number }
+    filters: { status?: RoomStatus; packageId?: string; branchIds: string[] | null; search?: string; page: number; limit: number }
   ): Promise<{ data: any[]; total: number }> {
     // Lazy bulk-promote stale rooms — single UPDATE, no per-row loop
     await db.query(
@@ -256,11 +256,35 @@ export const RoomsService = {
       params.push(filters.branchIds);
     }
 
+    // Search: room matches when any of its slots' customers match — same param index reused across OR
+    let searchIdx: number | null = null;
+    if (filters.search) {
+      searchIdx = idx;
+      where += ` AND EXISTS (
+        SELECT 1 FROM gold_coin_slots s
+        JOIN customers c ON c.id = s.customer_id
+        WHERE s.room_id = r.id
+          AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})
+      )`;
+      params.push(`%${filters.search}%`);
+      idx++;
+    }
+
     const countRes = await db.query<{ n: string }>(
       `SELECT COUNT(*) AS n FROM gold_coin_rooms r WHERE ${where}`,
       params
     );
     const total = parseInt(countRes.rows[0].n, 10);
+
+    // When searching, include matched_slots so the UI can highlight which slots hit;
+    // include customer_phone so same-name customers are distinguishable on the card.
+    const matchedSlotsSelect = searchIdx !== null ? `,
+         (SELECT json_agg(json_build_object('slot_number', s.slot_number, 'customer_name', c.name, 'customer_phone', c.phone))
+            FROM gold_coin_slots s
+            JOIN customers c ON c.id = s.customer_id
+           WHERE s.room_id = r.id
+             AND (c.name ILIKE $${searchIdx} OR c.phone ILIKE $${searchIdx} OR c.customer_code ILIKE $${searchIdx}))
+           AS matched_slots` : '';
 
     const dataRes = await db.query(
       `SELECT
@@ -270,7 +294,7 @@ export const RoomsService = {
          p.gold_grams  AS package_gold_grams,
          b.name        AS branch_name,
          (SELECT COUNT(*)::int FROM gold_coin_slots s WHERE s.room_id = r.id AND s.status = 'held') AS slots_filled,
-         (SELECT COUNT(*)::int FROM gold_coin_draws d WHERE d.room_id = r.id)                       AS draws_done
+         (SELECT COUNT(*)::int FROM gold_coin_draws d WHERE d.room_id = r.id)                       AS draws_done${matchedSlotsSelect}
        FROM gold_coin_rooms r
        JOIN gold_coin_packages p ON r.package_id = p.id
        JOIN branches b           ON r.branch_id  = b.id

@@ -189,6 +189,7 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
         const result = await RoomsService.list(fastify.db, {
           status:    raw.status,
           planId:    raw.planId,
+          search:    raw.search,
           branchIds,
           page:      raw.page,
           limit:     raw.limit,

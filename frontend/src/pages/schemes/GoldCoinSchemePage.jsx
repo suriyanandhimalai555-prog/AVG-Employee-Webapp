@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Loader2, Coins, Users, CheckCircle2, AlertTriangle, Clock, Plus, ShieldCheck } from 'lucide-react';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetGoldCoinPackagesQuery,
@@ -23,6 +24,7 @@ import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
+import { SchemeMatchLine } from './components/SchemeMatchLine';
 
 const WRITER_ROLES      = new Set(['branch_admin']);
 const VIEWER_ROLES      = new Set(['branch_admin', 'md', 'director', 'gm', 'management']);
@@ -55,11 +57,12 @@ export const GoldCoinSchemePage = () => {
     (user?.role === 'branch_admin' && user?.isHeadBranch === true)
     || HEAD_BRANCH_VIEW_ROLES.has(user?.role);
   const [statusFilter, setStatusFilter] = useState('active');
+  const [search, setSearch] = useState('');
 
   const { data: summary } = useGetGoldCoinSummaryQuery();
   const { data: packages = [], isLoading: pkgLoading } = useGetGoldCoinPackagesQuery();
   const { data: roomsResult, isLoading: roomsLoading } = useGetGoldCoinRoomsQuery(
-    { status: statusFilter === 'all' ? undefined : statusFilter, limit: 100 },
+    { status: statusFilter === 'all' ? undefined : statusFilter, search: search || undefined, limit: 100 },
     { skip: !canViewRooms },
   );
   const rooms = roomsResult?.data || [];
@@ -124,6 +127,13 @@ export const GoldCoinSchemePage = () => {
               <p className="text-xl font-bold text-emerald-600 mt-1">{formatCurrency(summary.totalCommission || 0)}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Search bar — only for roles that can see rooms */}
+      {canViewRooms && (
+        <div className="px-4 mb-3">
+          <SchemeSearchBar onSearch={setSearch} placeholder="Search customer name or phone…" />
         </div>
       )}
 
@@ -218,6 +228,7 @@ export const GoldCoinSchemePage = () => {
                       style={{ width: `${progressPct}%` }}
                     />
                   </div>
+                  {search && <SchemeMatchLine matches={room.matched_slots} />}
                 </button>
               );
             })}

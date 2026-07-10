@@ -205,8 +205,22 @@ export const ChitService = {
       params.push(query.status);
     }
 
+    // Track the search param index so the matched_members aggregate can reuse the same
+    // $n placeholder without pushing a duplicate param.
+    let searchParamIdx: number | null = null;
     if (query.search) {
-      where += ` AND g.group_name ILIKE $${idx}`;
+      searchParamIdx = idx;
+      // Match the group by name OR by any of its members' customer name/phone/code so that
+      // typing a customer name surfaces the group card (consistent with Gold Coin / LSS).
+      where += ` AND (
+        g.group_name ILIKE $${idx}
+        OR EXISTS (
+          SELECT 1 FROM agila_chit_members m
+          JOIN customers c ON c.id = m.customer_id
+          WHERE m.group_id = g.id
+            AND (c.name ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})
+        )
+      )`;
       params.push(`%${query.search}%`);
       idx++;
     }
@@ -217,13 +231,24 @@ export const ChitService = {
     );
     const total = parseInt(countResult.rows[0].count, 10);
 
+    // When a search is active, include matched_members so the card can show which customers
+    // hit. agila_chit_members has no slot/position column, so we emit name + phone only
+    // (consistent with the SchemeMatchLine contract used on Gold Coin / LSS cards).
+    const matchedMembersSelect = searchParamIdx !== null ? `,
+         (SELECT json_agg(json_build_object('customer_name', c.name, 'customer_phone', c.phone))
+            FROM agila_chit_members m
+            JOIN customers c ON c.id = m.customer_id
+           WHERE m.group_id = g.id
+             AND (c.name ILIKE $${searchParamIdx} OR c.phone ILIKE $${searchParamIdx} OR c.customer_code ILIKE $${searchParamIdx}))
+           AS matched_members` : '';
+
     const dataResult = await db.query(
       `SELECT
          g.*,
          u.name AS created_by_name,
          (SELECT COUNT(*)::int FROM agila_chit_members m WHERE m.group_id = g.id)                       AS member_count,
          (SELECT COUNT(*)::int FROM agila_chit_members m WHERE m.group_id = g.id AND m.status='active') AS active_member_count,
-         (SELECT COUNT(*)::int FROM agila_chit_winners  w WHERE w.group_id = g.id)                      AS winners_selected
+         (SELECT COUNT(*)::int FROM agila_chit_winners  w WHERE w.group_id = g.id)                      AS winners_selected${matchedMembersSelect}
        FROM agila_chit_groups g
        JOIN users u ON g.created_by = u.id
        WHERE ${where}

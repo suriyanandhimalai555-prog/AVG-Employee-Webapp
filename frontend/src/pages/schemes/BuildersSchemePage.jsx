@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, Building2, ChevronRight, IndianRupee } from 'lucide-react';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetBuildersPlansQuery,
@@ -58,9 +59,11 @@ export const BuildersSchemePage = () => {
   const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState('in_progress');
+  const [search, setSearch] = useState('');
 
   const { data: plansResult, isLoading } = useGetBuildersPlansQuery({
     status: statusFilter === 'all' ? undefined : statusFilter,
+    search: search || undefined,
     limit:  200,
   });
   const { data: summary }  = useGetBuildersSummaryQuery({});
@@ -127,6 +130,11 @@ export const BuildersSchemePage = () => {
           </div>
         </div>
       )}
+
+      {/* Search bar */}
+      <div className="px-4 mb-3">
+        <SchemeSearchBar onSearch={setSearch} placeholder="Search customer name or phone…" />
+      </div>
 
       {/* Status filter chips */}
       <div className="px-4 mb-4">

@@ -126,6 +126,7 @@ export const GetBuildersPlansQuerySchema = z.object({
     'completed', 'cancelled', 'in_progress',
   ]).optional(),
   referrerId: z.string().uuid().optional(),
+  search:     z.string().max(100).optional(),
   page:       z.coerce.number().min(1).default(1),
   limit:      z.coerce.number().min(1).max(200).default(50),
 });
