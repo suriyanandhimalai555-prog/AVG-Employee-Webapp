@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Loader2, Users, IndianRupee, Calendar, Search } from 'lucide-react';
+import { Plus, Loader2, Users, IndianRupee, Calendar } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
 import {
   useGetTradingMembersQuery,
   useGetTradingSummaryQuery,
@@ -24,12 +25,22 @@ export const TradingAcademyPage = () => {
   const user     = useSelector(selectCurrentUser);
 
   const [search,   setSearch]   = useState('');
+  const [scope,    setScope]    = useState('all'); // 'all' | 'period'
   const [page,     setPage]     = useState(1);
   const [showAdd,  setShowAdd]  = useState(false);
   const [period,   setPeriod]   = useState(getCurrentPeriod);
 
+  // When searching globally, omit period bounds so results span all periods
+  const searchingGlobally = search && scope === 'all';
+
   const { data: summary }                = useGetTradingSummaryQuery({ startDate: period.startDate, endDate: period.endDate });
-  const { data: membersData, isLoading } = useGetTradingMembersQuery({ search, page, limit: 30, startDate: period.startDate, endDate: period.endDate });
+  const { data: membersData, isLoading } = useGetTradingMembersQuery({
+    search,
+    page,
+    limit: 30,
+    startDate: searchingGlobally ? undefined : period.startDate,
+    endDate:   searchingGlobally ? undefined : period.endDate,
+  });
   const isManagement = user?.role === 'management';
   const [branchId, setBranchId] = useState('');
 
@@ -83,17 +94,29 @@ export const TradingAcademyPage = () => {
         <SchemeCalendar compact onPeriodChange={(p) => { setPeriod(p); setPage(1); }} />
       </div>
 
-      {/* Search */}
-      <div className="px-4 mb-4">
-        <div className="relative">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" aria-hidden="true" />
-          <input
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by name or phone…"
-            className="w-full pl-10 pr-4 py-3 rounded-2xl border border-navy/10 text-navy text-sm font-medium focus:outline-none focus:border-indigo bg-white"
-          />
-        </div>
+      {/* Search + scope toggle */}
+      <div className="px-4 mb-4 space-y-2">
+        <SchemeSearchBar
+          onSearch={(val) => { setSearch(val); setPage(1); }}
+          placeholder="Search by name or phone…"
+        />
+        {search && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-navy/40 uppercase tracking-wider">Scope:</span>
+            {[['all', 'All periods'], ['period', 'Selected month']].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setScope(key); setPage(1); }}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  scope === key ? 'bg-indigo text-white' : 'bg-navy/5 text-navy/50 hover:text-navy/70'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Members list */}

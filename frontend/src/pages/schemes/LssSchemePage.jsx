@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Loader2, Layers, Users, CheckCircle2, AlertTriangle, Clock, Plus, ShieldCheck } from 'lucide-react';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetLssPlansQuery,
@@ -52,11 +53,12 @@ export const LssSchemePage = () => {
     (user?.role === 'branch_admin' && user?.isHeadBranch === true)
     || HEAD_BRANCH_VIEW_ROLES.has(user?.role);
   const [statusFilter, setStatusFilter] = useState('active');
+  const [search, setSearch] = useState('');
 
   const { data: summary } = useGetLssSummaryQuery();
   const { data: plans = [], isLoading: plansLoading } = useGetLssPlansQuery();
   const { data: roomsResult, isLoading: roomsLoading } = useGetLssRoomsQuery(
-    { status: statusFilter === 'all' ? undefined : statusFilter, limit: 100 },
+    { status: statusFilter === 'all' ? undefined : statusFilter, search: search || undefined, limit: 100 },
     { skip: !canViewRooms },
   );
   const rooms = roomsResult?.data || [];
@@ -121,6 +123,13 @@ export const LssSchemePage = () => {
               <p className="text-xl font-bold text-emerald-600 mt-1">{formatCurrency(summary.totalCommission || 0)}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Search bar — only for roles that can see rooms */}
+      {canViewRooms && (
+        <div className="px-4 mb-3">
+          <SchemeSearchBar onSearch={setSearch} placeholder="Search customer name or phone…" />
         </div>
       )}
 
@@ -215,6 +224,11 @@ export const LssSchemePage = () => {
                       style={{ width: `${progressPct}%` }}
                     />
                   </div>
+                  {search && room.matched_slots?.length > 0 && (
+                    <p className="text-[10px] font-medium text-indigo mt-1.5">
+                      Matched: {room.matched_slots.map(s => `${s.customer_name} · Slot ${s.slot_number}`).join(', ')}
+                    </p>
+                  )}
                 </button>
               );
             })}

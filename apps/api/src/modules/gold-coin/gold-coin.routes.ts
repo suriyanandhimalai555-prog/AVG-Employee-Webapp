@@ -195,6 +195,7 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
         const result = await RoomsService.list(fastify.db, {
           status:    raw.status,
           packageId: raw.packageId,
+          search:    raw.search,
           branchIds,
           page:      raw.page,
           limit:     raw.limit,

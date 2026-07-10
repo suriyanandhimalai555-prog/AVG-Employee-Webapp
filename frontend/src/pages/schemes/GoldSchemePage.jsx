@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Loader2, Users } from 'lucide-react';
+import { Plus, Loader2, Users } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetGoldMembersQuery, useGetGoldSummaryQuery } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
-import { getCurrentPeriod } from '../../lib/schemePeriod';
+import { getCurrentPeriod, getPeriodForDate } from '../../lib/schemePeriod';
 import { formatCurrency } from '../../lib/formatters';
 import { REFERRER_ROLES, GOLD_STATUS_STYLES } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
 
 const STATUS_FILTERS = [
   ['all',       'All'],
@@ -24,29 +25,27 @@ export const GoldSchemePage = () => {
   const navigate      = useNavigate();
   const isReferrerView = REFERRER_ROLES.has(user?.role);
 
-  const [searchInput,  setSearchInput]  = useState('');
   const [search,       setSearch]       = useState('');
+  const [scope,        setScope]        = useState('all'); // 'all' | 'period'
   const [statusFilter, setStatusFilter] = useState('all');
   const [period,       setPeriod]       = useState(getCurrentPeriod);
+
+  // When searching globally, omit period bounds so results span all periods
+  const searchingGlobally = search && scope === 'all';
 
   // Backend auto-forces referrerId = user.id for referrer roles
   const { data: membersResult, isLoading } = useGetGoldMembersQuery({
     status:    statusFilter === 'all' ? undefined : statusFilter,
     search:    search || undefined,
     limit:     200,
-    startDate: period.startDate,
-    endDate:   period.endDate,
+    startDate: searchingGlobally ? undefined : period.startDate,
+    endDate:   searchingGlobally ? undefined : period.endDate,
   });
   const { data: summary } = useGetGoldSummaryQuery({
     startDate: period.startDate,
     endDate:   period.endDate,
   });
   const members = membersResult?.data || [];
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearch(searchInput);
-  };
 
   const addButton = user?.role === 'branch_admin' ? (
     <button
@@ -70,13 +69,13 @@ export const GoldSchemePage = () => {
 
       <SchemePendingBanner schemeCode="gold_scheme" />
 
-      {/* Period picker */}
-      <div className="px-4 mb-5">
+      {/* Period picker — dimmed while a global search is active */}
+      <div className={`px-4 mb-5 transition-opacity ${searchingGlobally ? 'opacity-40 pointer-events-none' : ''}`}>
         <SchemeCalendar compact onPeriodChange={setPeriod} />
       </div>
 
-      {/* Summary strip */}
-      {summary && (
+      {/* Summary strip — hidden during global search (counts would reflect period, not results) */}
+      {summary && !searchingGlobally && (
         <div className="px-4 mb-5">
           <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
@@ -94,18 +93,29 @@ export const GoldSchemePage = () => {
         </div>
       )}
 
-      {/* Search + filter */}
+      {/* Search + scope toggle + status filter */}
       <div className="px-4 mb-4 space-y-3">
-        <form onSubmit={handleSearch} className="relative">
-          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" aria-hidden="true" />
-          <input
-            type="text"
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-            placeholder="Search name, chit no, phone…"
-            className="w-full pl-10 pr-4 py-3 bg-white rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 card-shadow"
-          />
-        </form>
+        <SchemeSearchBar onSearch={setSearch} placeholder="Search name, chit no, phone…" />
+        {search && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-navy/40 uppercase tracking-wider">Scope:</span>
+            {[['all', 'All periods'], ['period', 'Selected month']].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setScope(key)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  scope === key ? 'bg-indigo text-white' : 'bg-navy/5 text-navy/50 hover:text-navy/70'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {!isLoading && (
+              <span className="ml-auto text-[10px] font-medium text-navy/40">{members.length} results</span>
+            )}
+          </div>
+        )}
         <div className="p-1 bg-navy/5 rounded-2xl grid grid-cols-4 gap-1">
           {STATUS_FILTERS.map(([key, label]) => (
             <button
@@ -176,7 +186,9 @@ export const GoldSchemePage = () => {
                         {formatCurrency(m.monthly_amount)}
                       </td>
                       <td className="px-4 py-3 text-xs font-bold text-navy/50 text-center whitespace-nowrap">
-                        {Math.min(m.months_elapsed, m.total_months)}/{m.total_months}
+                        {searchingGlobally
+                          ? getPeriodForDate(m.start_date).label
+                          : `${Math.min(m.months_elapsed, m.total_months)}/${m.total_months}`}
                       </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${GOLD_STATUS_STYLES[m.status]}`}>

@@ -94,6 +94,7 @@ export const RefundRoomSchema = z.object({
 export const ListRoomsQuerySchema = z.object({
   status:    z.enum(['filling', 'pending_combine', 'combined_into', 'expired', 'active', 'completed']).optional(),
   packageId: z.string().uuid().optional(),
+  search:    z.string().max(100).optional(),
   page:      z.coerce.number().min(1).default(1),
   limit:     z.coerce.number().min(1).max(200).default(50),
 });
