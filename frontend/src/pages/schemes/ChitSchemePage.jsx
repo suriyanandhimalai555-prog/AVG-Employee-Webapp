@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Loader2, Layers, ChevronRight, ShieldCheck } from 'lucide-react';
+import { Plus, Loader2, Layers, ChevronRight, ShieldCheck } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetChitGroupsQuery, useGetChitSummaryQuery } from '../../store/api/apiSlice';
 import { REFERRER_ROLES } from '../../lib/schemeConstants';
@@ -9,6 +9,8 @@ import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
+import { SchemeSearchBar } from './components/SchemeSearchBar';
+import { SchemeMatchLine } from './components/SchemeMatchLine';
 
 const PACKAGES = {
   1: { label: 'Pkg 1', amount: '₹5,000',  color: 'text-violet-700 bg-violet-50' },
@@ -59,7 +61,6 @@ export const ChitSchemePage = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
-  const [searchInput,  setSearchInput]  = useState('');
   const [search,       setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('in_progress');
 
@@ -71,11 +72,6 @@ export const ChitSchemePage = () => {
   const { data: summary } = useGetChitSummaryQuery({});
 
   const groups = groupsResult?.data || [];
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearch(searchInput);
-  };
 
   const isHeadBranchAdmin = user?.role === 'branch_admin' && user?.isHeadBranch;
   const canSeeHeadPage    = HEAD_VIEW_ROLES.has(user?.role) && (isHeadBranchAdmin || user?.role !== 'branch_admin');
@@ -137,18 +133,9 @@ export const ChitSchemePage = () => {
         </div>
       )}
 
-      {/* Search + filter */}
+      {/* Search + filter — SchemeSearchBar debounces 300 ms and shows a clear (×) button */}
       <div className="px-4 mb-4 space-y-3">
-        <form onSubmit={handleSearch} className="relative">
-          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" aria-hidden="true" />
-          <input
-            type="text"
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-            placeholder="Search group name…"
-            className="w-full pl-10 pr-4 py-3 bg-white rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-violet-200 card-shadow"
-          />
-        </form>
+        <SchemeSearchBar onSearch={setSearch} placeholder="Search group, customer name or phone…" />
         <div className="overflow-x-auto scrollbar-none -mx-4 px-4">
           <div className="flex gap-1 w-max">
             {STATUS_FILTERS.map(([key, label]) => (
@@ -264,6 +251,9 @@ export const ChitSchemePage = () => {
                     </p>
                   </div>
                 )}
+
+                {/* Show which members matched the search query; only present when a search is active */}
+                {search && <SchemeMatchLine matches={group.matched_members} />}
               </button>
             );
           })

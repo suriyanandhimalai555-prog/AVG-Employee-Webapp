@@ -24,6 +24,7 @@ import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
+import { SchemeMatchLine } from './components/SchemeMatchLine';
 
 const WRITER_ROLES      = new Set(['branch_admin']);
 const VIEWER_ROLES      = new Set(['branch_admin', 'md', 'director', 'gm', 'management']);
@@ -227,11 +228,7 @@ export const GoldCoinSchemePage = () => {
                       style={{ width: `${progressPct}%` }}
                     />
                   </div>
-                  {search && room.matched_slots?.length > 0 && (
-                    <p className="text-[10px] font-medium text-indigo mt-1.5">
-                      Matched: {room.matched_slots.map(s => `${s.customer_name} · Slot ${s.slot_number}`).join(', ')}
-                    </p>
-                  )}
+                  {search && <SchemeMatchLine matches={room.matched_slots} />}
                 </button>
               );
             })}

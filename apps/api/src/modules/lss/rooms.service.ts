@@ -266,9 +266,10 @@ export const RoomsService = {
     );
     const total = parseInt(countRes.rows[0].n, 10);
 
-    // When searching, include matched_slots so the UI can highlight which slots hit
+    // When searching, include matched_slots so the UI can highlight which slots hit;
+    // include customer_phone so same-name customers are distinguishable on the card.
     const matchedSlotsSelect = searchIdx !== null ? `,
-         (SELECT json_agg(json_build_object('slot_number', s.slot_number, 'customer_name', c.name))
+         (SELECT json_agg(json_build_object('slot_number', s.slot_number, 'customer_name', c.name, 'customer_phone', c.phone))
             FROM lss_slots s
             JOIN customers c ON c.id = s.customer_id
            WHERE s.room_id = r.id
