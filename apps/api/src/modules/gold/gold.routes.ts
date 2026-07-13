@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, hasRole, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
+import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, SCHEME_WRITER_ROLES, SCHEME_ADMIN_ROLES, hasRole, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
@@ -76,7 +76,13 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
       if (REFERRER_ONLY_ROLES.has(req.user.role)) {
         query.referrerId = req.user.id;
       }
-      const data = await GoldService.getMembers(fastify.db, req.user.branchId, query);
+      // MD/Management read org-wide (null scope) or narrow via ?branchId=.
+      // Everyone else stays pinned to their JWT branch — query.branchId never
+      // widens scope for branch_admin or referrer roles.
+      const scopeBranchId = hasRole(req.user.role, SCHEME_ADMIN_ROLES)
+        ? query.branchId ?? null
+        : req.user.branchId;
+      const data = await GoldService.getMembers(fastify.db, scopeBranchId, query);
       return reply.send({ success: true, ...data });
     } catch (error) { return handleError(error, reply); }
   });

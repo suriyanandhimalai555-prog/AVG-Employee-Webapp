@@ -442,7 +442,9 @@ export const apiSlice = createApi({
         const qs = new URLSearchParams();
         if (params.status)     qs.set('status', params.status);
         if (params.referrerId) qs.set('referrerId', params.referrerId);
+        if (params.branchId)   qs.set('branchId', params.branchId);
         if (params.search)     qs.set('search', params.search);
+        if (params.searchReferrers) qs.set('searchReferrers', 'true');
         if (params.page)       qs.set('page', String(params.page));
         if (params.limit)      qs.set('limit', String(params.limit));
         if (params.startDate)  qs.set('startDate', params.startDate);
@@ -455,7 +457,13 @@ export const apiSlice = createApi({
     }),
 
     getGoldMember: builder.query({
-      query: (id) => `/gold/${id}`,
+      // Accepts either a plain id string (existing pages) or { id, branchId }
+      // (MD/Management drill-down, where branchId must go as a query param).
+      query: (arg) => {
+        const id = typeof arg === 'string' ? arg : arg.id;
+        const branchId = arg?.branchId;
+        return `/gold/${id}${branchId ? `?branchId=${branchId}` : ''}`;
+      },
       transformResponse: (response) => response.data,
       providesTags: ['GoldMembers'],
     }),

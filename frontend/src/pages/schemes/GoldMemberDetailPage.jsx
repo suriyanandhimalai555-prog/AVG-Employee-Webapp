@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Plus, CheckCircle2, Circle, Loader2,
   Phone, MapPin, User,
@@ -25,13 +25,18 @@ import { TransactionIdList } from '../../components/money/TransactionIdList';
 export const GoldMemberDetailPage = () => {
   const { id }   = useParams();
   const user     = useSelector(selectCurrentUser);
-  const navigate = useNavigate();
+
+  // MD/Management drill-down passes branchId (their JWT has no branch) and
+  // from=schemes so the back button returns to the monitoring page.
+  const [searchParams] = useSearchParams();
+  const branchId = searchParams.get('branchId');
+  const backTo   = searchParams.get('from') === 'schemes' ? '/schemes/gold_scheme' : '/money/schemes/gold';
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [period, setPeriod]                     = useState(getCurrentPeriod);
 
-  const { data: member,   isLoading: isMemberLoading }   = useGetGoldMemberQuery(id);
-  const { data: payments = [], isLoading: isPaymentsLoading } = useGetGoldPaymentsQuery(id);
+  const { data: member,   isLoading: isMemberLoading }   = useGetGoldMemberQuery(branchId ? { id, branchId } : id);
+  const { data: payments = [], isLoading: isPaymentsLoading } = useGetGoldPaymentsQuery(branchId ? { memberId: id, branchId } : id);
   const [updateStatus] = useUpdateGoldMemberStatusMutation();
 
   if (isMemberLoading) {
@@ -81,7 +86,7 @@ export const GoldMemberDetailPage = () => {
   return (
     <SchemePageWrapper>
       <SchemePageHeader
-        backTo="/money/schemes/gold"
+        backTo={backTo}
         title={member.customer_name}
         subtitle={`Chit No. ${member.chit_number}`}
         action={addButton}

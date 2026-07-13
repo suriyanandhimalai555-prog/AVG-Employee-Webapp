@@ -17,8 +17,8 @@ export const NAV_TABS = [
 export const MD_TAB             = { key: 'branches',       icon: Building2, label: 'Branches', path: '/branches' };
 export const CONTROL_CENTER_TAB = { key: 'control-center', icon: Settings2, label: 'Control',  path: '/control-center' };
 
-// Cross-scheme dashboard. Visible to MD and Director only — the page itself
-// is gated again server-side, so this is purely a discoverability hint.
+// Cross-scheme dashboard. Visible to MD, Director and Management only — the page
+// itself is gated again server-side, so this is purely a discoverability hint.
 export const SCHEMES_TAB = { key: 'schemes', icon: Layers, label: 'Schemes', path: '/schemes' };
 
 export const getActiveTab = (pathname) => {
@@ -61,7 +61,7 @@ export const useNavTabs = () => {
 
   // Management gets a dedicated Control Center tab for scheme configuration
   const managementTabs = role === 'management' ? [CONTROL_CENTER_TAB] : [];
-  const showSchemes = role === 'md' || role === 'director';
+  const showSchemes = role === 'md' || role === 'director' || role === 'management';
   // MD_TAB is the shared Branches tab — MD gets the classic page, management gets
   // the new full-featured page (role-dispatched inside BranchesRoute in App.jsx).
   const tabs = [

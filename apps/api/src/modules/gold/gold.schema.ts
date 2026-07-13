@@ -55,7 +55,13 @@ export const AddGoldMemberSchema = z.object({
 export const GetGoldMembersQuerySchema = z.object({
   status:     z.enum(['active', 'completed', 'withdrawn']).optional(),
   referrerId: z.string().uuid().optional(),
+  // MD / Management only: narrow the org-wide list to one branch (ignored for other roles)
+  branchId:   z.string().uuid().optional(),
   search:     z.string().max(100).optional(),
+  // Opt-in: also match the referrer's name in search (monitoring page only —
+  // on referrer-scoped views every row's referrer is the viewer, so matching
+  // referrer names there would make search return everything)
+  searchReferrers: z.enum(['true', 'false']).optional(),
   startDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page:       z.coerce.number().min(1).default(1),

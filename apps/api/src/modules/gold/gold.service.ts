@@ -139,22 +139,27 @@ export const GoldService = {
   // ─── LIST MEMBERS ───
   async getMembers(
     db: Pool,
-    branchId: string,
+    // TS: null = org-wide scope — only the route grants this, for MD/Management reads
+    branchId: string | null,
     query: GetGoldMembersQuery
   ): Promise<{ data: any[]; total: number }> {
     // Referrer-scoped roles see their own referrals across ALL branches; everyone
     // else stays branch-scoped. The two are mutually exclusive — referrer_id alone
     // already pins the row to that person regardless of which branch entered it.
+    // MD/Management arrive with branchId already resolved by the route: a concrete
+    // branch when filtering, null for the org-wide view.
     const params: any[] = [];
     let where: string;
+    let idx = 1;
     if (query.referrerId) {
       params.push(query.referrerId);
-      where = 'g.referrer_id = $1';
-    } else {
+      where = `g.referrer_id = $${idx++}`;
+    } else if (branchId) {
       params.push(branchId);
-      where = 'g.branch_id = $1';
+      where = `g.branch_id = $${idx++}`;
+    } else {
+      where = '1=1';
     }
-    let idx = 2;
 
     if (query.status) {
       where += ` AND g.status = $${idx++}`;
@@ -162,7 +167,11 @@ export const GoldService = {
     }
 
     if (query.search) {
-      where += ` AND (c.name ILIKE $${idx} OR g.chit_number ILIKE $${idx} OR c.phone ILIKE $${idx} OR c.customer_code ILIKE $${idx})`;
+      // Referrer-name matching is opt-in (MD monitoring page): on referrer-scoped
+      // views every row's referrer is the viewer, so it would match all rows.
+      const searchFields = ['c.name', 'g.chit_number', 'c.phone', 'c.customer_code'];
+      if (query.searchReferrers === 'true') searchFields.push('r.name');
+      where += ` AND (${searchFields.map(f => `${f} ILIKE $${idx}`).join(' OR ')})`;
       params.push(`%${query.search}%`);
       idx++;
     }
@@ -178,7 +187,11 @@ export const GoldService = {
     }
 
     const countResult = await db.query(
-      `SELECT COUNT(*) FROM gold_scheme_members g JOIN customers c ON g.customer_id = c.id WHERE ${where}`,
+      `SELECT COUNT(*)
+       FROM gold_scheme_members g
+       JOIN customers c  ON g.customer_id = c.id
+       LEFT JOIN users r ON g.referrer_id = r.id
+       WHERE ${where}`,
       params
     );
     const total = parseInt(countResult.rows[0].count, 10);
@@ -189,15 +202,19 @@ export const GoldService = {
          c.name          AS customer_name,
          c.phone         AS customer_phone,
          c.customer_code,
+         b.name          AS branch_name,
          u.name          AS entered_by_name,
          r.name          AS referrer_user_name,
          r.role          AS referrer_role,
+         (SELECT COUNT(*)::int FROM gold_scheme_payments p WHERE p.member_id = g.id) AS months_paid,
+         (SELECT COALESCE(SUM(p.amount),0) FROM gold_scheme_payments p WHERE p.member_id = g.id) AS paid_so_far,
          GREATEST(0,
            EXTRACT(YEAR FROM AGE(CURRENT_DATE, g.start_date)) * 12 +
            EXTRACT(MONTH FROM AGE(CURRENT_DATE, g.start_date))
          )::int AS months_elapsed
        FROM gold_scheme_members g
        JOIN customers c  ON g.customer_id  = c.id
+       JOIN branches b   ON g.branch_id    = b.id
        JOIN users u      ON g.entered_by   = u.id
        LEFT JOIN users r ON g.referrer_id  = r.id
        WHERE ${where}

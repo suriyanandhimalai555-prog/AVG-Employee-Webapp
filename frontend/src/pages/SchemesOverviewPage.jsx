@@ -16,7 +16,7 @@ import { useGetSchemesOverviewQuery } from '../store/api/apiSlice';
 import { formatCurrency, formatNumber } from '../lib/formatters';
 import { SOURCE_META } from '../lib/schemeConstants';
 
-const VIEWER_ROLES = new Set(['md', 'director']);
+const VIEWER_ROLES = new Set(['md', 'director', 'management']);
 
 const StatBlock = ({ label, value, tone = 'navy', icon }) => {
   const cls = { navy: 'text-navy', amber: 'text-amber-700', emerald: 'text-emerald-600', indigo: 'text-indigo' }[tone];

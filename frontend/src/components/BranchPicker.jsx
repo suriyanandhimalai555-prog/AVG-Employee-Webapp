@@ -10,12 +10,13 @@
 //   onChange   (branchId) => void
 //   className  string        — optional extra classes (defaults to SCHEME_INPUT_CLASS)
 //   required   bool          — passes required to the <select>
+//   emptyLabel string        — label for the empty option (defaults to 'Select branch…')
 
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useGetBranchesQuery } from '../store/api/apiSlice';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
 
-export const BranchPicker = ({ value, onChange, className, required = true }) => {
+export const BranchPicker = ({ value, onChange, className, required = true, emptyLabel = 'Select branch…' }) => {
   const { data: branches = [], isLoading, isError, refetch } = useGetBranchesQuery();
 
   if (isError) {
@@ -43,7 +44,7 @@ export const BranchPicker = ({ value, onChange, className, required = true }) =>
       required={required}
     >
       <option value="">
-        {isLoading ? 'Loading branches…' : 'Select branch…'}
+        {isLoading ? 'Loading branches…' : emptyLabel}
       </option>
       {branches.map((b) => (
         <option key={b.id} value={b.id}>

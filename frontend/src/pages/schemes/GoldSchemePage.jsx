@@ -188,7 +188,7 @@ export const GoldSchemePage = () => {
                       <td className="px-4 py-3 text-xs font-bold text-navy/50 text-center whitespace-nowrap">
                         {searchingGlobally
                           ? getPeriodForDate(m.start_date).label
-                          : `${Math.min(m.months_elapsed, m.total_months)}/${m.total_months}`}
+                          : `${Math.min(m.months_paid ?? 0, m.total_months)}/${m.total_months}`}
                       </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider ${GOLD_STATUS_STYLES[m.status]}`}>
