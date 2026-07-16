@@ -22,6 +22,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.PORT }}
           script: |
             cd /root/otp/apps/AVG-Employee-Webapp
             ./scripts/deploy.sh
