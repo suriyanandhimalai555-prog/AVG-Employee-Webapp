@@ -7,63 +7,21 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Contabo VPS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Deploy Application to VPS
+      - name: Deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.PORT }}
-          script_stop: true
+          port: 22
           timeout: 30m
           command_timeout: 30m
           script: |
-            set -e
-
-            echo "=================================="
-            echo "Deploying AVG Employee Webapp"
-            echo "=================================="
-
             cd /root/otp/apps/AVG-Employee-Webapp
-
-            echo "Current directory:"
-            pwd
-
-            echo "Git Status"
-            git status
-
-            echo "Pull latest code"
-            git pull origin main
-
-            echo "Stopping containers"
-            docker compose down
-
-            echo "Removing old images"
-            docker image prune -af
-
-            echo "Building latest images"
-            docker compose build --no-cache
-
-            echo "Starting containers"
-            docker compose up -d
-
-            echo "Waiting for containers..."
-            sleep 10
-
-            echo "Container Status"
-            docker compose ps
-
-            echo "Backend Logs"
-            docker logs ems-backend --tail 30 || true
-
-            echo "Frontend Logs"
-            docker logs ems-frontend --tail 30 || true
-
-            echo "Deployment Successful"
+            chmod +x scripts/deploy.sh
+            ./scripts/deploy.sh
