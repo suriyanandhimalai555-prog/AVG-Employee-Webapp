@@ -55,20 +55,134 @@ jobs:
           docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
+          timeout: 60s
+          command_timeout: 20m
+
           script: |
+            set -e
+
             cd /root/otp/apps/AVG-Employee-Webapp
 
             docker login ghcr.io \
-            -u ${{ secrets.GHCR_USERNAME }} \
-            -p ${{ secrets.GHCR_TOKEN }}
+              -u ${{ secrets.GHCR_USERNAME }} \
+              -p ${{ secrets.GHCR_TOKEN }}
 
             docker compose pull
+
             docker compose up -d --remove-orphans
 
             docker image prune -af
+
+            docker compose ps
+
+      - name: Send Success Email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+
+          subject: "✅ EMS Deployment Successful"
+
+          to: |
+            Sanjayvanan03@gmail.com,
+            muthukdm45@gmail.com,
+            deepakavgprimetech@gmail.com
+
+          from: ${{ secrets.SMTP_USERNAME }}
+
+          html_body: |
+            <h2>✅ EMS Deployment Successful</h2>
+
+            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+              <tr>
+                <td><b>Repository</b></td>
+                <td>${{ github.repository }}</td>
+              </tr>
+              <tr>
+                <td><b>Branch</b></td>
+                <td>${{ github.ref_name }}</td>
+              </tr>
+              <tr>
+                <td><b>Commit ID</b></td>
+                <td>${{ github.sha }}</td>
+              </tr>
+              <tr>
+                <td><b>Developer</b></td>
+                <td>${{ github.actor }}</td>
+              </tr>
+              <tr>
+                <td><b>Workflow</b></td>
+                <td>${{ github.workflow }}</td>
+              </tr>
+              <tr>
+                <td><b>Status</b></td>
+                <td>Deployment Successful ✅</td>
+              </tr>
+            </table>
+
+            <br>
+
+            <p>The latest EMS version has been deployed successfully to the Contabo VPS.</p>
+
+      - name: Send Failure Email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+
+          subject: "❌ EMS Deployment Failed"
+
+          to: |
+            Sanjayvanan03@gmail.com,
+            muthukdm45@gmail.com,
+            deepakavgprimetech@gmail.com
+
+          from: ${{ secrets.SMTP_USERNAME }}
+
+          html_body: |
+            <h2>❌ EMS Deployment Failed</h2>
+
+            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+              <tr>
+                <td><b>Repository</b></td>
+                <td>${{ github.repository }}</td>
+              </tr>
+              <tr>
+                <td><b>Branch</b></td>
+                <td>${{ github.ref_name }}</td>
+              </tr>
+              <tr>
+                <td><b>Commit ID</b></td>
+                <td>${{ github.sha }}</td>
+              </tr>
+              <tr>
+                <td><b>Developer</b></td>
+                <td>${{ github.actor }}</td>
+              </tr>
+              <tr>
+                <td><b>Workflow</b></td>
+                <td>${{ github.workflow }}</td>
+              </tr>
+              <tr>
+                <td><b>Status</b></td>
+                <td>Deployment Failed ❌</td>
+              </tr>
+            </table>
+
+            <br>
+
+            <p>Please check the GitHub Actions logs for the deployment error.</p>
