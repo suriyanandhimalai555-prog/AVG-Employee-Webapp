@@ -8,19 +8,18 @@ echo "=================================="
 
 cd /root/otp/apps/AVG-Employee-Webapp
 
-echo "Pulling latest code..."
-git pull origin main
+echo "Git Pull"
+time git pull origin main
 
-echo "Stopping containers..."
-docker compose down
+echo "Docker Pull"
+time docker compose pull
 
-echo "Building containers..."
-docker compose build --no-cache
+echo "Docker Restart"
+time docker compose up -d --remove-orphans
 
-echo "Starting containers..."
-docker compose up -d
+echo "Docker Cleanup"
+time docker image prune -af
 
-echo "Removing unused images..."
-docker image prune -af
-
-echo "Deployment Complete!"
+echo "=================================="
+echo "Deployment Completed Successfully"
+echo "=================================="

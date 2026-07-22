@@ -2,9 +2,7 @@ version: "3.9"
 
 services:
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    image: ghcr.io/suriyanandhimalai555-prog/ems-backend:latest
     container_name: ems-backend
     restart: always
     env_file:
@@ -13,19 +11,19 @@ services:
       - "4040:4040"
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: ghcr.io/suriyanandhimalai555-prog/ems-frontend:latest
     container_name: ems-frontend
     restart: always
     ports:
       - "3020:80"
+    depends_on:
+      - backend
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
+    image: ghcr.io/suriyanandhimalai555-prog/ems-worker:latest
     container_name: ems-worker
     restart: always
     env_file:
       - .env
+    depends_on:
+      - backend
