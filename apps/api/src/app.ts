@@ -37,6 +37,7 @@ import pendingEnrollmentRoutes from './modules/pending-enrollments/pending-enrol
 import settingsRoutes from './modules/settings/settings.routes';
 import reconciliationRoutes from './modules/reconciliation/reconciliation.routes';
 import notificationWebhookRoutes from './modules/notifications/notifications.routes';
+import appVersionRoutes from './modules/app-version/app-version.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -206,6 +207,10 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // WhatsApp delivery-receipt webhooks — public, no JWT auth.
   // Meta verifies ownership via GET challenge and signs POST bodies with HMAC-SHA256.
   await app.register(notificationWebhookRoutes, { prefix: '/api/webhooks' });
+
+  // Mobile app version gate — GET is public (native app checks on launch before login).
+  // PATCH is management-only to update version strings and the force-update flag.
+  await app.register(appVersionRoutes, { prefix: '/api/app-version' });
 
   return app;
 };

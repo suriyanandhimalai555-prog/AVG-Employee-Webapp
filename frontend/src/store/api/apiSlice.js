@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -2047,6 +2047,23 @@ export const apiSlice = createApi({
         'GoldMembers', 'TradingMembers', 'GoldCoinRooms', 'LssRooms', 'ChitGroups', 'BuildersPlans', 'SchemesOverview',
       ],
     }),
+
+    // ─── Mobile app version gate (Management only for writes; GET is public) ───
+    // GET /app-version — returns the current/minimal version strings + force_update flag.
+    // Called by the admin UI to display current values; the native app calls it directly.
+    getMobileAppVersion: builder.query({
+      query: () => '/app-version',
+      transformResponse: (response) => response.data,
+      providesTags: ['MobileAppVersion'],
+    }),
+
+    // PATCH /app-version — Management updates version strings and/or the force-update flag.
+    // Any omitted field keeps its current DB value (partial-merge on the server).
+    updateMobileAppVersion: builder.mutation({
+      query: (data) => ({ url: '/app-version', method: 'PATCH', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['MobileAppVersion'],
+    }),
   }),
 });
 
@@ -2285,4 +2302,6 @@ export const {
   useAddPendingEnrollmentPaymentMutation,
   useCancelPendingEnrollmentMutation,
   useRetryPendingEnrollmentMutation,
+  useGetMobileAppVersionQuery,
+  useUpdateMobileAppVersionMutation,
 } = apiSlice;

@@ -18,7 +18,7 @@ import {
   Settings2, IndianRupee, Building2, Gem, Coins,
   Layers, Landmark, Edit2, Check, X, Loader2,
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
-  MessageCircle,
+  MessageCircle, Smartphone,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -50,6 +50,8 @@ import {
   useUpdateDailyCollectionReconciliationSettingMutation,
   useGetBranchesQuery,
   useSetHeadBranchMutation,
+  useGetMobileAppVersionQuery,
+  useUpdateMobileAppVersionMutation,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
@@ -710,6 +712,200 @@ const LandTab = ({ navigate }) => {
 // Gold Coin, LSS and Chit scheme combine/refund operations. Atomically moves
 // the is_head_branch flag on the branches table (old cleared, new set, in one
 // transaction) so exactly one branch is always the head branch.
+// ─── Mobile app version gate (Management only) ────────────────────────────────
+// Controls which Android/iOS builds the native app team considers current and
+// minimum-acceptable, plus a force-update flag to block outdated clients.
+// The native app reads GET /api/app-version publicly on every launch; this UI
+// lets Management update the values without needing curl.
+const MobileAppVersionSetting = () => {
+  const { data, isLoading }                           = useGetMobileAppVersionQuery();
+  const [updateVersion, { isLoading: saving }]        = useUpdateMobileAppVersionMutation();
+
+  // Local form mirrors the four version strings, toggle, and release notes
+  const [form, setForm]     = useState({
+    androidCurrentVersion: '',
+    androidMinimalVersion: '',
+    iosCurrentVersion:     '',
+    iosMinimalVersion:     '',
+    releaseNotes:          '',
+  });
+  const [forceUpdate, setForceUpdate] = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const [saveErr, setSaveErr]         = useState(null);
+  const [initialised, setInitialised] = useState(false);
+
+  // Seed form from the fetched config on first load only
+  useEffect(() => {
+    if (data && !initialised) {
+      setForm({
+        androidCurrentVersion: data.androidCurrentVersion ?? '1.0.0',
+        androidMinimalVersion: data.androidMinimalVersion ?? '1.0.0',
+        iosCurrentVersion:     data.iosCurrentVersion     ?? '1.0.0',
+        iosMinimalVersion:     data.iosMinimalVersion     ?? '1.0.0',
+        releaseNotes:          data.releaseNotes           ?? '',
+      });
+      setForceUpdate(data.forceUpdate ?? false);
+      setInitialised(true);
+    }
+  }, [data, initialised]);
+
+  const handleSave = async () => {
+    setSaveErr(null);
+    try {
+      await updateVersion({
+        androidCurrentVersion: form.androidCurrentVersion,
+        androidMinimalVersion: form.androidMinimalVersion,
+        iosCurrentVersion:     form.iosCurrentVersion,
+        iosMinimalVersion:     form.iosMinimalVersion,
+        forceUpdate,
+        releaseNotes: form.releaseNotes || null,
+      }).unwrap();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setSaveErr(err?.data?.error?.message || 'Failed to update app version config.');
+    }
+  };
+
+  const handleToggleForce = async () => {
+    const next = !forceUpdate;
+    setForceUpdate(next);
+    setSaveErr(null);
+    try {
+      await updateVersion({ forceUpdate: next }).unwrap();
+    } catch {
+      // Revert the optimistic toggle if the server rejected it
+      setForceUpdate(!next);
+    }
+  };
+
+  if (isLoading) return null;
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
+
+        {/* Header */}
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <Smartphone size={16} className="text-blue-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-navy">Mobile App Version</p>
+            <p className="text-xs text-navy/40 mt-0.5">
+              Controls which Android/iOS builds are accepted. The native app checks this on every launch.
+            </p>
+          </div>
+        </div>
+
+        {/* Version string fields — 2-column grid on wider screens */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+              Android current
+            </label>
+            <input
+              type="text"
+              value={form.androidCurrentVersion}
+              onChange={e => { setForm(f => ({ ...f, androidCurrentVersion: e.target.value })); setSaved(false); }}
+              placeholder="e.g. 1.2.0"
+              className={SCHEME_INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+              Android minimum
+            </label>
+            <input
+              type="text"
+              value={form.androidMinimalVersion}
+              onChange={e => { setForm(f => ({ ...f, androidMinimalVersion: e.target.value })); setSaved(false); }}
+              placeholder="e.g. 1.0.0"
+              className={SCHEME_INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+              iOS current
+            </label>
+            <input
+              type="text"
+              value={form.iosCurrentVersion}
+              onChange={e => { setForm(f => ({ ...f, iosCurrentVersion: e.target.value })); setSaved(false); }}
+              placeholder="e.g. 1.2.0"
+              className={SCHEME_INPUT_CLASS}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+              iOS minimum
+            </label>
+            <input
+              type="text"
+              value={form.iosMinimalVersion}
+              onChange={e => { setForm(f => ({ ...f, iosMinimalVersion: e.target.value })); setSaved(false); }}
+              placeholder="e.g. 1.0.0"
+              className={SCHEME_INPUT_CLASS}
+            />
+          </div>
+        </div>
+
+        {/* Release notes */}
+        <div className="mb-3">
+          <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+            Release notes (optional)
+          </label>
+          <textarea
+            value={form.releaseNotes}
+            onChange={e => { setForm(f => ({ ...f, releaseNotes: e.target.value })); setSaved(false); }}
+            placeholder="What changed in this version…"
+            rows={3}
+            className={SCHEME_INPUT_CLASS}
+          />
+        </div>
+
+        {/* Force-update toggle + save button row */}
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={handleToggleForce}
+              disabled={saving}
+              aria-label={forceUpdate ? 'Disable force update' : 'Enable force update'}
+              className="flex-shrink-0 tactile-press disabled:opacity-50"
+            >
+              {saving
+                ? <Loader2 size={28} className="animate-spin text-navy/30" />
+                : forceUpdate
+                  ? <ToggleRight size={28} className="text-red-500" />
+                  : <ToggleLeft  size={28} className="text-navy/30" />}
+            </button>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-navy">Force update</p>
+              <p className="text-[11px] text-navy/40">
+                {forceUpdate
+                  ? 'ON — outdated builds are blocked at launch.'
+                  : 'OFF — users can keep using older builds.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-shrink-0 px-4 py-2 rounded-xl bg-stone-800 text-white text-xs font-bold disabled:opacity-40 tactile-press"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : 'Save'}
+          </button>
+        </div>
+
+        {saveErr && <p className="text-[11px] text-red-500 mt-1 font-medium">{saveErr}</p>}
+        {saved  && <p className="text-[11px] text-emerald-600 mt-1 font-medium">App version config saved successfully.</p>}
+      </div>
+    </div>
+  );
+};
+
 const HeadBranchSetting = () => {
   const { data: branches = [], isLoading: loadingBranches } = useGetBranchesQuery();
   const [setHeadBranch, { isLoading: saving }] = useSetHeadBranchMutation();
@@ -1114,6 +1310,7 @@ export const ManagementControlCenter = () => {
       {user?.role === 'management' && <GoldCoinEligibilityBypassToggle />}
       {user?.role === 'management' && <DailyCollectionReconciliationToggle />}
       {user?.role === 'management' && <HeadBranchSetting />}
+      {user?.role === 'management' && <MobileAppVersionSetting />}
 
       {/* Reconciliation dashboard — accessible to all allowed roles */}
       <div className="px-4 md:px-0 mb-4">
