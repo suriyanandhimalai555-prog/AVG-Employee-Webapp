@@ -150,3 +150,4 @@ If Management has never touched the config, the API returns:
 ```
 
 `forceUpdate` is `false` by default — no users will be blocked until Management explicitly enables it.
+ 
