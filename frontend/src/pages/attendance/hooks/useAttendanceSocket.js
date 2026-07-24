@@ -15,8 +15,10 @@ import { apiSlice } from '../../../store/api/apiSlice';
 import { selectCurrentToken } from '../../../store/slices/authSlice';
 
 // Strip the '/api' suffix to reach the base server URL where Socket.io is mounted
-const SOCKET_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
-
+//const SOCKET_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api$/, '');
+const SOCKET_URL = import.meta.env.DEV
+  ? 'http://localhost:3001'
+  : window.location.origin;
 export const useAttendanceSocket = () => {
   const dispatch = useDispatch();
   const token = useSelector(selectCurrentToken);
