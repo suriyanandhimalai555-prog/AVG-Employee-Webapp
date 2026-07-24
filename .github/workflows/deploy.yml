@@ -24,35 +24,54 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Build Backend
+      ####################################################
+      # Backend
+      ####################################################
+
+      - name: Build Backend Image
         run: |
           docker build \
-          -f Dockerfile.backend \
-          -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest .
+            --no-cache \
+            -f Dockerfile.backend \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest .
 
-      - name: Push Backend
+      - name: Push Backend Image
         run: |
           docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest
 
-      - name: Build Frontend
+      ####################################################
+      # Frontend
+      ####################################################
+
+      - name: Build Frontend Image
         run: |
           docker build \
-          -f Dockerfile.frontend \
-          -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest .
+            --no-cache \
+            -f Dockerfile.frontend \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest .
 
-      - name: Push Frontend
+      - name: Push Frontend Image
         run: |
           docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest
 
-      - name: Build Worker
+      ####################################################
+      # Worker
+      ####################################################
+
+      - name: Build Worker Image
         run: |
           docker build \
-          -f Dockerfile.worker \
-          -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest .
+            --no-cache \
+            -f Dockerfile.worker \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest .
 
-      - name: Push Worker
+      - name: Push Worker Image
         run: |
           docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
+
+      ####################################################
+      # Deploy
+      ####################################################
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.2.2
@@ -63,7 +82,6 @@ jobs:
           port: 22
           timeout: 60s
           command_timeout: 20m
-
           script: |
             set -e
 
@@ -75,11 +93,17 @@ jobs:
 
             docker compose pull
 
-            docker compose up -d --remove-orphans
+            docker compose down
+
+            docker compose up -d --force-recreate
 
             docker image prune -af
 
             docker compose ps
+
+      ####################################################
+      # Success Email
+      ####################################################
 
       - name: Send Success Email
         if: success()
@@ -93,17 +117,17 @@ jobs:
 
           subject: "✅ EMS Deployment Successful"
 
+          from: ${{ secrets.SMTP_USERNAME }}
+
           to: |
             Sanjayvanan03@gmail.com,
             muthukdm45@gmail.com,
             deepakavgprimetech@gmail.com
 
-          from: ${{ secrets.SMTP_USERNAME }}
-
           html_body: |
-            <h2>✅ EMS Deployment Successful</h2>
+            <h2>Deployment Successful</h2>
 
-            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            <table border="1" cellpadding="8">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
@@ -113,7 +137,7 @@ jobs:
                 <td>${{ github.ref_name }}</td>
               </tr>
               <tr>
-                <td><b>Commit ID</b></td>
+                <td><b>Commit</b></td>
                 <td>${{ github.sha }}</td>
               </tr>
               <tr>
@@ -121,18 +145,14 @@ jobs:
                 <td>${{ github.actor }}</td>
               </tr>
               <tr>
-                <td><b>Workflow</b></td>
-                <td>${{ github.workflow }}</td>
-              </tr>
-              <tr>
                 <td><b>Status</b></td>
-                <td>Deployment Successful ✅</td>
+                <td>SUCCESS</td>
               </tr>
             </table>
 
-            <br>
-
-            <p>The latest EMS version has been deployed successfully to the Contabo VPS.</p>
+      ####################################################
+      # Failure Email
+      ####################################################
 
       - name: Send Failure Email
         if: failure()
@@ -146,17 +166,17 @@ jobs:
 
           subject: "❌ EMS Deployment Failed"
 
+          from: ${{ secrets.SMTP_USERNAME }}
+
           to: |
             Sanjayvanan03@gmail.com,
             muthukdm45@gmail.com,
             deepakavgprimetech@gmail.com
 
-          from: ${{ secrets.SMTP_USERNAME }}
-
           html_body: |
-            <h2>❌ EMS Deployment Failed</h2>
+            <h2>Deployment Failed</h2>
 
-            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
+            <table border="1" cellpadding="8">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
@@ -166,7 +186,7 @@ jobs:
                 <td>${{ github.ref_name }}</td>
               </tr>
               <tr>
-                <td><b>Commit ID</b></td>
+                <td><b>Commit</b></td>
                 <td>${{ github.sha }}</td>
               </tr>
               <tr>
@@ -174,15 +194,7 @@ jobs:
                 <td>${{ github.actor }}</td>
               </tr>
               <tr>
-                <td><b>Workflow</b></td>
-                <td>${{ github.workflow }}</td>
-              </tr>
-              <tr>
                 <td><b>Status</b></td>
-                <td>Deployment Failed ❌</td>
+                <td>FAILED</td>
               </tr>
             </table>
-
-            <br>
-
-            <p>Please check the GitHub Actions logs for the deployment error.</p>
