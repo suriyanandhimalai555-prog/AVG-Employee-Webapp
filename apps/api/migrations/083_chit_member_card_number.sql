@@ -1,0 +1,2 @@
+ALTER TABLE agila_chit_members
+  ADD COLUMN IF NOT EXISTS card_number INTEGER NOT NULL DEFAULT 1;

@@ -402,24 +402,28 @@ export const ChitService = {
         throw new ValidationError(`Group already has ${MAX_MEMBERS} members`);
       }
 
-      // Check customer not already in this group
-      const dupCheck = await client.query(
-        'SELECT id FROM agila_chit_members WHERE group_id = $1 AND customer_id = $2',
+      // Compute this customer's next card number in the group.
+      // The group row is already locked FOR UPDATE above, so this count is
+      // race-safe — no two concurrent inserts can produce the same card_number.
+      const cardNumResult = await client.query(
+        'SELECT COUNT(*)::int AS n FROM agila_chit_members WHERE group_id = $1 AND customer_id = $2',
         [groupId, payload.customerId]
       );
-      if (dupCheck.rows.length > 0) throw new ConflictError('Customer is already a member of this group');
+      // TS: card_number = 1 for first card, 2 for second, etc.
+      const cardNumber = (cardNumResult.rows[0].n as number) + 1;
 
       const fullAmount   = parseFloat(group.full_amount);
       const paymentDate  = payload.firstPaymentDate || group.start_date;
       const customerName = custResult.rows[0].name;
 
-      // Insert member
+      // Insert member — card_number tracks which card this is for customers
+      // who hold multiple positions in the same group (e.g. Card 1, Card 2).
       const memberResult = await client.query(
         `INSERT INTO agila_chit_members
-           (group_id, customer_id, referrer_id, referrer_name, entered_by)
-         VALUES ($1,$2,$3,$4,$5)
+           (group_id, customer_id, referrer_id, referrer_name, entered_by, card_number)
+         VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING *`,
-        [groupId, payload.customerId, payload.referrerId || null, referrerName, enteredBy]
+        [groupId, payload.customerId, payload.referrerId || null, referrerName, enteredBy, cardNumber]
       );
       const member = memberResult.rows[0];
 
@@ -1165,6 +1169,22 @@ export const ChitService = {
         [newGroup.id, ...memberIds]
       );
 
+      // Re-sequence card_number within the combined group so that customers who
+      // contributed a card from different source groups don't end up with two "Card 1"
+      // rows. ROW_NUMBER ordered by created_at preserves chronological priority.
+      await client.query(
+        `UPDATE agila_chit_members m
+         SET card_number = sub.rn
+         FROM (
+           SELECT id,
+                  ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at ASC)::int AS rn
+           FROM agila_chit_members
+           WHERE group_id = $1
+         ) sub
+         WHERE m.id = sub.id AND m.group_id = $1`,
+        [newGroup.id]
+      );
+
       // Mark source groups as combined_into
       await client.query(
         `UPDATE agila_chit_groups
@@ -1248,12 +1268,13 @@ export const ChitService = {
     if (groupCheck.rows.length === 0) throw new NotFoundError('Group not found');
 
     const result = await db.query(
-      `SELECT m.id, m.customer_id, m.paying_half, m.status, m.has_won,
+      // TS: card_number included so the winner picker can label duplicate-customer cards
+      `SELECT m.id, m.customer_id, m.card_number, m.paying_half, m.status, m.has_won,
               c.name AS customer_name, c.phone AS customer_phone, c.customer_code
        FROM agila_chit_members m
        JOIN customers c ON c.id = m.customer_id
        WHERE m.group_id = $1 AND m.status = 'active' AND m.has_won = false
-       ORDER BY c.name ASC`,
+       ORDER BY c.name ASC, m.card_number ASC`,
       [groupId]
     );
     return result.rows;

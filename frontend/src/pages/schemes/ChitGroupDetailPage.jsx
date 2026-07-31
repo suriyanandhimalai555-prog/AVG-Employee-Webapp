@@ -71,8 +71,24 @@ function daysUntilDeadline(fillDeadline) {
   return Math.ceil((new Date(fillDeadline) - new Date()) / (1000 * 60 * 60 * 24));
 }
 
+// Builds a display-name map: customers who appear multiple times in the same
+// group (duplicate cards) get "Name · Card N" labels; single-card customers
+// stay as just "Name" so normal groups stay uncluttered.
+function buildCardLabels(members) {
+  const counts = new Map();
+  for (const m of members) {
+    counts.set(m.customer_id, (counts.get(m.customer_id) || 0) + 1);
+  }
+  const labels = new Map();
+  for (const m of members) {
+    const isDup = counts.get(m.customer_id) > 1;
+    labels.set(m.id, isDup ? `${m.customer_name} · Card ${m.card_number}` : m.customer_name);
+  }
+  return labels;
+}
+
 // ─── Smart Payment Modal ──────────────────────────────────────────────────────
-function PaymentModal({ member, group, onClose, groupId }) {
+function PaymentModal({ member, group, onClose, groupId, displayName }) {
   const pkg = PACKAGES[group.package_number] || PACKAGES[1];
   const { data: payments = [], isLoading: loadingPayments } =
     useGetChitMemberPaymentsQuery({ groupId, memberId: member.id });
@@ -133,7 +149,7 @@ function PaymentModal({ member, group, onClose, groupId }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-bold text-navy">Record Payment</p>
-            <p className="text-xs font-medium text-navy/50">{member.customer_name}</p>
+            <p className="text-xs font-medium text-navy/50">{displayName || member.customer_name}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-navy/5 flex items-center justify-center text-navy/40">
             <XCircle size={16} aria-hidden="true" />
@@ -236,9 +252,11 @@ function WinnerModal({ group, groupId, onClose }) {
   const [error, setError]       = useState(null);
   const [result, setResult]     = useState(null);
 
-  const pkg         = PACKAGES[group.package_number] || PACKAGES[1];
-  const monthNumber = group.current_month;
-  const winnerAmt   = computeWinnerAmount(pkg.full, monthNumber);
+  const pkg           = PACKAGES[group.package_number] || PACKAGES[1];
+  const monthNumber   = group.current_month;
+  const winnerAmt     = computeWinnerAmount(pkg.full, monthNumber);
+  // Build per-member display labels: duplicate-customer cards get "Name · Card N"
+  const eligibleLabels = buildCardLabels(eligible);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -295,7 +313,7 @@ function WinnerModal({ group, groupId, onClose }) {
                   <select value={memberId} onChange={e => setMemberId(e.target.value)} className={`${SCHEME_INPUT_CLASS} appearance-none`}>
                     <option value="">— Select winner —</option>
                     {eligible.map(m => (
-                      <option key={m.id} value={m.id}>{m.customer_name} ({m.customer_code})</option>
+                      <option key={m.id} value={m.id}>{eligibleLabels.get(m.id)} ({m.customer_code})</option>
                     ))}
                   </select>
                 )}
@@ -318,7 +336,7 @@ function WinnerModal({ group, groupId, onClose }) {
 }
 
 // ─── Cancel Card Modal ────────────────────────────────────────────────────────
-function CancelModal({ member, groupId, onClose }) {
+function CancelModal({ member, groupId, onClose, displayName }) {
   const [cancelMember, { isLoading }] = useCancelChitMemberMutation();
   const [month1, setMonth1] = useState('');
   const [month2, setMonth2] = useState('');
@@ -340,7 +358,7 @@ function CancelModal({ member, groupId, onClose }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-bold text-red-600">Cancel Card</p>
-            <p className="text-xs font-medium text-navy/50">{member.customer_name}</p>
+            <p className="text-xs font-medium text-navy/50">{displayName || member.customer_name}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-navy/5 flex items-center justify-center text-navy/40">
             <XCircle size={16} aria-hidden="true" />
@@ -422,6 +440,8 @@ export const ChitGroupDetailPage = () => {
   );
 
   const pkg         = PACKAGES[group.package_number] || PACKAGES[1];
+  // Build per-member display labels once; duplicate-customer cards get "Name · Card N"
+  const memberLabelMap = buildCardLabels(group.members || []);
   const isForming   = group.status === 'forming';
   const isActive    = group.status === 'active';
   const isCompleted = group.status === 'completed';
@@ -580,7 +600,7 @@ export const ChitGroupDetailPage = () => {
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold text-navy">{member.customer_name}</p>
+                      <p className="text-sm font-bold text-navy">{memberLabelMap.get(member.id) || member.customer_name}</p>
                       {hasWon && <span className="shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-bold text-amber-700 bg-amber-50">Won M{member.won_month}</span>}
                       {isCancelled && <span className="shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-bold text-red-600 bg-red-50">Cancelled</span>}
                     </div>
@@ -723,10 +743,10 @@ export const ChitGroupDetailPage = () => {
         </div>
       )}
 
-      {/* Modals */}
-      {paymentTarget && <PaymentModal member={paymentTarget} group={group} groupId={id} onClose={() => setPaymentTarget(null)} />}
+      {/* Modals — pass displayName so duplicate-card modals show "Name · Card N" */}
+      {paymentTarget && <PaymentModal member={paymentTarget} group={group} groupId={id} onClose={() => setPaymentTarget(null)} displayName={memberLabelMap.get(paymentTarget.id)} />}
       {showWinner    && <WinnerModal group={group} groupId={id} onClose={() => setShowWinner(false)} />}
-      {cancelTarget  && <CancelModal member={cancelTarget} groupId={id} onClose={() => setCancelTarget(null)} />}
+      {cancelTarget  && <CancelModal member={cancelTarget} groupId={id} onClose={() => setCancelTarget(null)} displayName={memberLabelMap.get(cancelTarget.id)} />}
     </SchemePageWrapper>
   );
 };
