@@ -9,15 +9,36 @@ permissions:
   contents: read
   packages: write
 
+# Prevent multiple EMS deployments from running at the same time
+concurrency:
+  group: ems-production
+  cancel-in-progress: true
+
 jobs:
 
   ############################################################
-  # BACKEND
+  # BUILD ALL EMS IMAGES
   ############################################################
 
-  build-backend:
-    name: Build Backend
+  build:
+    name: Build EMS Images
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: backend
+            dockerfile: Dockerfile.backend
+            image: ems-backend
+
+          - name: frontend
+            dockerfile: Dockerfile.frontend
+            image: ems-frontend
+
+          - name: worker
+            dockerfile: Dockerfile.worker
+            image: ems-worker
 
     steps:
 
@@ -39,106 +60,23 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Build and Push Backend
+      - name: Build and Push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.backend
+          file: ${{ matrix.dockerfile }}
           platforms: linux/arm64
           push: true
+
           tags: |
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:${{ github.sha }}
-          cache-from: type=gha,scope=ems-backend
-          cache-to: type=gha,mode=max,scope=ems-backend
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ matrix.image }}:latest
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
 
-
-  ############################################################
-  # FRONTEND
-  ############################################################
-
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Build and Push Frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.frontend
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:${{ github.sha }}
-          cache-from: type=gha,scope=ems-frontend
-          cache-to: type=gha,mode=max,scope=ems-frontend
-
+          cache-from: type=gha,scope=ems-${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=ems-${{ matrix.name }}
 
   ############################################################
-  # WORKER
-  ############################################################
-
-  build-worker:
-    name: Build Worker
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Build and Push Worker
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.worker
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:${{ github.sha }}
-          cache-from: type=gha,scope=ems-worker
-          cache-to: type=gha,mode=max,scope=ems-worker
-
-
-  ############################################################
-  # DEPLOY
+  # DEPLOY TO AWS ARM64
   ############################################################
 
   deploy:
@@ -146,21 +84,20 @@ jobs:
     runs-on: ubuntu-latest
 
     needs:
-      - build-backend
-      - build-frontend
-      - build-worker
+      - build
 
     steps:
 
-      - name: Deploy to VPS
+      - name: Deploy EMS
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
-          timeout: 60s
-          command_timeout: 20m
+
+          timeout: 30s
+          command_timeout: 10m
 
           script: |
 
@@ -179,88 +116,45 @@ jobs:
             docker info --format '{{.Architecture}}'
 
             echo "========================================"
-            echo "LOGIN TO GHCR"
+            echo "LOGIN GHCR"
             echo "========================================"
 
-            docker login ghcr.io \
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
               -u "${{ secrets.GHCR_USERNAME }}" \
-              -p "${{ secrets.GHCR_TOKEN }}"
+              --password-stdin
 
             echo "========================================"
-            echo "PULLING ARM64 IMAGES"
+            echo "PULLING LATEST EMS IMAGES"
             echo "========================================"
 
             docker compose pull
 
             echo "========================================"
-            echo "STOPPING CURRENT EMS"
+            echo "STARTING EMS"
             echo "========================================"
 
+            docker compose up -d --remove-orphans
 
             echo "========================================"
-            echo "STARTING NEW EMS"
+            echo "WAITING FOR BACKEND"
             echo "========================================"
 
-            docker compose up -d
+            for i in $(seq 1 15); do
 
-            echo "========================================"
-            echo "WAITING FOR CONTAINERS"
-            echo "========================================"
+              if curl -fsS --connect-timeout 2 \
+                http://127.0.0.1:4040/health \
+                > /tmp/ems-health.json; then
 
-            sleep 5
-
-            docker compose ps
-
-            echo "========================================"
-            echo "BACKEND STATUS"
-            echo "========================================"
-
-            if ! docker inspect ems-backend \
-              --format '{{.State.Status}}' | grep -q running; then
-
-              echo "Backend container FAILED"
-
-              docker logs --tail 150 ems-backend || true
-
-              exit 1
-
-            fi
-
-            echo "Backend container RUNNING"
-
-            echo "========================================"
-            echo "BACKEND ARCHITECTURE"
-            echo "========================================"
-
-            docker inspect ems-backend \
-              --format 'Container={{.Name}} Image={{.Config.Image}}'
-
-            docker image inspect \
-              ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest \
-              --format 'Image={{.Architecture}}/{{.Os}}'
-
-            echo "========================================"
-            echo "BACKEND HEALTH CHECK"
-            echo "========================================"
-
-            for i in $(seq 1 10); do
-
-              if curl -fsS http://127.0.0.1:4040/health > /tmp/ems-health.json; then
-
-                echo "Backend health check SUCCESS"
+                echo "Backend is READY"
 
                 cat /tmp/ems-health.json
 
                 break
-
               fi
 
-              echo "Backend not ready"
-              echo "Attempt $i/10"
+              echo "Backend not ready - attempt $i/15"
 
-              sleep 2
-
-              if [ "$i" -eq 10 ]; then
+              if [ "$i" -eq 15 ]; then
 
                 echo "Backend health check FAILED"
 
@@ -268,34 +162,33 @@ jobs:
 
                 echo "========== BACKEND LOGS =========="
 
-                docker logs --tail 150 ems-backend || true
+                docker logs --tail 100 ems-backend || true
 
                 exit 1
-
               fi
+
+              sleep 1
 
             done
 
             echo "========================================"
-            echo "FRONTEND HEALTH CHECK"
+            echo "WAITING FOR FRONTEND"
             echo "========================================"
 
-            for i in $(seq 1 10); do
+            for i in $(seq 1 15); do
 
-              if curl -fsS http://127.0.0.1:3020/ > /dev/null; then
+              if curl -fsS --connect-timeout 2 \
+                http://127.0.0.1:3020/ \
+                > /dev/null; then
 
-                echo "Frontend health check SUCCESS"
+                echo "Frontend is READY"
 
                 break
-
               fi
 
-              echo "Frontend not ready"
-              echo "Attempt $i/10"
+              echo "Frontend not ready - attempt $i/15"
 
-              sleep 2
-
-              if [ "$i" -eq 10 ]; then
+              if [ "$i" -eq 15 ]; then
 
                 echo "Frontend health check FAILED"
 
@@ -303,41 +196,39 @@ jobs:
 
                 echo "========== FRONTEND LOGS =========="
 
-                docker logs --tail 150 ems-frontend || true
+                docker logs --tail 100 ems-frontend || true
 
                 exit 1
-
               fi
+
+              sleep 1
 
             done
 
             echo "========================================"
-            echo "WORKER CHECK"
+            echo "CHECKING WORKER"
             echo "========================================"
 
-            if ! docker inspect ems-worker \
+            if docker inspect ems-worker \
               --format '{{.State.Status}}' | grep -q running; then
+
+              echo "Worker is RUNNING"
+
+            else
 
               echo "Worker FAILED"
 
-              docker logs --tail 150 ems-worker || true
+              docker logs --tail 100 ems-worker || true
 
               exit 1
 
             fi
 
-            echo "Worker RUNNING"
-
             echo "========================================"
-            echo "FINAL STATUS"
+            echo "FINAL EMS STATUS"
             echo "========================================"
 
             docker compose ps
-
-            echo "========================================"
-            echo "CLEANING UNUSED IMAGES"
-            echo "========================================"
-
 
             echo "========================================"
             echo "EMS DEPLOYMENT SUCCESSFUL"
@@ -425,9 +316,7 @@ jobs:
     runs-on: ubuntu-latest
 
     needs:
-      - build-backend
-      - build-frontend
-      - build-worker
+      - build
       - deploy
 
     if: failure()
