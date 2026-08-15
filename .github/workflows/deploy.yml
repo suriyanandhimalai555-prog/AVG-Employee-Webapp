@@ -166,7 +166,7 @@ jobs:
 
             set -e
 
-            cd /root/otp/apps/AVG-Employee-Webapp
+            cd /home/ubuntu/otp/apps/AVG-Employee-Webapp
 
             echo "========================================"
             echo "EMS DEPLOYMENT"
@@ -196,13 +196,12 @@ jobs:
             echo "STOPPING CURRENT EMS"
             echo "========================================"
 
-            docker compose down
 
             echo "========================================"
             echo "STARTING NEW EMS"
             echo "========================================"
 
-            docker compose up -d --force-recreate
+            docker compose up -d
 
             echo "========================================"
             echo "WAITING FOR CONTAINERS"
@@ -244,7 +243,7 @@ jobs:
             echo "BACKEND HEALTH CHECK"
             echo "========================================"
 
-            for i in $(seq 1 12); do
+            for i in $(seq 1 10); do
 
               if curl -fsS http://127.0.0.1:4040/health > /tmp/ems-health.json; then
 
@@ -257,11 +256,11 @@ jobs:
               fi
 
               echo "Backend not ready"
-              echo "Attempt $i/12"
+              echo "Attempt $i/10"
 
-              sleep 5
+              sleep 2
 
-              if [ "$i" -eq 12 ]; then
+              if [ "$i" -eq 10 ]; then
 
                 echo "Backend health check FAILED"
 
@@ -281,7 +280,7 @@ jobs:
             echo "FRONTEND HEALTH CHECK"
             echo "========================================"
 
-            for i in $(seq 1 12); do
+            for i in $(seq 1 10); do
 
               if curl -fsS http://127.0.0.1:3020/ > /dev/null; then
 
@@ -292,11 +291,11 @@ jobs:
               fi
 
               echo "Frontend not ready"
-              echo "Attempt $i/12"
+              echo "Attempt $i/10"
 
-              sleep 3
+              sleep 2
 
-              if [ "$i" -eq 12 ]; then
+              if [ "$i" -eq 10 ]; then
 
                 echo "Frontend health check FAILED"
 
@@ -339,7 +338,6 @@ jobs:
             echo "CLEANING UNUSED IMAGES"
             echo "========================================"
 
-            docker image prune -af
 
             echo "========================================"
             echo "EMS DEPLOYMENT SUCCESSFUL"
