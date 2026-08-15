@@ -14,8 +14,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      ####################################################
+      # Checkout
+      ####################################################
+
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      ####################################################
+      # Docker Buildx + QEMU
+      ####################################################
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      ####################################################
+      # Login to GHCR
+      ####################################################
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -28,49 +47,52 @@ jobs:
       # Backend
       ####################################################
 
-      - name: Build Backend Image
-        run: |
-          docker build \
-            --no-cache \
-            -f Dockerfile.backend \
-            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest .
-
-      - name: Push Backend Image
-        run: |
-          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest
+      - name: Build and Push Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          no-cache: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:${{ github.sha }}
 
       ####################################################
       # Frontend
       ####################################################
 
-      - name: Build Frontend Image
-        run: |
-          docker build \
-            --no-cache \
-            -f Dockerfile.frontend \
-            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest .
-
-      - name: Push Frontend Image
-        run: |
-          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest
+      - name: Build and Push Frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          no-cache: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:${{ github.sha }}
 
       ####################################################
       # Worker
       ####################################################
 
-      - name: Build Worker Image
-        run: |
-          docker build \
-            --no-cache \
-            -f Dockerfile.worker \
-            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest .
-
-      - name: Push Worker Image
-        run: |
-          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
+      - name: Build and Push Worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/amd64,linux/arm64
+          push: true
+          no-cache: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:${{ github.sha }}
 
       ####################################################
-      # Deploy
+      # Deploy to AWS VPS
       ####################################################
 
       - name: Deploy to VPS
@@ -82,24 +104,173 @@ jobs:
           port: 22
           timeout: 60s
           command_timeout: 20m
+
           script: |
             set -e
 
             cd /root/otp/apps/AVG-Employee-Webapp
 
+            echo "========================================"
+            echo "EMS DEPLOYMENT"
+            echo "========================================"
+
+            echo "Server architecture:"
+            uname -m
+
+            echo "Docker architecture:"
+            docker info --format '{{.Architecture}}'
+
+            echo "========================================"
+            echo "Login to GHCR"
+            echo "========================================"
+
             docker login ghcr.io \
               -u ${{ secrets.GHCR_USERNAME }} \
               -p ${{ secrets.GHCR_TOKEN }}
 
+            echo "========================================"
+            echo "Pulling multi-architecture images"
+            echo "========================================"
+
             docker compose pull
+
+            echo "========================================"
+            echo "Stopping EMS"
+            echo "========================================"
 
             docker compose down
 
+            echo "========================================"
+            echo "Starting EMS"
+            echo "========================================"
+
             docker compose up -d --force-recreate
 
-            docker image prune -af
+            echo "========================================"
+            echo "Waiting for containers"
+            echo "========================================"
+
+            sleep 10
 
             docker compose ps
+
+            echo "========================================"
+            echo "Checking Backend Container"
+            echo "========================================"
+
+            if ! docker inspect ems-backend \
+              --format '{{.State.Status}}' | grep -q running; then
+
+              echo "Backend container is NOT running"
+
+              docker logs --tail 100 ems-backend || true
+
+              exit 1
+            fi
+
+            echo "Backend container is running"
+
+            echo "========================================"
+            echo "Checking Backend Architecture"
+            echo "========================================"
+
+            docker image inspect \
+              ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest \
+              --format '{{.Architecture}}/{{.Os}}'
+
+            echo "========================================"
+            echo "Backend Health Check"
+            echo "========================================"
+
+            for i in $(seq 1 12); do
+
+              if curl -fsS http://127.0.0.1:4040/health > /tmp/ems-health.json; then
+
+                echo "Backend health check SUCCESS"
+
+                cat /tmp/ems-health.json
+
+                break
+              fi
+
+              echo "Backend not ready..."
+              echo "Attempt $i/12"
+
+              sleep 5
+
+              if [ "$i" -eq 12 ]; then
+
+                echo "Backend health check FAILED"
+
+                docker compose ps
+
+                echo "========== BACKEND LOGS =========="
+
+                docker logs --tail 150 ems-backend || true
+
+                exit 1
+              fi
+
+            done
+
+            echo "========================================"
+            echo "Frontend Health Check"
+            echo "========================================"
+
+            for i in $(seq 1 12); do
+
+              if curl -fsS http://127.0.0.1:3020/ > /dev/null; then
+
+                echo "Frontend health check SUCCESS"
+
+                break
+              fi
+
+              echo "Frontend not ready..."
+              echo "Attempt $i/12"
+
+              sleep 5
+
+              if [ "$i" -eq 12 ]; then
+
+                echo "Frontend health check FAILED"
+
+                docker compose ps
+
+                echo "========== FRONTEND LOGS =========="
+
+                docker logs --tail 150 ems-frontend || true
+
+                exit 1
+              fi
+
+            done
+
+            echo "========================================"
+            echo "Worker Check"
+            echo "========================================"
+
+            if ! docker inspect ems-worker \
+              --format '{{.State.Status}}' | grep -q running; then
+
+              echo "Worker is NOT running"
+
+              docker logs --tail 100 ems-worker || true
+
+              exit 1
+            fi
+
+            echo "Worker is running"
+
+            echo "========================================"
+            echo "Final EMS Status"
+            echo "========================================"
+
+            docker compose ps
+
+            echo "========================================"
+            echo "EMS DEPLOYMENT SUCCESSFUL"
+            echo "========================================"
 
       ####################################################
       # Success Email
@@ -125,30 +296,52 @@ jobs:
             deepakavgprimetech@gmail.com
 
           html_body: |
-            <h2>Deployment Successful</h2>
+            <h2>✅ EMS Deployment Successful</h2>
 
-            <table border="1" cellpadding="8">
+            <p>The EMS application has been successfully deployed.</p>
+
+            <table border="1" cellpadding="8" cellspacing="0">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
               </tr>
+
               <tr>
                 <td><b>Branch</b></td>
                 <td>${{ github.ref_name }}</td>
               </tr>
+
               <tr>
                 <td><b>Commit</b></td>
                 <td>${{ github.sha }}</td>
               </tr>
+
               <tr>
                 <td><b>Developer</b></td>
                 <td>${{ github.actor }}</td>
               </tr>
+
+              <tr>
+                <td><b>Deployment</b></td>
+                <td>Docker / AWS VPS</td>
+              </tr>
+
+              <tr>
+                <td><b>Architecture</b></td>
+                <td>linux/amd64 + linux/arm64</td>
+              </tr>
+
               <tr>
                 <td><b>Status</b></td>
                 <td>SUCCESS</td>
               </tr>
             </table>
+
+            <br>
+
+            <p>
+              Backend, Frontend and Worker containers passed their health checks.
+            </p>
 
       ####################################################
       # Failure Email
@@ -174,27 +367,46 @@ jobs:
             deepakavgprimetech@gmail.com
 
           html_body: |
-            <h2>Deployment Failed</h2>
+            <h2>❌ EMS Deployment Failed</h2>
 
-            <table border="1" cellpadding="8">
+            <p>
+              The EMS deployment failed during the GitHub Actions deployment process.
+            </p>
+
+            <table border="1" cellpadding="8" cellspacing="0">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
               </tr>
+
               <tr>
                 <td><b>Branch</b></td>
                 <td>${{ github.ref_name }}</td>
               </tr>
+
               <tr>
                 <td><b>Commit</b></td>
                 <td>${{ github.sha }}</td>
               </tr>
+
               <tr>
                 <td><b>Developer</b></td>
                 <td>${{ github.actor }}</td>
               </tr>
+
+              <tr>
+                <td><b>Deployment</b></td>
+                <td>Docker / AWS VPS</td>
+              </tr>
+
               <tr>
                 <td><b>Status</b></td>
                 <td>FAILED</td>
               </tr>
             </table>
+
+            <br>
+
+            <p>
+              Please check the GitHub Actions workflow logs for the exact failure reason.
+            </p>
