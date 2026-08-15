@@ -10,31 +10,27 @@ permissions:
   packages: write
 
 jobs:
-  deploy:
+
+  ############################################################
+  # BACKEND
+  ############################################################
+
+  build-backend:
+    name: Build Backend
     runs-on: ubuntu-latest
 
     steps:
 
-      ####################################################
-      # Checkout
-      ####################################################
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      ####################################################
-      # Docker Buildx + QEMU
-      ####################################################
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      ####################################################
-      # Login to GHCR
-      ####################################################
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -43,57 +39,118 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      ####################################################
-      # Backend
-      ####################################################
-
       - name: Build and Push Backend
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.backend
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
-          no-cache: true
           tags: |
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:${{ github.sha }}
+          cache-from: type=gha,scope=ems-backend
+          cache-to: type=gha,mode=max,scope=ems-backend
 
-      ####################################################
-      # Frontend
-      ####################################################
+
+  ############################################################
+  # FRONTEND
+  ############################################################
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and Push Frontend
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.frontend
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
-          no-cache: true
           tags: |
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:latest
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=ems-frontend
+          cache-to: type=gha,mode=max,scope=ems-frontend
 
-      ####################################################
-      # Worker
-      ####################################################
+
+  ############################################################
+  # WORKER
+  ############################################################
+
+  build-worker:
+    name: Build Worker
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and Push Worker
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.worker
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           push: true
-          no-cache: true
           tags: |
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:latest
             ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-worker:${{ github.sha }}
+          cache-from: type=gha,scope=ems-worker
+          cache-to: type=gha,mode=max,scope=ems-worker
 
-      ####################################################
-      # Deploy to AWS VPS
-      ####################################################
+
+  ############################################################
+  # DEPLOY
+  ############################################################
+
+  deploy:
+    name: Deploy EMS to AWS
+    runs-on: ubuntu-latest
+
+    needs:
+      - build-backend
+      - build-frontend
+      - build-worker
+
+    steps:
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.2.2
@@ -106,6 +163,7 @@ jobs:
           command_timeout: 20m
 
           script: |
+
             set -e
 
             cd /root/otp/apps/AVG-Employee-Webapp
@@ -121,65 +179,69 @@ jobs:
             docker info --format '{{.Architecture}}'
 
             echo "========================================"
-            echo "Login to GHCR"
+            echo "LOGIN TO GHCR"
             echo "========================================"
 
             docker login ghcr.io \
-              -u ${{ secrets.GHCR_USERNAME }} \
-              -p ${{ secrets.GHCR_TOKEN }}
+              -u "${{ secrets.GHCR_USERNAME }}" \
+              -p "${{ secrets.GHCR_TOKEN }}"
 
             echo "========================================"
-            echo "Pulling multi-architecture images"
+            echo "PULLING ARM64 IMAGES"
             echo "========================================"
 
             docker compose pull
 
             echo "========================================"
-            echo "Stopping EMS"
+            echo "STOPPING CURRENT EMS"
             echo "========================================"
 
             docker compose down
 
             echo "========================================"
-            echo "Starting EMS"
+            echo "STARTING NEW EMS"
             echo "========================================"
 
             docker compose up -d --force-recreate
 
             echo "========================================"
-            echo "Waiting for containers"
+            echo "WAITING FOR CONTAINERS"
             echo "========================================"
 
-            sleep 10
+            sleep 5
 
             docker compose ps
 
             echo "========================================"
-            echo "Checking Backend Container"
+            echo "BACKEND STATUS"
             echo "========================================"
 
             if ! docker inspect ems-backend \
               --format '{{.State.Status}}' | grep -q running; then
 
-              echo "Backend container is NOT running"
+              echo "Backend container FAILED"
 
-              docker logs --tail 100 ems-backend || true
+              docker logs --tail 150 ems-backend || true
 
               exit 1
+
             fi
 
-            echo "Backend container is running"
+            echo "Backend container RUNNING"
 
             echo "========================================"
-            echo "Checking Backend Architecture"
+            echo "BACKEND ARCHITECTURE"
             echo "========================================"
+
+            docker inspect ems-backend \
+              --format 'Container={{.Name}} Image={{.Config.Image}}'
 
             docker image inspect \
               ghcr.io/${{ secrets.GHCR_USERNAME }}/ems-backend:latest \
-              --format '{{.Architecture}}/{{.Os}}'
+              --format 'Image={{.Architecture}}/{{.Os}}'
 
             echo "========================================"
-            echo "Backend Health Check"
+            echo "BACKEND HEALTH CHECK"
             echo "========================================"
 
             for i in $(seq 1 12); do
@@ -191,9 +253,10 @@ jobs:
                 cat /tmp/ems-health.json
 
                 break
+
               fi
 
-              echo "Backend not ready..."
+              echo "Backend not ready"
               echo "Attempt $i/12"
 
               sleep 5
@@ -209,12 +272,13 @@ jobs:
                 docker logs --tail 150 ems-backend || true
 
                 exit 1
+
               fi
 
             done
 
             echo "========================================"
-            echo "Frontend Health Check"
+            echo "FRONTEND HEALTH CHECK"
             echo "========================================"
 
             for i in $(seq 1 12); do
@@ -224,12 +288,13 @@ jobs:
                 echo "Frontend health check SUCCESS"
 
                 break
+
               fi
 
-              echo "Frontend not ready..."
+              echo "Frontend not ready"
               echo "Attempt $i/12"
 
-              sleep 5
+              sleep 3
 
               if [ "$i" -eq 12 ]; then
 
@@ -242,47 +307,67 @@ jobs:
                 docker logs --tail 150 ems-frontend || true
 
                 exit 1
+
               fi
 
             done
 
             echo "========================================"
-            echo "Worker Check"
+            echo "WORKER CHECK"
             echo "========================================"
 
             if ! docker inspect ems-worker \
               --format '{{.State.Status}}' | grep -q running; then
 
-              echo "Worker is NOT running"
+              echo "Worker FAILED"
 
-              docker logs --tail 100 ems-worker || true
+              docker logs --tail 150 ems-worker || true
 
               exit 1
+
             fi
 
-            echo "Worker is running"
+            echo "Worker RUNNING"
 
             echo "========================================"
-            echo "Final EMS Status"
+            echo "FINAL STATUS"
             echo "========================================"
 
             docker compose ps
 
             echo "========================================"
+            echo "CLEANING UNUSED IMAGES"
+            echo "========================================"
+
+            docker image prune -af
+
+            echo "========================================"
             echo "EMS DEPLOYMENT SUCCESSFUL"
             echo "========================================"
 
-      ####################################################
-      # Success Email
-      ####################################################
+
+  ############################################################
+  # SUCCESS EMAIL
+  ############################################################
+
+  success-email:
+    name: Send Success Email
+    runs-on: ubuntu-latest
+
+    needs:
+      - deploy
+
+    if: success()
+
+    steps:
 
       - name: Send Success Email
-        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: ${{ secrets.SMTP_PORT }}
           secure: true
+
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
 
@@ -296,11 +381,10 @@ jobs:
             deepakavgprimetech@gmail.com
 
           html_body: |
-            <h2>✅ EMS Deployment Successful</h2>
+            <h2>EMS Deployment Successful</h2>
 
-            <p>The EMS application has been successfully deployed.</p>
+            <table border="1" cellpadding="8">
 
-            <table border="1" cellpadding="8" cellspacing="0">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
@@ -322,38 +406,43 @@ jobs:
               </tr>
 
               <tr>
-                <td><b>Deployment</b></td>
-                <td>Docker / AWS VPS</td>
-              </tr>
-
-              <tr>
                 <td><b>Architecture</b></td>
-                <td>linux/amd64 + linux/arm64</td>
+                <td>ARM64</td>
               </tr>
 
               <tr>
                 <td><b>Status</b></td>
                 <td>SUCCESS</td>
               </tr>
+
             </table>
 
-            <br>
 
-            <p>
-              Backend, Frontend and Worker containers passed their health checks.
-            </p>
+  ############################################################
+  # FAILURE EMAIL
+  ############################################################
 
-      ####################################################
-      # Failure Email
-      ####################################################
+  failure-email:
+    name: Send Failure Email
+    runs-on: ubuntu-latest
+
+    needs:
+      - build-backend
+      - build-frontend
+      - build-worker
+      - deploy
+
+    if: failure()
+
+    steps:
 
       - name: Send Failure Email
-        if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: ${{ secrets.SMTP_PORT }}
           secure: true
+
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
 
@@ -367,13 +456,10 @@ jobs:
             deepakavgprimetech@gmail.com
 
           html_body: |
-            <h2>❌ EMS Deployment Failed</h2>
+            <h2>EMS Deployment Failed</h2>
 
-            <p>
-              The EMS deployment failed during the GitHub Actions deployment process.
-            </p>
+            <table border="1" cellpadding="8">
 
-            <table border="1" cellpadding="8" cellspacing="0">
               <tr>
                 <td><b>Repository</b></td>
                 <td>${{ github.repository }}</td>
@@ -395,18 +481,13 @@ jobs:
               </tr>
 
               <tr>
-                <td><b>Deployment</b></td>
-                <td>Docker / AWS VPS</td>
+                <td><b>Architecture</b></td>
+                <td>ARM64</td>
               </tr>
 
               <tr>
                 <td><b>Status</b></td>
                 <td>FAILED</td>
               </tr>
+
             </table>
-
-            <br>
-
-            <p>
-              Please check the GitHub Actions workflow logs for the exact failure reason.
-            </p>
