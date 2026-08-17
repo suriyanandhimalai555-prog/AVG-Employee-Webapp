@@ -1,7 +1,6 @@
-
 services:
   backend:
-    image: ghcr.io/suriyanandhimalai555-prog/ems-backend:latest
+    image: ghcr.io/suriyanandhimalai555-prog/ems-backend:${IMAGE_TAG:-latest}
     container_name: ems-backend
     restart: always
     env_file:
@@ -10,7 +9,7 @@ services:
       - "4040:4040"
 
   frontend:
-    image: ghcr.io/suriyanandhimalai555-prog/ems-frontend:latest
+    image: ghcr.io/suriyanandhimalai555-prog/ems-frontend:${IMAGE_TAG:-latest}
     container_name: ems-frontend
     restart: always
     ports:
@@ -19,7 +18,7 @@ services:
       - backend
 
   worker:
-    image: ghcr.io/suriyanandhimalai555-prog/ems-worker:latest
+    image: ghcr.io/suriyanandhimalai555-prog/ems-worker:${IMAGE_TAG:-latest}
     container_name: ems-worker
     restart: always
     env_file:
