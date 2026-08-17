@@ -18,7 +18,7 @@ import {
   Settings2, IndianRupee, Building2, Gem, Coins,
   Layers, Landmark, Edit2, Check, X, Loader2,
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
-  MessageCircle, Smartphone,
+  MessageCircle, Smartphone, UserX, RotateCcw, CalendarX, MapPin,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -48,6 +48,10 @@ import {
   useUpdateGoldCoinEligibilityBypassSettingMutation,
   useGetDailyCollectionReconciliationSettingQuery,
   useUpdateDailyCollectionReconciliationSettingMutation,
+  useGetAutoDeactivationSettingQuery,
+  useUpdateAutoDeactivationSettingMutation,
+  useGetDeactivatedUsersQuery,
+  useReactivateUserMutation,
   useGetBranchesQuery,
   useSetHeadBranchMutation,
   useGetMobileAppVersionQuery,
@@ -1270,6 +1274,207 @@ const DailyCollectionReconciliationToggle = () => {
   );
 };
 
+// Master switch + editable threshold for the chronic-absentee auto-deactivation
+// sweep. The toggle and the threshold both write through the same mutation, so
+// each action carries the other's current value to avoid clobbering it.
+const AutoDeactivationToggle = () => {
+  const { data, isLoading }   = useGetAutoDeactivationSettingQuery();
+  const [updateSetting, { isLoading: saving }] = useUpdateAutoDeactivationSettingMutation();
+  const enabled       = data?.enabled === true;
+  const thresholdDays = data?.thresholdDays ?? 90;
+
+  // Draft mirrors the fetched threshold until the user edits it.
+  const [draftDays, setDraftDays] = useState('');
+  const [daysError, setDaysError] = useState('');
+  useEffect(() => { setDraftDays(String(thresholdDays)); }, [thresholdDays]);
+
+  const toggle = async () => {
+    try {
+      // Carry the current threshold so flipping the switch doesn't reset it.
+      await updateSetting({ enabled: !enabled, thresholdDays }).unwrap();
+    } catch {
+      // Error surfaces on next refetch; the switch stays put.
+    }
+  };
+
+  const dirty = draftDays !== '' && Number(draftDays) !== thresholdDays;
+
+  const saveDays = async () => {
+    const n = Number(draftDays);
+    if (!Number.isInteger(n) || n < 7 || n > 365) {
+      setDaysError('Enter a whole number between 7 and 365.');
+      return;
+    }
+    setDaysError('');
+    try {
+      await updateSetting({ enabled, thresholdDays: n }).unwrap();
+    } catch {
+      setDaysError('Could not save. Try again.');
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+              <UserX size={16} className="text-red-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-navy">Auto-Deactivation</p>
+              <p className="text-xs text-navy/40 mt-0.5">
+                {enabled
+                  ? `ON — ABM / Sales Officer / OA accounts with no attendance for ${thresholdDays} days are deactivated daily.`
+                  : 'OFF — the daily chronic-absentee sweep is paused; no accounts are auto-deactivated.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={isLoading || saving}
+            aria-label={enabled ? 'Disable auto-deactivation' : 'Enable auto-deactivation'}
+            className="flex-shrink-0 tactile-press disabled:opacity-50"
+          >
+            {saving
+              ? <Loader2 size={34} className="animate-spin text-navy/30" />
+              : enabled
+                ? <ToggleRight size={34} className="text-emerald-600" />
+                : <ToggleLeft  size={34} className="text-navy/30" />}
+          </button>
+        </div>
+
+        {/* Threshold editor */}
+        <div className="mt-3 flex items-center gap-2">
+          <label className="text-xs font-bold text-navy/50">Threshold (days)</label>
+          <input
+            type="number"
+            min={7}
+            max={365}
+            value={draftDays}
+            onChange={(e) => setDraftDays(e.target.value)}
+            className={`${SCHEME_INPUT_CLASS} w-24`}
+          />
+          {dirty && (
+            <button
+              type="button"
+              onClick={saveDays}
+              disabled={saving}
+              className="flex items-center gap-1 px-3 py-2 bg-indigo text-white font-bold text-[11px] rounded-xl tactile-press disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Save
+            </button>
+          )}
+        </div>
+        {daysError && <p className="text-[11px] font-bold text-red-500 mt-1.5">{daysError}</p>}
+      </div>
+    </div>
+  );
+};
+
+// Lists accounts paused by the auto-deactivation sweep and lets Management
+// restore them. Reuses the existing /users/deactivated + reactivate endpoints
+// (opened to Management alongside MD).
+const DeactivatedAccountsSection = () => {
+  const { data: deactivated = [], isLoading } = useGetDeactivatedUsersQuery();
+  const [reactivateUser] = useReactivateUserMutation();
+  const [reactivatingId, setReactivatingId] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleReactivate = async (id) => {
+    setReactivatingId(id);
+    setError(null);
+    try {
+      await reactivateUser(id).unwrap();
+    } catch (err) {
+      setError(err?.data?.error?.message || 'Reactivation failed. Please try again.');
+    } finally {
+      setReactivatingId(null);
+    }
+  };
+
+  return (
+    <div className="px-4 md:px-0 mb-4">
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+            <UserX size={16} className="text-red-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-navy">Deactivated Accounts</p>
+            <p className="text-xs text-navy/40 mt-0.5">
+              Accounts paused for chronic absence. Reactivate to restore login.
+            </p>
+          </div>
+        </div>
+
+        {error && <p className="text-[11px] font-bold text-red-500 mb-2">{error}</p>}
+
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 size={20} className="animate-spin text-navy/30" />
+          </div>
+        ) : deactivated.length === 0 ? (
+          <div className="px-3 py-5 text-center">
+            <p className="text-xs text-navy/40">No deactivated accounts.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {deactivated.map((u) => (
+              <div
+                key={u.id}
+                className="flex items-center gap-3 p-3 bg-navy/[0.02] rounded-xl border border-border"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-navy text-sm truncate">{u.name}</p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                    <span className="text-[10px] font-bold text-navy/30 uppercase tracking-wider">
+                      {u.role?.replace(/_/g, ' ')}
+                    </span>
+                    {u.branch_name && (
+                      <span className="text-[10px] text-navy/25 font-medium flex items-center gap-1">
+                        <MapPin size={9} />
+                        {u.branch_name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-50 px-2 py-0.5 rounded-full">
+                      <CalendarX size={9} />
+                      {u.days_inactive} {u.days_inactive === 1 ? 'day' : 'days'} inactive
+                    </span>
+                    {u.last_present_date && (
+                      <span className="text-[10px] text-navy/30 font-medium">
+                        Last seen {new Date(u.last_present_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                    {!u.last_present_date && (
+                      <span className="text-[10px] text-navy/25 font-medium">No attendance on record</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleReactivate(u.id)}
+                  disabled={reactivatingId === u.id}
+                  className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-bold text-[11px] rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {reactivatingId === u.id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <RotateCcw size={12} />}
+                  Reactivate
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ManagementControlCenter = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -1309,6 +1514,8 @@ export const ManagementControlCenter = () => {
       {user?.role === 'management' && <LssEligibilityBypassToggle />}
       {user?.role === 'management' && <GoldCoinEligibilityBypassToggle />}
       {user?.role === 'management' && <DailyCollectionReconciliationToggle />}
+      {user?.role === 'management' && <AutoDeactivationToggle />}
+      {user?.role === 'management' && <DeactivatedAccountsSection />}
       {user?.role === 'management' && <HeadBranchSetting />}
       {user?.role === 'management' && <MobileAppVersionSetting />}
 

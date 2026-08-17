@@ -40,6 +40,11 @@ export const CONFIG_ROLES: readonly RoleValue[] = [Role.MD, Role.DIRECTOR, Role.
 // including MD-entered ones.  Director is excluded (config-only).
 export const SCHEME_ADMIN_ROLES: readonly RoleValue[] = [Role.MD, Role.MANAGEMENT];
 
+// Roles that may view AND reactivate auto-deactivated (chronic-absentee) accounts.
+// Management-only: it owns the auto-deactivation toggle/threshold, so it also
+// manages the fallout. MD deliberately excluded — this is a back-office concern.
+export const DEACTIVATED_USERS_MANAGE_ROLES: readonly RoleValue[] = [Role.MANAGEMENT];
+
 // Roles permitted to read scheme listings (everyone except OA/CLIENT)
 export const READER_ROLES: readonly RoleValue[] = [
   Role.MD, Role.DIRECTOR, Role.GM, Role.BRANCH_MANAGER,

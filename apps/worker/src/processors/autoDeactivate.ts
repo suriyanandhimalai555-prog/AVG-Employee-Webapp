@@ -2,7 +2,14 @@ import { db } from '../db';
 import { redis } from '../redis';
 
 const DEACTIVATION_ROLES = ['abm', 'sales_officer', 'oa'];
-const ABSENCE_THRESHOLD_DAYS = 60;
+
+// Master switch + threshold now live in app_settings (management-controlled).
+// The worker can't import apps/api/src/shared, so it reads the keys inline —
+// same pattern as whatsapp-dispatch.ts. Fallback keeps the sweep sane if a seed
+// row is ever missing (mirrors AUTO_DEACTIVATION_DEFAULT_DAYS on the API side).
+const AUTO_DEACTIVATION_ENABLED_KEY = 'auto_deactivation_enabled';
+const AUTO_DEACTIVATION_THRESHOLD_KEY = 'auto_deactivation_threshold_days';
+const DEFAULT_THRESHOLD_DAYS = 90;
 
 const getISTDate = (): string =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -11,15 +18,42 @@ const getISTDate = (): string =>
  * Runs once per day at 23:45 IST (after auto-absent finalises the day at 23:30).
  *
  * Deactivates ABM / Sales Officer / OA accounts that have had zero present,
- * half_day, or field attendance in the last 60 calendar days. Only targets
- * accounts that are still is_active = true — re-runs are safe (idempotent).
+ * half_day, or field attendance in the last <threshold> calendar days. Only
+ * targets accounts that are still is_active = true — re-runs are safe (idempotent).
  *
- * Accounts created fewer than ABSENCE_THRESHOLD_DAYS ago are exempt so new
- * joiners are never immediately caught by this sweep.
+ * The master switch (auto_deactivation_enabled) and the threshold in days
+ * (auto_deactivation_threshold_days) are read fresh from app_settings each run,
+ * so Management can pause the sweep or change the window without a redeploy.
+ *
+ * Accounts created fewer than <threshold> days ago are exempt so new joiners are
+ * never immediately caught by this sweep.
  */
 export const processAutoDeactivate = async (): Promise<void> => {
   const todayIST = getISTDate();
-  console.log(`🔄 Auto-deactivate: checking for chronic absentees on ${todayIST}`);
+
+  // Master switch — read fresh; missing/false row means the feature is paused.
+  const enabledRes = await db.query(
+    `SELECT value FROM app_settings WHERE key = $1`,
+    [AUTO_DEACTIVATION_ENABLED_KEY]
+  );
+  if (enabledRes.rows[0]?.value !== true) {
+    console.log('⏸️  Auto-deactivate: disabled by management toggle — skipping');
+    return;
+  }
+
+  // Absence threshold in days — JSONB number arrives as a JS number; fall back
+  // to the default if the seed is missing or holds a non-positive value.
+  const thresholdRes = await db.query(
+    `SELECT value FROM app_settings WHERE key = $1`,
+    [AUTO_DEACTIVATION_THRESHOLD_KEY]
+  );
+  const rawThreshold = thresholdRes.rows[0]?.value;
+  const thresholdDays =
+    typeof rawThreshold === 'number' && rawThreshold > 0 ? rawThreshold : DEFAULT_THRESHOLD_DAYS;
+
+  console.log(
+    `🔄 Auto-deactivate: checking for chronic absentees (>${thresholdDays}d) on ${todayIST}`
+  );
 
   const candidates = await db.query<{ id: string; name: string; role: string }>(
     `SELECT u.id, u.name, u.role
@@ -33,7 +67,7 @@ export const processAutoDeactivate = async (): Promise<void> => {
            AND a.date >= ($3::date - ($2 - 1) * INTERVAL '1 day')
            AND a.status IN ('present', 'half_day', 'field')
        )`,
-    [DEACTIVATION_ROLES, ABSENCE_THRESHOLD_DAYS, todayIST]
+    [DEACTIVATION_ROLES, thresholdDays, todayIST]
   );
 
   if (candidates.rows.length === 0) {
@@ -50,7 +84,7 @@ export const processAutoDeactivate = async (): Promise<void> => {
         `UPDATE users
          SET is_active           = false,
              deactivated_at      = NOW(),
-             deactivation_reason = 'auto_absent_60d'
+             deactivation_reason = 'auto_absent'
          WHERE id = $1 AND is_active = true
          RETURNING id`,
         [user.id]

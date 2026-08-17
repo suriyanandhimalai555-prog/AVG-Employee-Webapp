@@ -17,13 +17,23 @@ import {
   isEligibilityBypassEnabled,
 } from '../../shared/eligibility-bypass-guard';
 import { RECONCILIATION_KEY, isReconciliationEnabled } from '../../shared/reconciliation-guard';
+import {
+  AUTO_DEACTIVATION_ENABLED_KEY,
+  AUTO_DEACTIVATION_THRESHOLD_KEY,
+  isAutoDeactivationEnabled,
+  getAutoDeactivationThresholdDays,
+} from '../../shared/auto-deactivation-guard';
+
+// TS: settings values are booleans or numbers (both round-trip cleanly through JSONB).
+type SettingValue = boolean | number;
 
 // TS: Read the current value before overwriting so we can write old_value to history.
 // Returns null when the key doesn't exist yet (first write after seed, or missing seed).
-async function readCurrentValue(db: Pool, key: string): Promise<boolean | null> {
+// Booleans and numbers come back from JSONB already parsed to their JS type.
+async function readCurrentValue(db: Pool, key: string): Promise<SettingValue | null> {
   const res = await db.query(`SELECT value FROM app_settings WHERE key = $1`, [key]);
   if (res.rows.length === 0) return null;
-  return res.rows[0].value === true;
+  return res.rows[0].value;
 }
 
 // TS: Append one row to the audit history AFTER the upsert so old_value is captured
@@ -31,8 +41,8 @@ async function readCurrentValue(db: Pool, key: string): Promise<boolean | null> 
 async function appendHistory(
   db: Pool,
   key: string,
-  oldValue: boolean | null,
-  newValue: boolean,
+  oldValue: SettingValue | null,
+  newValue: SettingValue,
   changedBy: string
 ): Promise<void> {
   await db.query(
@@ -51,7 +61,7 @@ async function appendHistory(
 async function upsertWithAudit(
   db: Pool,
   key: string,
-  enabled: boolean,
+  enabled: SettingValue,
   updatedBy: string
 ): Promise<void> {
   const oldValue = await readCurrentValue(db, key);
@@ -156,5 +166,27 @@ export const SettingsService = {
   ): Promise<{ enabled: boolean }> {
     await upsertWithAudit(db, RECONCILIATION_KEY, enabled, updatedBy);
     return { enabled };
+  },
+
+  // ─── Auto-deactivation ───────────────────────────────────────────────────────
+
+  // Read the master switch + absence threshold via the shared guard readers so the
+  // worker and the settings endpoint can never disagree.
+  async getAutoDeactivation(db: Pool): Promise<{ enabled: boolean; thresholdDays: number }> {
+    const enabled = await isAutoDeactivationEnabled(db);
+    const thresholdDays = await getAutoDeactivationThresholdDays(db);
+    return { enabled, thresholdDays };
+  },
+
+  // Upsert both keys (each with its own audit row). Upserts survive a missing seed.
+  async setAutoDeactivation(
+    db: Pool,
+    enabled: boolean,
+    thresholdDays: number,
+    updatedBy: string
+  ): Promise<{ enabled: boolean; thresholdDays: number }> {
+    await upsertWithAudit(db, AUTO_DEACTIVATION_ENABLED_KEY, enabled, updatedBy);
+    await upsertWithAudit(db, AUTO_DEACTIVATION_THRESHOLD_KEY, thresholdDays, updatedBy);
+    return { enabled, thresholdDays };
   },
 };

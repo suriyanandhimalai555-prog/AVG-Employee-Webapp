@@ -1968,6 +1968,20 @@ export const apiSlice = createApi({
       invalidatesTags: ['AppSettings'],
     }),
 
+    // Auto-deactivation: master switch + absence threshold (days). Management only for PUT.
+    // Returns { enabled, thresholdDays }.
+    getAutoDeactivationSetting: builder.query({
+      query: () => '/settings/auto-deactivation',
+      transformResponse: (response) => response.data,
+      providesTags: ['AppSettings'],
+    }),
+
+    updateAutoDeactivationSetting: builder.mutation({
+      query: (data) => ({ url: '/settings/auto-deactivation', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['AppSettings'],
+    }),
+
     // ─── Daily Collection Reconciliation ───
     // GET /reconciliation/summary/today?branchId=
     getTodayCollectionSummary: builder.query({
@@ -2236,6 +2250,7 @@ export const {
   useGetLandPlotsQuery,
   useUpdateLandPlotMutation,
   useGetLandBookingsQuery,
+  useGetLandBookingRefAvailabilityQuery,
   useCreateLandBookingMutation,
   useGetLandBookingQuery,
   useRecordLandAdvanceMutation,
@@ -2295,6 +2310,8 @@ export const {
   useUpdateGoldCoinEligibilityBypassSettingMutation,
   useGetDailyCollectionReconciliationSettingQuery,
   useUpdateDailyCollectionReconciliationSettingMutation,
+  useGetAutoDeactivationSettingQuery,
+  useUpdateAutoDeactivationSettingMutation,
   useGetTodayCollectionSummaryQuery,
   useSubmitDailyCollectionSummaryMutation,
   useUpdateDailyCollectionSummaryMutation,

@@ -41,3 +41,14 @@ export const UpdateDailyCollectionReconciliationSchema = z.object({
 
 // TS: inferred type keeps service + route in sync
 export type UpdateDailyCollectionReconciliationInput = z.infer<typeof UpdateDailyCollectionReconciliationSchema>;
+
+// Body for PUT /settings/auto-deactivation — management toggles the chronic-absentee
+// sweep and sets the absence threshold (in days). Unlike the other settings this
+// carries a numeric value alongside the boolean; bounds keep the threshold sane.
+export const UpdateAutoDeactivationSchema = z.object({
+  enabled: z.boolean(),
+  thresholdDays: z.number().int().min(7).max(365),
+});
+
+// TS: inferred type keeps service + route in sync
+export type UpdateAutoDeactivationInput = z.infer<typeof UpdateAutoDeactivationSchema>;

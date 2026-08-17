@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
 import {
   Users, CheckCircle2,
   Search, Filter, Download, MapPin,
   ArrowRight, ChevronLeft, ChevronRight, Clock, ShieldCheck, Activity, Globe, Loader2, RefreshCw,
-  UserX, Building2, LogOut, X, AlertTriangle, RotateCcw, CalendarX,
+  UserX, Building2, LogOut, X,
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -20,8 +19,6 @@ import {
   useAdminCorrectMutation,
   useAdminMarkMutation,
   useGetPhotoUrlQuery,
-  useGetDeactivatedUsersQuery,
-  useReactivateUserMutation,
 } from '../store/api/apiSlice';
 
 const PAGE_SIZE = 50;
@@ -81,27 +78,6 @@ export const AdminDashboard = () => {
     selectedEmployee?.photo_key,
     { skip: !selectedEmployee?.photo_key }
   );
-
-  const [reactivatingId, setReactivatingId] = useState(null);
-  const [reactivateError, setReactivateError] = useState(null);
-
-  const { data: deactivatedUsers = [], isLoading: deactivatedLoading } = useGetDeactivatedUsersQuery(
-    undefined,
-    { skip: user?.role !== 'md' }
-  );
-  const [reactivateUser] = useReactivateUserMutation();
-
-  const handleReactivate = async (userId) => {
-    setReactivatingId(userId);
-    setReactivateError(null);
-    try {
-      await reactivateUser(userId).unwrap();
-    } catch (err) {
-      setReactivateError(err?.data?.error?.message || 'Reactivation failed');
-    } finally {
-      setReactivatingId(null);
-    }
-  };
 
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
@@ -542,95 +518,6 @@ export const AdminDashboard = () => {
               </button>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* ── Deactivated Members (MD only) ── */}
-      {user?.role === 'md' && (deactivatedLoading || deactivatedUsers.length > 0) && (
-        <div className="mb-32">
-          <div className="flex items-center gap-3 mb-4 sm:mb-5">
-            <div className="p-2 bg-red-50 rounded-xl text-red-500">
-              <AlertTriangle size={14} />
-            </div>
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.3em] font-mono">
-              Auto-Deactivated Members
-            </p>
-            <span className="ml-auto text-[10px] font-bold text-red-400 bg-red-50 px-2.5 py-1 rounded-full">
-              {deactivatedUsers.length} {deactivatedUsers.length === 1 ? 'account' : 'accounts'}
-            </span>
-          </div>
-
-          {reactivateError && (
-            <div className="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 font-medium flex items-center gap-2">
-              <AlertTriangle size={13} />
-              {reactivateError}
-            </div>
-          )}
-
-          {deactivatedLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 size={22} className="animate-spin text-navy/20" />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {deactivatedUsers.map((u) => (
-                <motion.div
-                  key={u.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-xl card-shadow border border-red-100/60 p-4 sm:p-5 flex items-center gap-4"
-                >
-                  {/* Avatar placeholder */}
-                  <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center shrink-0">
-                    <UserX size={16} className="text-red-400" />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-navy text-sm truncate">{u.name}</p>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-                      <span className="text-[10px] font-bold text-navy/30 uppercase tracking-wider">
-                        {u.role?.replace(/_/g, ' ')}
-                      </span>
-                      {u.branch_name && (
-                        <span className="text-[10px] text-navy/25 font-medium flex items-center gap-1">
-                          <MapPin size={9} />
-                          {u.branch_name}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-50 px-2 py-0.5 rounded-full">
-                        <CalendarX size={9} />
-                        {u.days_inactive} {u.days_inactive === 1 ? 'day' : 'days'} inactive
-                      </span>
-                      {u.last_present_date && (
-                        <span className="text-[10px] text-navy/30 font-medium">
-                          Last seen {new Date(u.last_present_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                      )}
-                      {!u.last_present_date && (
-                        <span className="text-[10px] text-navy/25 font-medium">No attendance on record</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Reactivate button */}
-                  <button
-                    onClick={() => handleReactivate(u.id)}
-                    disabled={reactivatingId === u.id}
-                    className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-bold text-[11px] rounded-xl transition-colors disabled:opacity-50"
-                  >
-                    {reactivatingId === u.id
-                      ? <Loader2 size={12} className="animate-spin" />
-                      : <RotateCcw size={12} />
-                    }
-                    Reactivate
-                  </button>
-                </motion.div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

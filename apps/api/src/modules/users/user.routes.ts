@@ -4,7 +4,7 @@ import { UserService } from './user.service';
 import { CreateUserSchema, UpdateOversightBranchesSchema } from './user.schema';
 import { AppError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { USER_DIRECTORY_ROLES } from '../../shared/role-constants';
+import { USER_DIRECTORY_ROLES, DEACTIVATED_USERS_MANAGE_ROLES } from '../../shared/role-constants';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
@@ -248,13 +248,13 @@ export default async function userRoutes(fastify: FastifyInstance) {
   });
 
   // ─── GET /api/users/deactivated ───
-  // MD only — lists auto-deactivated ABM/SO/OA accounts with absence duration.
+  // MD + Management — lists auto-deactivated ABM/SO/OA accounts with absence duration.
   fastify.get('/deactivated', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'md') {
+      if (!(DEACTIVATED_USERS_MANAGE_ROLES as readonly string[]).includes(req.user.role)) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
       const data = await UserService.getDeactivatedUsers(fastify.db, fastify.redis);
@@ -265,13 +265,13 @@ export default async function userRoutes(fastify: FastifyInstance) {
   });
 
   // ─── POST /api/users/:id/reactivate ───
-  // MD only — restores an auto-deactivated account.
+  // MD + Management — restores an auto-deactivated account.
   fastify.post('/:id/reactivate', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      if (req.user.role !== 'md') {
+      if (!(DEACTIVATED_USERS_MANAGE_ROLES as readonly string[]).includes(req.user.role)) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
       const { id } = req.params as { id: string };

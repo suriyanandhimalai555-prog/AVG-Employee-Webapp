@@ -15,6 +15,9 @@
 //   GET /settings/daily-collection-reconciliation    → any authenticated user
 //   PUT /settings/daily-collection-reconciliation    → management only
 //
+//   GET /settings/auto-deactivation                  → any authenticated user
+//   PUT /settings/auto-deactivation                  → management only
+//
 // All PUT endpoints enforce Role.MANAGEMENT with a hardcoded check.
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
@@ -27,6 +30,7 @@ import {
   UpdateLssEligibilityBypassSchema,
   UpdateGoldCoinEligibilityBypassSchema,
   UpdateDailyCollectionReconciliationSchema,
+  UpdateAutoDeactivationSchema,
 } from './settings.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
@@ -170,6 +174,39 @@ export default async function settingsRoutes(fastify: FastifyInstance): Promise<
       }
       const body = UpdateDailyCollectionReconciliationSchema.parse(request.body);
       const data = await SettingsService.setDailyCollectionReconciliation(fastify.db, body.enabled, req.user.id);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── Auto-deactivation ───────────────────────────────────────────────────────
+
+  // GET /settings/auto-deactivation — any authenticated user reads switch + threshold
+  fastify.get('/auto-deactivation', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const data = await SettingsService.getAutoDeactivation(fastify.db);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // PUT /settings/auto-deactivation — management toggles the sweep and sets the threshold
+  fastify.put('/auto-deactivation', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: hardcoded role check — mirrors the backdated-entry convention
+      if (req.user.role !== Role.MANAGEMENT) {
+        throw new ForbiddenError('Only Management can change auto-deactivation settings');
+      }
+      const body = UpdateAutoDeactivationSchema.parse(request.body);
+      const data = await SettingsService.setAutoDeactivation(
+        fastify.db,
+        body.enabled,
+        body.thresholdDays,
+        req.user.id
+      );
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });

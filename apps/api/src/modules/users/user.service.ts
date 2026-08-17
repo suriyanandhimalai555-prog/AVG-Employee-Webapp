@@ -532,7 +532,7 @@ export const UserService = {
     return docs;
   },
 
-  // ─── DEACTIVATED USERS (MD only) ───
+  // ─── DEACTIVATED USERS (MD + Management) ───
 
   async getDeactivatedUsers(db: Pool, redis: Redis): Promise<any[]> {
     const result = await db.query(
@@ -558,7 +558,7 @@ export const UserService = {
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.is_active = false
-         AND u.deactivation_reason = 'auto_absent_60d'
+         AND u.deactivation_reason = 'auto_absent'
        ORDER BY u.deactivated_at DESC`
     );
 
@@ -576,7 +576,7 @@ export const UserService = {
            deactivation_reason = NULL
        WHERE id = $1
          AND is_active = false
-         AND deactivation_reason = 'auto_absent_60d'
+         AND deactivation_reason = 'auto_absent'
        RETURNING id, name, role`,
       [targetUserId]
     );
