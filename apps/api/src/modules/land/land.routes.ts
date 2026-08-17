@@ -388,6 +388,22 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
+  // GET /land/bookings/ref-availability — per-branch booking ref picker
+  // Returns taken refs for the branch and a suggested next numeric ref.
+  // Must be registered BEFORE /bookings/:id so Fastify does not swallow it as a param.
+  fastify.get('/bookings/ref-availability', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        if (!READER_ROLES.has(req.user.role)) throw new ForbiddenError('Access denied');
+        // TS: resolveReadBranch handles null branchId for md/management via query param
+        const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
+        const data = await LandBookingsService.getBookingRefAvailability(fastify.db, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
   // GET /land/bookings/:id
   fastify.get('/bookings/:id', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {

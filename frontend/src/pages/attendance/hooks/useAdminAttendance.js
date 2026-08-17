@@ -47,9 +47,14 @@ export const useAdminAttendance = () => {
   const handleMarkSubmit = async () => {
     setAdminError(null);
     try {
+      // MarkModal exposes 'field' as a status button, but the API models field work as
+      // status='present' with mode='field' (status enum is present/absent/half_day only).
+      // Sending status:'field' fails Zod validation → 400, so translate it here.
+      const isField = markStatus === 'field';
       await adminMark({
         targetUserId: markModal.employee?.id,
-        status: markStatus,
+        status: isField ? 'present' : markStatus,
+        mode: isField ? 'field' : 'office',
         note: markNote || 'Marked by branch admin',
       }).unwrap();
       closeMarkModal();

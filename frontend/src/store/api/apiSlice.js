@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -1736,10 +1736,16 @@ export const apiSlice = createApi({
       providesTags: ['LandBookings'],
     }),
 
+    getLandBookingRefAvailability: builder.query({
+      query: (branchId) => `/land/bookings/ref-availability${branchId ? `?branchId=${branchId}` : ''}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['LandBookingRefs'],
+    }),
+
     createLandBooking: builder.mutation({
       query: (data) => ({ url: '/land/bookings', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: ['LandBookings', 'LandPlots', 'LandDashboard'],
+      invalidatesTags: ['LandBookings', 'LandPlots', 'LandDashboard', 'LandBookingRefs'],
     }),
 
     getLandBooking: builder.query({

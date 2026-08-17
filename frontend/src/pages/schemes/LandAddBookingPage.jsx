@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
@@ -6,6 +6,7 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useCreateLandBookingMutation,
   useGetLandEmployeesQuery,
+  useGetLandBookingRefAvailabilityQuery,
 } from '../../store/api/apiSlice';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
@@ -51,7 +52,25 @@ export const LandAddBookingPage = () => {
     { skip: !effectiveBranchId }
   );
 
+  // Per-branch booking ref availability — drives the number picker below the booking ID field.
+  const { data: refData } = useGetLandBookingRefAvailabilityQuery(
+    effectiveBranchId || '',
+    { skip: !effectiveBranchId }
+  );
+  const takenRefs    = refData?.takenRefs    || [];
+  const suggestedRef = refData?.suggestedRef || '';
+
   const [createBooking, { isLoading }] = useCreateLandBookingMutation();
+
+  // Auto-prefill the booking ID with the suggested next number when the picker
+  // data arrives and the field is still empty (covers both initial load and when
+  // management switches branches via BranchPicker).
+  useEffect(() => {
+    if (suggestedRef && !form.bookingRef) {
+      setForm(f => ({ ...f, bookingRef: suggestedRef }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestedRef, effectiveBranchId]);
 
   const handlePlotChange = (plotId, plot) => {
     setForm(f => ({ ...f, plotId }));
@@ -126,9 +145,49 @@ export const LandAddBookingPage = () => {
           </FormField>
         )}
 
-        <FormField label="Booking ID (Manual)" required>
+        <FormField label="Booking ID" required>
           <input type="text" value={form.bookingRef} onChange={set('bookingRef')}
-            placeholder="Enter booking reference" className={SCHEME_INPUT_CLASS} required />
+            placeholder="e.g. 001" className={SCHEME_INPUT_CLASS} required />
+
+          {/* Picker helper — only shown once branch is resolved */}
+          {effectiveBranchId && (
+            <div className="mt-2 space-y-1.5">
+              {/* Suggest next available number */}
+              {suggestedRef && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-navy/50 font-medium">Next available:</span>
+                  <span className="text-[11px] font-bold text-navy/70 font-mono">{suggestedRef}</span>
+                  <button type="button"
+                    onClick={() => setForm(f => ({ ...f, bookingRef: suggestedRef }))}
+                    className="text-[10px] font-bold text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
+                    Use
+                  </button>
+                </div>
+              )}
+              {/* Taken refs in this branch */}
+              {takenRefs.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-navy/40 mr-0.5">Taken:</span>
+                  {takenRefs.map(ref => (
+                    <span key={ref}
+                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-medium border ${
+                        form.bookingRef.trim() === ref
+                          ? 'bg-red-50 border-red-200 text-red-600'
+                          : 'bg-stone-100 border-stone-200 text-stone-500'
+                      }`}>
+                      {ref}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Inline warning when the typed ref is already taken */}
+              {form.bookingRef.trim() && takenRefs.includes(form.bookingRef.trim()) && (
+                <p className="text-[10px] font-medium text-red-500">
+                  This ID is already used in this branch — choose a different number.
+                </p>
+              )}
+            </div>
+          )}
         </FormField>
 
         <FormField label="Customer" required>

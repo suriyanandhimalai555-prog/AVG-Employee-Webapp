@@ -235,6 +235,13 @@ export const LandBookingsService = {
         );
       } catch (err: any) {
         if (err.code === '23505') {
+          // Disambiguate the two unique constraints that can fire on booking insert
+          if (err.constraint === 'land_bookings_branch_id_booking_ref_key') {
+            throw new ConflictError(`Booking ID "${payload.bookingRef.trim()}" is already used in this branch. Please pick a different number.`);
+          }
+          if (err.constraint === 'idx_land_bookings_plot_active') {
+            throw new ConflictError('This plot already has an active booking.');
+          }
           throw new ConflictError('Booking reference already exists, or plot already has an active booking');
         }
         throw err;
@@ -673,10 +680,19 @@ export const LandBookingsService = {
       if (fields.length === 0) throw new ValidationError('No fields to update');
 
       vals.push(bookingId, branchId);
-      const updated = await client.query(
-        `UPDATE land_bookings SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
-        vals
-      );
+      // TS: wrap the UPDATE so a duplicate booking_ref surfaces as a clean ConflictError
+      let updated: any;
+      try {
+        updated = await client.query(
+          `UPDATE land_bookings SET ${fields.join(', ')} WHERE id = $${idx} AND branch_id = $${idx + 1} RETURNING *`,
+          vals
+        );
+      } catch (err: any) {
+        if (err.code === '23505' && err.constraint === 'land_bookings_branch_id_booking_ref_key') {
+          throw new ConflictError(`Booking ID "${payload.bookingRef}" is already used in this branch. Please pick a different number.`);
+        }
+        throw err;
+      }
 
       // Shift the schedule for months not yet paid out; paid rows keep their
       // historical due/paid dates. Same addMonths loop as recordFullPayment so
@@ -1304,5 +1320,30 @@ export const LandBookingsService = {
       overduePayouts:      overduePayouts.rows[0].n,
       recentBookings:      recentResult.rows,
     };
+  },
+
+  // ─── BOOKING REF AVAILABILITY (used by the branch-scoped number picker) ──────
+  // Returns all booking_ref values already in use for the branch, plus a
+  // suggested next numeric ref (zero-padded to the width of the widest existing
+  // numeric ref, defaulting to 3 digits — "001").
+  async getBookingRefAvailability(db: Pool, branchId: string): Promise<{ takenRefs: string[]; suggestedRef: string }> {
+    // TS: result is a list of booking_ref strings for the given branch
+    const result = await db.query<{ booking_ref: string }>(
+      `SELECT booking_ref FROM land_bookings WHERE branch_id = $1 ORDER BY booking_ref`,
+      [branchId]
+    );
+    const takenRefs: string[] = result.rows.map(r => r.booking_ref);
+
+    // TS: extract purely-numeric refs to compute the next suggestion
+    const numericRefs = takenRefs.filter(r => /^\d+$/.test(r)).map(r => parseInt(r, 10));
+    const maxNum      = numericRefs.length > 0 ? Math.max(...numericRefs) : 0;
+    const nextNum     = maxNum + 1;
+
+    // TS: zero-pad to max width of existing numeric refs, min 3 digits (e.g. "001")
+    const maxWidth    = numericRefs.length > 0 ? Math.max(...takenRefs.filter(r => /^\d+$/.test(r)).map(r => r.length)) : 3;
+    const padWidth    = Math.max(maxWidth, 3);
+    const suggestedRef = String(nextNum).padStart(padWidth, '0');
+
+    return { takenRefs, suggestedRef };
   },
 };
