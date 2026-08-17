@@ -21,7 +21,7 @@ export const AddGoldMemberSchema = z.object({
 }).superRefine((data, ctx) => {
   if (data.firstPaymentMode !== 'cash' && !data.firstPaymentProofKey?.length) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: z.ZodIssueCode.custom, 
       message: 'firstPaymentProofKey is required for gpay and bank_receipt payments',
       path: ['firstPaymentProofKey'],
     });
