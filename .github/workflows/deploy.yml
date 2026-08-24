@@ -95,7 +95,7 @@ jobs:
           ####################################################
 
           build-args: |
-            VITE_API_URL=https://api.ems.avgprimetech.com
+            VITE_API_URL=https://ems.avgprimetech.com/api
 
           ####################################################
           # GITHUB ACTIONS CACHE
