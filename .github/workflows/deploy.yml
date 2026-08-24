@@ -116,7 +116,7 @@ jobs:
   ############################################################
 
   deploy:
-    name: Deploy EMS to AWS
+    name: Deploy EMS to Kubernetes
     runs-on: ubuntu-latest
 
     needs:
@@ -124,241 +124,77 @@ jobs:
 
     steps:
 
-      - name: Deploy EMS
+      - name: Deploy EMS to Kubernetes
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
-
           timeout: 30s
           command_timeout: 10m
 
           script: |
-
             set -e
-
-            ##################################################
-            # GO TO EMS DIRECTORY
-            ##################################################
 
             cd /home/ubuntu/otp/apps/AVG-Employee-Webapp
 
-            echo "========================================"
-            echo "EMS DEPLOYMENT"
-            echo "========================================"
-
-            echo "Server architecture:"
-            uname -m
-
-            echo "Docker architecture:"
-            docker info --format '{{.Architecture}}'
-
-            ##################################################
-            # DEPLOY EXACT COMMIT
-            ##################################################
-
             export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_USER="${{ secrets.GHCR_USERNAME }}"
 
             echo "========================================"
-            echo "DEPLOYMENT COMMIT"
+            echo "EMS KUBERNETES DEPLOYMENT"
             echo "========================================"
-
-            echo "IMAGE_TAG=$IMAGE_TAG"
-
-            ##################################################
-            # LOGIN TO GHCR
-            ##################################################
+            echo "Architecture: $(uname -m)"
+            echo "Commit: $IMAGE_TAG"
 
             echo "========================================"
-            echo "LOGIN GHCR"
+            echo "APPLYING KUBERNETES MANIFESTS"
             echo "========================================"
 
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
-              -u "${{ secrets.GHCR_USERNAME }}" \
-              --password-stdin
-
-            ##################################################
-            # SHOW IMAGES THAT WILL BE DEPLOYED
-            ##################################################
+            sudo kubectl apply -f k8s/backend.yaml
+            sudo kubectl apply -f k8s/frontend.yaml
+            sudo kubectl apply -f k8s/worker.yaml
 
             echo "========================================"
-            echo "EMS IMAGES"
+            echo "SETTING EXACT IMAGE TAGS"
             echo "========================================"
 
-            docker compose config | grep 'image:'
+            sudo kubectl -n ems set image deployment/ems-backend \
+              backend=ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}
 
-            ##################################################
-            # PULL EXACT COMMIT IMAGES
-            ##################################################
+            sudo kubectl -n ems set image deployment/ems-frontend \
+              frontend=ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}
 
-            echo "========================================"
-            echo "PULLING EMS IMAGES"
-            echo "========================================"
-
-            docker compose pull
-
-            ##################################################
-            # START EMS
-            ##################################################
+            sudo kubectl -n ems set image deployment/ems-worker \
+              worker=ghcr.io/${GHCR_USER}/ems-worker:${IMAGE_TAG}
 
             echo "========================================"
-            echo "STARTING EMS"
+            echo "WAITING FOR ROLLOUT"
             echo "========================================"
 
-            docker compose up -d --remove-orphans
-
-            ##################################################
-            # WAIT FOR BACKEND
-            ##################################################
+            sudo kubectl -n ems rollout status deployment/ems-backend --timeout=180s
+            sudo kubectl -n ems rollout status deployment/ems-frontend --timeout=180s
+            sudo kubectl -n ems rollout status deployment/ems-worker --timeout=180s
 
             echo "========================================"
-            echo "WAITING FOR BACKEND"
+            echo "EMS POD STATUS"
             echo "========================================"
 
-            for i in $(seq 1 30); do
-
-              if curl -fsS \
-                --connect-timeout 2 \
-                http://127.0.0.1:4040/health \
-                > /tmp/ems-health.json; then
-
-                echo "Backend is READY"
-
-                cat /tmp/ems-health.json
-
-                break
-
-              fi
-
-              echo "Backend not ready - attempt $i/30"
-
-              if [ "$i" -eq 30 ]; then
-
-                echo "Backend health check FAILED"
-
-                echo "========== COMPOSE STATUS =========="
-
-                docker compose ps
-
-                echo "========== BACKEND LOGS =========="
-
-                docker logs --tail 100 ems-backend || true
-
-                exit 1
-
-              fi
-
-              sleep 1
-
-            done
-
-            ##################################################
-            # WAIT FOR FRONTEND
-            ##################################################
+            sudo kubectl -n ems get pods -o wide
 
             echo "========================================"
-            echo "WAITING FOR FRONTEND"
+            echo "DEPLOYED IMAGES"
             echo "========================================"
 
-            for i in $(seq 1 30); do
-
-              if curl -fsS \
-                --connect-timeout 2 \
-                http://127.0.0.1:3020/ \
-                > /dev/null; then
-
-                echo "Frontend is READY"
-
-                break
-
-              fi
-
-              echo "Frontend not ready - attempt $i/30"
-
-              if [ "$i" -eq 30 ]; then
-
-                echo "Frontend health check FAILED"
-
-                echo "========== COMPOSE STATUS =========="
-
-                docker compose ps
-
-                echo "========== FRONTEND LOGS =========="
-
-                docker logs --tail 100 ems-frontend || true
-
-                exit 1
-
-              fi
-
-              sleep 1
-
-            done
-
-            ##################################################
-            # CHECK WORKER
-            ##################################################
+            sudo kubectl -n ems get deployment \
+              ems-backend ems-frontend ems-worker \
+              -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
 
             echo "========================================"
-            echo "CHECKING WORKER"
+            echo "EMS KUBERNETES DEPLOYMENT SUCCESSFUL"
             echo "========================================"
-
-            if docker inspect ems-worker \
-              --format '{{.State.Status}}' | grep -q '^running$'; then
-
-              echo "Worker is RUNNING"
-
-            else
-
-              echo "Worker FAILED"
-
-              echo "========== WORKER LOGS =========="
-
-              docker logs --tail 100 ems-worker || true
-
-              exit 1
-
-            fi
-
-            ##################################################
-            # VERIFY DEPLOYED IMAGE TAGS
-            ##################################################
-
-            echo "========================================"
-            echo "VERIFYING DEPLOYED IMAGES"
-            echo "========================================"
-
-            echo "Backend image:"
-            docker inspect ems-backend \
-              --format '{{.Config.Image}}'
-
-            echo "Frontend image:"
-            docker inspect ems-frontend \
-              --format '{{.Config.Image}}'
-
-            echo "Worker image:"
-            docker inspect ems-worker \
-              --format '{{.Config.Image}}'
-
-            ##################################################
-            # FINAL STATUS
-            ##################################################
-
-            echo "========================================"
-            echo "FINAL EMS STATUS"
-            echo "========================================"
-
-            docker compose ps
-
-            echo "========================================"
-            echo "EMS DEPLOYMENT SUCCESSFUL"
-            echo "========================================"
-
-            echo "Deployed commit:"
-            echo "$IMAGE_TAG"
-
+            echo "Deployed commit: $IMAGE_TAG"
   ############################################################
   # SUCCESS EMAIL
   ############################################################

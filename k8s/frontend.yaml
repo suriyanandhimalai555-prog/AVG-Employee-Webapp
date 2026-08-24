@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ems-frontend
+  namespace: ems
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app: ems-frontend
+
+  template:
+    metadata:
+      labels:
+        app: ems-frontend
+
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: frontend
+          image: ghcr.io/suriyanandhimalai555-prog/ems-frontend:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 80
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ems-frontend
+  namespace: ems
+spec:
+  type: ClusterIP
+  selector:
+    app: ems-frontend
+
+  ports:
+    - name: http
+      port: 3020
+      targetPort: 80
+      protocol: TCP
