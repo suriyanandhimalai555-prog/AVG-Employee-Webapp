@@ -155,6 +155,7 @@ jobs:
             sudo kubectl apply -f k8s/backend.yaml
             sudo kubectl apply -f k8s/frontend.yaml
             sudo kubectl apply -f k8s/worker.yaml
+            sudo kubectl apply -f k8s/hpa.yaml
 
             echo "========================================"
             echo "SETTING EXACT IMAGE TAGS"
