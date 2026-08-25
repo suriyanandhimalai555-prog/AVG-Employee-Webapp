@@ -1,5 +1,4 @@
 name: Deploy EMS
-
 on:
   push:
     branches:
@@ -71,6 +70,7 @@ jobs:
           provenance: false
           sbom: false
 
+
   deploy:
     name: Deploy EMS to Kubernetes
     runs-on: ubuntu-latest
@@ -98,51 +98,96 @@ jobs:
             export IMAGE_TAG="${{ github.sha }}"
             export GHCR_USER="${{ secrets.GHCR_USERNAME }}"
 
-            echo "EMS deployment started"
+            echo "=========================================="
+            echo "EMS DEPLOYMENT STARTED"
+            echo "=========================================="
             echo "Architecture: $(uname -m)"
             echo "Commit: ${IMAGE_TAG}"
+            echo "GHCR User: ${GHCR_USER}"
 
+            echo ""
             echo "Reading currently running images"
 
-            OLD_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend -o jsonpath='{.spec.template.spec.containers[0].image}')
-            OLD_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend -o jsonpath='{.spec.template.spec.containers[0].image}')
-            OLD_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker -o jsonpath='{.spec.template.spec.containers[0].image}')
+            OLD_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
 
-            echo "Old backend image: ${OLD_BACKEND_IMAGE}"
+            OLD_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            OLD_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            echo "Old backend image:  ${OLD_BACKEND_IMAGE}"
             echo "Old frontend image: ${OLD_FRONTEND_IMAGE}"
-            echo "Old worker image: ${OLD_WORKER_IMAGE}"
+            echo "Old worker image:   ${OLD_WORKER_IMAGE}"
+
+            echo ""
+            echo "Current deployment status"
+
+            sudo kubectl -n ems get deployment \
+              ems-backend ems-frontend ems-worker \
+              -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,REPLICAS:.spec.replicas,READY:.status.readyReplicas"
 
             rollback() {
               echo ""
-              echo "Deployment failed"
-              echo "Starting automatic rollback"
+              echo "=========================================="
+              echo "DEPLOYMENT FAILED"
+              echo "STARTING AUTOMATIC ROLLBACK"
+              echo "=========================================="
 
               set +e
 
-              echo "Rolling back backend"
-              sudo kubectl -n ems rollout undo deployment/ems-backend
+              echo ""
+              echo "Restoring backend image"
 
-              echo "Rolling back frontend"
-              sudo kubectl -n ems rollout undo deployment/ems-frontend
+              sudo kubectl -n ems set image deployment/ems-backend \
+                backend="${OLD_BACKEND_IMAGE}"
 
-              echo "Rolling back worker"
-              sudo kubectl -n ems rollout undo deployment/ems-worker
+              echo ""
+              echo "Restoring frontend image"
 
+              sudo kubectl -n ems set image deployment/ems-frontend \
+                frontend="${OLD_FRONTEND_IMAGE}"
+
+              echo ""
+              echo "Restoring worker image"
+
+              sudo kubectl -n ems set image deployment/ems-worker \
+                worker="${OLD_WORKER_IMAGE}"
+
+              echo ""
+              echo "Forcing replicas to 1"
+
+              sudo kubectl -n ems scale deployment/ems-backend --replicas=1
+              sudo kubectl -n ems scale deployment/ems-frontend --replicas=1
+              sudo kubectl -n ems scale deployment/ems-worker --replicas=1
+
+              echo ""
               echo "Waiting for backend rollback"
-              sudo kubectl -n ems rollout status deployment/ems-backend --timeout=180s
 
+              sudo kubectl -n ems rollout status deployment/ems-backend \
+                --timeout=180s
+
+              echo ""
               echo "Waiting for frontend rollback"
-              sudo kubectl -n ems rollout status deployment/ems-frontend --timeout=180s
 
+              sudo kubectl -n ems rollout status deployment/ems-frontend \
+                --timeout=180s
+
+              echo ""
               echo "Waiting for worker rollback"
-              sudo kubectl -n ems rollout status deployment/ems-worker --timeout=180s
 
-              echo "Verifying rolled-back images"
+              sudo kubectl -n ems rollout status deployment/ems-worker \
+                --timeout=180s
+
+              echo ""
+              echo "Verifying rollback"
 
               sudo kubectl -n ems get deployment \
                 ems-backend ems-frontend ems-worker \
-                -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
+                -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,REPLICAS:.spec.replicas,READY:.status.readyReplicas"
 
+              echo ""
               echo "Automatic rollback completed"
 
               exit 1
@@ -150,44 +195,105 @@ jobs:
 
             trap rollback ERR
 
-            echo "Applying Kubernetes manifests"
+            echo ""
+            echo "=========================================="
+            echo "REMOVING ANY EXISTING HPA"
+            echo "=========================================="
+
+            sudo kubectl -n ems delete hpa \
+              ems-backend-hpa \
+              ems-frontend-hpa \
+              --ignore-not-found=true
+
+            echo ""
+            echo "Checking for remaining HPA resources"
+
+            if sudo kubectl -n ems get hpa --no-headers 2>/dev/null | grep -q .; then
+              echo "WARNING: HPA resources still exist"
+              sudo kubectl -n ems get hpa
+
+              echo ""
+              echo "Removing all HPA resources from EMS namespace"
+
+              sudo kubectl -n ems delete hpa --all
+            else
+              echo "No HPA resources found"
+            fi
+
+            echo ""
+            echo "=========================================="
+            echo "APPLYING KUBERNETES MANIFESTS"
+            echo "=========================================="
 
             sudo kubectl apply -f k8s/backend.yaml
             sudo kubectl apply -f k8s/frontend.yaml
             sudo kubectl apply -f k8s/worker.yaml
-            sudo kubectl apply -f k8s/hpa.yaml
 
-            echo "Deploying backend ${IMAGE_TAG}"
+            echo ""
+            echo "HPA is NOT applied."
+            echo "EMS will run with exactly 1 replica per deployment."
+
+            echo ""
+            echo "=========================================="
+            echo "DEPLOYING BACKEND"
+            echo "=========================================="
 
             sudo kubectl -n ems set image deployment/ems-backend \
               backend=ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}
 
-            echo "Deploying frontend ${IMAGE_TAG}"
+            echo ""
+            echo "=========================================="
+            echo "DEPLOYING FRONTEND"
+            echo "=========================================="
 
             sudo kubectl -n ems set image deployment/ems-frontend \
               frontend=ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}
 
-            echo "Deploying worker ${IMAGE_TAG}"
+            echo ""
+            echo "=========================================="
+            echo "DEPLOYING WORKER"
+            echo "=========================================="
 
             sudo kubectl -n ems set image deployment/ems-worker \
               worker=ghcr.io/${GHCR_USER}/ems-worker:${IMAGE_TAG}
 
-            echo "Waiting for backend rollout"
+            echo ""
+            echo "=========================================="
+            echo "FORCING SINGLE REPLICA"
+            echo "=========================================="
+
+            sudo kubectl -n ems scale deployment/ems-backend --replicas=1
+            sudo kubectl -n ems scale deployment/ems-frontend --replicas=1
+            sudo kubectl -n ems scale deployment/ems-worker --replicas=1
+
+            echo ""
+            echo "=========================================="
+            echo "WAITING FOR BACKEND ROLLOUT"
+            echo "=========================================="
 
             sudo kubectl -n ems rollout status deployment/ems-backend \
               --timeout=180s
 
-            echo "Waiting for frontend rollout"
+            echo ""
+            echo "=========================================="
+            echo "WAITING FOR FRONTEND ROLLOUT"
+            echo "=========================================="
 
             sudo kubectl -n ems rollout status deployment/ems-frontend \
               --timeout=180s
 
-            echo "Waiting for worker rollout"
+            echo ""
+            echo "=========================================="
+            echo "WAITING FOR WORKER ROLLOUT"
+            echo "=========================================="
 
             sudo kubectl -n ems rollout status deployment/ems-worker \
               --timeout=180s
 
-            echo "Checking pod readiness"
+            echo ""
+            echo "=========================================="
+            echo "CHECKING POD READINESS"
+            echo "=========================================="
 
             sudo kubectl -n ems wait \
               --for=condition=ready pod \
@@ -204,7 +310,45 @@ jobs:
               -l app=ems-worker \
               --timeout=120s
 
-            echo "Running production API smoke test"
+            echo ""
+            echo "=========================================="
+            echo "VERIFYING REPLICAS"
+            echo "=========================================="
+
+            BACKEND_REPLICAS=$(sudo kubectl -n ems get deployment ems-backend \
+              -o jsonpath='{.spec.replicas}')
+
+            FRONTEND_REPLICAS=$(sudo kubectl -n ems get deployment ems-frontend \
+              -o jsonpath='{.spec.replicas}')
+
+            WORKER_REPLICAS=$(sudo kubectl -n ems get deployment ems-worker \
+              -o jsonpath='{.spec.replicas}')
+
+            echo "Backend replicas:  ${BACKEND_REPLICAS}"
+            echo "Frontend replicas: ${FRONTEND_REPLICAS}"
+            echo "Worker replicas:   ${WORKER_REPLICAS}"
+
+            if [ "${BACKEND_REPLICAS}" != "1" ]; then
+              echo "Backend replica verification failed"
+              exit 1
+            fi
+
+            if [ "${FRONTEND_REPLICAS}" != "1" ]; then
+              echo "Frontend replica verification failed"
+              exit 1
+            fi
+
+            if [ "${WORKER_REPLICAS}" != "1" ]; then
+              echo "Worker replica verification failed"
+              exit 1
+            fi
+
+            echo "All deployments confirmed at 1 replica"
+
+            echo ""
+            echo "=========================================="
+            echo "RUNNING PRODUCTION API SMOKE TEST"
+            echo "=========================================="
 
             HTTP_STATUS=$(curl \
               --silent \
@@ -222,7 +366,10 @@ jobs:
               exit 1
             fi
 
-            echo "Checking API health endpoint"
+            echo ""
+            echo "=========================================="
+            echo "CHECKING API HEALTH ENDPOINT"
+            echo "=========================================="
 
             HEALTH_STATUS=$(curl \
               --silent \
@@ -242,15 +389,23 @@ jobs:
 
             echo "Production API checks passed"
 
-            echo "Verifying deployed images"
+            echo ""
+            echo "=========================================="
+            echo "VERIFYING DEPLOYED IMAGES"
+            echo "=========================================="
 
-            CURRENT_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend -o jsonpath='{.spec.template.spec.containers[0].image}')
-            CURRENT_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend -o jsonpath='{.spec.template.spec.containers[0].image}')
-            CURRENT_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker -o jsonpath='{.spec.template.spec.containers[0].image}')
+            CURRENT_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
 
-            echo "Current backend image: ${CURRENT_BACKEND_IMAGE}"
+            CURRENT_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            CURRENT_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            echo "Current backend image:  ${CURRENT_BACKEND_IMAGE}"
             echo "Current frontend image: ${CURRENT_FRONTEND_IMAGE}"
-            echo "Current worker image: ${CURRENT_WORKER_IMAGE}"
+            echo "Current worker image:   ${CURRENT_WORKER_IMAGE}"
 
             EXPECTED_BACKEND="ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}"
             EXPECTED_FRONTEND="ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}"
@@ -273,8 +428,42 @@ jobs:
 
             echo "All image checks passed"
 
-            echo "EMS deployment completed successfully"
+            echo ""
+            echo "=========================================="
+            echo "FINAL EMS DEPLOYMENT STATUS"
+            echo "=========================================="
+
+            sudo kubectl -n ems get deployment \
+              ems-backend ems-frontend ems-worker \
+              -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,REPLICAS:.spec.replicas,READY:.status.readyReplicas"
+
+            echo ""
+            echo "Pods:"
+
+            sudo kubectl -n ems get pods -o wide
+
+            echo ""
+            echo "HPA status:"
+
+            if sudo kubectl -n ems get hpa --no-headers 2>/dev/null | grep -q .; then
+              echo "ERROR: HPA resources still exist"
+              sudo kubectl -n ems get hpa
+              exit 1
+            else
+              echo "No HPA resources found"
+            fi
+
+            echo ""
+            echo "=========================================="
+            echo "EMS DEPLOYMENT COMPLETED SUCCESSFULLY"
+            echo "=========================================="
+
             echo "Deployed commit: ${IMAGE_TAG}"
+            echo "Backend replicas: 1"
+            echo "Frontend replicas: 1"
+            echo "Worker replicas: 1"
+            echo "HPA: Disabled"
+
 
   success-email:
     name: Send Success Email
@@ -337,6 +526,26 @@ jobs:
               </tr>
 
               <tr>
+                <td><b>Backend Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>Frontend Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>Worker Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>HPA</b></td>
+                <td>Disabled</td>
+              </tr>
+
+              <tr>
                 <td><b>Status</b></td>
                 <td>SUCCESS</td>
               </tr>
@@ -347,6 +556,7 @@ jobs:
               </tr>
 
             </table>
+
 
   failure-email:
     name: Send Failure Email
@@ -407,6 +617,26 @@ jobs:
               <tr>
                 <td><b>Architecture</b></td>
                 <td>ARM64</td>
+              </tr>
+
+              <tr>
+                <td><b>Backend Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>Frontend Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>Worker Replicas</b></td>
+                <td>1</td>
+              </tr>
+
+              <tr>
+                <td><b>HPA</b></td>
+                <td>Disabled</td>
               </tr>
 
               <tr>
