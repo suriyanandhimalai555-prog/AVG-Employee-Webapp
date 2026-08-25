@@ -39,7 +39,7 @@ export const Sidebar = () => {
         />
         <div className="min-w-0">
           <p className="text-[13px] font-black text-white tracking-tight leading-none truncate">
-            AgilaVetri Groups
+            AgilaVetri Group
           </p>
           <p className="text-[10px] font-medium text-white/30 mt-0.5 truncate tracking-wide">
             {currentUser?.branchName || 'Organization'}
