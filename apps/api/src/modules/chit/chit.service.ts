@@ -1137,8 +1137,8 @@ export const ChitService = {
             start_date, current_month, status, fill_deadline, is_combined,
             activated_at, activated_by, notes, created_by)
          VALUES ($1,$2,$3,$4,$5,CURRENT_DATE,2,$6,NOW() + ($9 * INTERVAL '1 day'),true,
-                 CASE WHEN $6 = 'active' THEN NOW() ELSE NULL END,
-                 CASE WHEN $6 = 'active' THEN $8  ELSE NULL END,
+                 CASE WHEN $6::text = 'active' THEN NOW() ELSE NULL END,
+                 CASE WHEN $6::text = 'active' THEN $8  ELSE NULL END,
                  $7,$8)
          RETURNING *`,
         [
