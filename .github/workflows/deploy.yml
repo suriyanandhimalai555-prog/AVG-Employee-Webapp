@@ -1,4 +1,5 @@
 name: Deploy EMS
+
 on:
   push:
     branches:
@@ -103,7 +104,6 @@ jobs:
             echo "=========================================="
             echo "Architecture: $(uname -m)"
             echo "Commit: ${IMAGE_TAG}"
-            echo "GHCR User: ${GHCR_USER}"
 
             echo ""
             echo "Reading currently running images"
@@ -122,11 +122,14 @@ jobs:
             echo "Old worker image:   ${OLD_WORKER_IMAGE}"
 
             echo ""
-            echo "Current deployment status"
+            echo "=========================================="
+            echo "CURRENT DEPLOYMENT STATUS"
+            echo "=========================================="
 
             sudo kubectl -n ems get deployment \
               ems-backend ems-frontend ems-worker \
               -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,REPLICAS:.spec.replicas,READY:.status.readyReplicas"
+
 
             rollback() {
               echo ""
@@ -181,7 +184,9 @@ jobs:
                 --timeout=180s
 
               echo ""
-              echo "Verifying rollback"
+              echo "=========================================="
+              echo "ROLLBACK VERIFICATION"
+              echo "=========================================="
 
               sudo kubectl -n ems get deployment \
                 ems-backend ems-frontend ems-worker \
@@ -195,6 +200,7 @@ jobs:
 
             trap rollback ERR
 
+
             echo ""
             echo "=========================================="
             echo "REMOVING ANY EXISTING HPA"
@@ -205,20 +211,13 @@ jobs:
               ems-frontend-hpa \
               --ignore-not-found=true
 
-            echo ""
-            echo "Checking for remaining HPA resources"
-
             if sudo kubectl -n ems get hpa --no-headers 2>/dev/null | grep -q .; then
-              echo "WARNING: HPA resources still exist"
-              sudo kubectl -n ems get hpa
-
-              echo ""
-              echo "Removing all HPA resources from EMS namespace"
-
+              echo "Removing remaining HPA resources"
               sudo kubectl -n ems delete hpa --all
             else
               echo "No HPA resources found"
             fi
+
 
             echo ""
             echo "=========================================="
@@ -233,6 +232,7 @@ jobs:
             echo "HPA is NOT applied."
             echo "EMS will run with exactly 1 replica per deployment."
 
+
             echo ""
             echo "=========================================="
             echo "DEPLOYING BACKEND"
@@ -240,6 +240,7 @@ jobs:
 
             sudo kubectl -n ems set image deployment/ems-backend \
               backend=ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}
+
 
             echo ""
             echo "=========================================="
@@ -249,6 +250,7 @@ jobs:
             sudo kubectl -n ems set image deployment/ems-frontend \
               frontend=ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}
 
+
             echo ""
             echo "=========================================="
             echo "DEPLOYING WORKER"
@@ -256,6 +258,7 @@ jobs:
 
             sudo kubectl -n ems set image deployment/ems-worker \
               worker=ghcr.io/${GHCR_USER}/ems-worker:${IMAGE_TAG}
+
 
             echo ""
             echo "=========================================="
@@ -266,6 +269,7 @@ jobs:
             sudo kubectl -n ems scale deployment/ems-frontend --replicas=1
             sudo kubectl -n ems scale deployment/ems-worker --replicas=1
 
+
             echo ""
             echo "=========================================="
             echo "WAITING FOR BACKEND ROLLOUT"
@@ -273,6 +277,7 @@ jobs:
 
             sudo kubectl -n ems rollout status deployment/ems-backend \
               --timeout=180s
+
 
             echo ""
             echo "=========================================="
@@ -282,6 +287,7 @@ jobs:
             sudo kubectl -n ems rollout status deployment/ems-frontend \
               --timeout=180s
 
+
             echo ""
             echo "=========================================="
             echo "WAITING FOR WORKER ROLLOUT"
@@ -290,25 +296,16 @@ jobs:
             sudo kubectl -n ems rollout status deployment/ems-worker \
               --timeout=180s
 
+
             echo ""
             echo "=========================================="
-            echo "CHECKING POD READINESS"
+            echo "VERIFYING DEPLOYMENTS"
             echo "=========================================="
 
-            sudo kubectl -n ems wait \
-              --for=condition=ready pod \
-              -l app=ems-backend \
-              --timeout=120s
+            sudo kubectl -n ems get deployment \
+              ems-backend ems-frontend ems-worker \
+              -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image,REPLICAS:.spec.replicas,READY:.status.readyReplicas"
 
-            sudo kubectl -n ems wait \
-              --for=condition=ready pod \
-              -l app=ems-frontend \
-              --timeout=120s
-
-            sudo kubectl -n ems wait \
-              --for=condition=ready pod \
-              -l app=ems-worker \
-              --timeout=120s
 
             echo ""
             echo "=========================================="
@@ -345,6 +342,7 @@ jobs:
 
             echo "All deployments confirmed at 1 replica"
 
+
             echo ""
             echo "=========================================="
             echo "RUNNING PRODUCTION API SMOKE TEST"
@@ -365,6 +363,7 @@ jobs:
               cat /tmp/ems-api-response.txt || true
               exit 1
             fi
+
 
             echo ""
             echo "=========================================="
@@ -388,6 +387,7 @@ jobs:
             fi
 
             echo "Production API checks passed"
+
 
             echo ""
             echo "=========================================="
@@ -428,6 +428,21 @@ jobs:
 
             echo "All image checks passed"
 
+
+            echo ""
+            echo "=========================================="
+            echo "VERIFYING HPA IS DISABLED"
+            echo "=========================================="
+
+            if sudo kubectl -n ems get hpa --no-headers 2>/dev/null | grep -q .; then
+              echo "ERROR: HPA resources still exist"
+              sudo kubectl -n ems get hpa
+              exit 1
+            else
+              echo "No HPA resources found"
+            fi
+
+
             echo ""
             echo "=========================================="
             echo "FINAL EMS DEPLOYMENT STATUS"
@@ -441,17 +456,6 @@ jobs:
             echo "Pods:"
 
             sudo kubectl -n ems get pods -o wide
-
-            echo ""
-            echo "HPA status:"
-
-            if sudo kubectl -n ems get hpa --no-headers 2>/dev/null | grep -q .; then
-              echo "ERROR: HPA resources still exist"
-              sudo kubectl -n ems get hpa
-              exit 1
-            else
-              echo "No HPA resources found"
-            fi
 
             echo ""
             echo "=========================================="
@@ -482,7 +486,6 @@ jobs:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: ${{ secrets.SMTP_PORT }}
           secure: true
-
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
 
