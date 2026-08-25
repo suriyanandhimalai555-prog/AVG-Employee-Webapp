@@ -116,7 +116,7 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Step 5: Feature Module Registration
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // API root endpoint
-  app.get('/api/', async () => ({
+  app.get('/', async () => ({
     success: true,
     message: 'AVG Employee API is running',
   }));
