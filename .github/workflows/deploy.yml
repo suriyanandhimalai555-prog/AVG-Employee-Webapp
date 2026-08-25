@@ -9,18 +9,11 @@ permissions:
   contents: read
   packages: write
 
-# Prevent two production deployments from running at the same time.
-# If a new commit is pushed while an older deployment is running,
-# the older workflow is cancelled.
 concurrency:
   group: ems-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-
-  ############################################################
-  # BUILD ALL EMS IMAGES
-  ############################################################
 
   build:
     name: Build EMS Images
@@ -28,7 +21,6 @@ jobs:
 
     strategy:
       fail-fast: false
-
       matrix:
         include:
           - name: backend
@@ -45,23 +37,11 @@ jobs:
 
     steps:
 
-      ########################################################
-      # CHECKOUT
-      ########################################################
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      ########################################################
-      # DOCKER BUILDX
-      ########################################################
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      ########################################################
-      # LOGIN TO GHCR
-      ########################################################
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -70,50 +50,26 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      ########################################################
-      # BUILD AND PUSH IMAGE
-      ########################################################
-
       - name: Build and Push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-
-          # GitHub runner is already ARM64.
-          # No QEMU/emulation is required.
           platforms: linux/arm64
-
           push: true
 
           tags: |
             ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ matrix.image }}:latest
             ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
 
-          ####################################################
-          # FRONTEND API URL
-          ####################################################
-
           build-args: |
             VITE_API_URL=https://ems.avgprimetech.com/api
-
-          ####################################################
-          # GITHUB ACTIONS CACHE
-          ####################################################
 
           cache-from: type=gha,scope=ems-${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=ems-${{ matrix.name }}
 
-          ####################################################
-          # DISABLE EXTRA ATTESTATIONS
-          ####################################################
-
           provenance: false
           sbom: false
-
-  ############################################################
-  # DEPLOY TO AWS ARM64 SERVER
-  ############################################################
 
   deploy:
     name: Deploy EMS to Kubernetes
@@ -132,73 +88,193 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 10m
+          command_timeout: 15m
 
           script: |
-            set -e
+            set -Eeuo pipefail
 
             cd /home/ubuntu/otp/apps/AVG-Employee-Webapp
 
             export IMAGE_TAG="${{ github.sha }}"
             export GHCR_USER="${{ secrets.GHCR_USERNAME }}"
 
-            echo "========================================"
-            echo "EMS KUBERNETES DEPLOYMENT"
-            echo "========================================"
+            echo "EMS deployment started"
             echo "Architecture: $(uname -m)"
-            echo "Commit: $IMAGE_TAG"
+            echo "Commit: ${IMAGE_TAG}"
 
-            echo "========================================"
-            echo "APPLYING KUBERNETES MANIFESTS"
-            echo "========================================"
+            echo "Reading currently running images"
+
+            OLD_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend -o jsonpath='{.spec.template.spec.containers[0].image}')
+            OLD_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend -o jsonpath='{.spec.template.spec.containers[0].image}')
+            OLD_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            echo "Old backend image: ${OLD_BACKEND_IMAGE}"
+            echo "Old frontend image: ${OLD_FRONTEND_IMAGE}"
+            echo "Old worker image: ${OLD_WORKER_IMAGE}"
+
+            rollback() {
+              echo ""
+              echo "Deployment failed"
+              echo "Starting automatic rollback"
+
+              set +e
+
+              echo "Rolling back backend"
+              sudo kubectl -n ems rollout undo deployment/ems-backend
+
+              echo "Rolling back frontend"
+              sudo kubectl -n ems rollout undo deployment/ems-frontend
+
+              echo "Rolling back worker"
+              sudo kubectl -n ems rollout undo deployment/ems-worker
+
+              echo "Waiting for backend rollback"
+              sudo kubectl -n ems rollout status deployment/ems-backend --timeout=180s
+
+              echo "Waiting for frontend rollback"
+              sudo kubectl -n ems rollout status deployment/ems-frontend --timeout=180s
+
+              echo "Waiting for worker rollback"
+              sudo kubectl -n ems rollout status deployment/ems-worker --timeout=180s
+
+              echo "Verifying rolled-back images"
+
+              sudo kubectl -n ems get deployment \
+                ems-backend ems-frontend ems-worker \
+                -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
+
+              echo "Automatic rollback completed"
+
+              exit 1
+            }
+
+            trap rollback ERR
+
+            echo "Applying Kubernetes manifests"
 
             sudo kubectl apply -f k8s/backend.yaml
             sudo kubectl apply -f k8s/frontend.yaml
             sudo kubectl apply -f k8s/worker.yaml
             sudo kubectl apply -f k8s/hpa.yaml
 
-            echo "========================================"
-            echo "SETTING EXACT IMAGE TAGS"
-            echo "========================================"
+            echo "Deploying backend ${IMAGE_TAG}"
 
             sudo kubectl -n ems set image deployment/ems-backend \
               backend=ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}
 
+            echo "Deploying frontend ${IMAGE_TAG}"
+
             sudo kubectl -n ems set image deployment/ems-frontend \
               frontend=ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}
+
+            echo "Deploying worker ${IMAGE_TAG}"
 
             sudo kubectl -n ems set image deployment/ems-worker \
               worker=ghcr.io/${GHCR_USER}/ems-worker:${IMAGE_TAG}
 
-            echo "========================================"
-            echo "WAITING FOR ROLLOUT"
-            echo "========================================"
+            echo "Waiting for backend rollout"
 
-            sudo kubectl -n ems rollout status deployment/ems-backend --timeout=180s
-            sudo kubectl -n ems rollout status deployment/ems-frontend --timeout=180s
-            sudo kubectl -n ems rollout status deployment/ems-worker --timeout=180s
+            sudo kubectl -n ems rollout status deployment/ems-backend \
+              --timeout=180s
 
-            echo "========================================"
-            echo "EMS POD STATUS"
-            echo "========================================"
+            echo "Waiting for frontend rollout"
 
-            sudo kubectl -n ems get pods -o wide
+            sudo kubectl -n ems rollout status deployment/ems-frontend \
+              --timeout=180s
 
-            echo "========================================"
-            echo "DEPLOYED IMAGES"
-            echo "========================================"
+            echo "Waiting for worker rollout"
 
-            sudo kubectl -n ems get deployment \
-              ems-backend ems-frontend ems-worker \
-              -o custom-columns="NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image"
+            sudo kubectl -n ems rollout status deployment/ems-worker \
+              --timeout=180s
 
-            echo "========================================"
-            echo "EMS KUBERNETES DEPLOYMENT SUCCESSFUL"
-            echo "========================================"
-            echo "Deployed commit: $IMAGE_TAG"
-  ############################################################
-  # SUCCESS EMAIL
-  ############################################################
+            echo "Checking pod readiness"
+
+            sudo kubectl -n ems wait \
+              --for=condition=ready pod \
+              -l app=ems-backend \
+              --timeout=120s
+
+            sudo kubectl -n ems wait \
+              --for=condition=ready pod \
+              -l app=ems-frontend \
+              --timeout=120s
+
+            sudo kubectl -n ems wait \
+              --for=condition=ready pod \
+              -l app=ems-worker \
+              --timeout=120s
+
+            echo "Running production API smoke test"
+
+            HTTP_STATUS=$(curl \
+              --silent \
+              --show-error \
+              --output /tmp/ems-api-response.txt \
+              --write-out "%{http_code}" \
+              --max-time 20 \
+              https://api.ems.avgprimetech.com/)
+
+            echo "API HTTP status: ${HTTP_STATUS}"
+
+            if [ "${HTTP_STATUS}" != "200" ]; then
+              echo "Production API smoke test failed"
+              cat /tmp/ems-api-response.txt || true
+              exit 1
+            fi
+
+            echo "Checking API health endpoint"
+
+            HEALTH_STATUS=$(curl \
+              --silent \
+              --show-error \
+              --output /tmp/ems-health-response.txt \
+              --write-out "%{http_code}" \
+              --max-time 20 \
+              https://api.ems.avgprimetech.com/health)
+
+            echo "Health HTTP status: ${HEALTH_STATUS}"
+
+            if [ "${HEALTH_STATUS}" != "200" ]; then
+              echo "Production health check failed"
+              cat /tmp/ems-health-response.txt || true
+              exit 1
+            fi
+
+            echo "Production API checks passed"
+
+            echo "Verifying deployed images"
+
+            CURRENT_BACKEND_IMAGE=$(sudo kubectl -n ems get deployment ems-backend -o jsonpath='{.spec.template.spec.containers[0].image}')
+            CURRENT_FRONTEND_IMAGE=$(sudo kubectl -n ems get deployment ems-frontend -o jsonpath='{.spec.template.spec.containers[0].image}')
+            CURRENT_WORKER_IMAGE=$(sudo kubectl -n ems get deployment ems-worker -o jsonpath='{.spec.template.spec.containers[0].image}')
+
+            echo "Current backend image: ${CURRENT_BACKEND_IMAGE}"
+            echo "Current frontend image: ${CURRENT_FRONTEND_IMAGE}"
+            echo "Current worker image: ${CURRENT_WORKER_IMAGE}"
+
+            EXPECTED_BACKEND="ghcr.io/${GHCR_USER}/ems-backend:${IMAGE_TAG}"
+            EXPECTED_FRONTEND="ghcr.io/${GHCR_USER}/ems-frontend:${IMAGE_TAG}"
+            EXPECTED_WORKER="ghcr.io/${GHCR_USER}/ems-worker:${IMAGE_TAG}"
+
+            if [ "${CURRENT_BACKEND_IMAGE}" != "${EXPECTED_BACKEND}" ]; then
+              echo "Backend image verification failed"
+              exit 1
+            fi
+
+            if [ "${CURRENT_FRONTEND_IMAGE}" != "${EXPECTED_FRONTEND}" ]; then
+              echo "Frontend image verification failed"
+              exit 1
+            fi
+
+            if [ "${CURRENT_WORKER_IMAGE}" != "${EXPECTED_WORKER}" ]; then
+              echo "Worker image verification failed"
+              exit 1
+            fi
+
+            echo "All image checks passed"
+
+            echo "EMS deployment completed successfully"
+            echo "Deployed commit: ${IMAGE_TAG}"
 
   success-email:
     name: Send Success Email
@@ -221,7 +297,7 @@ jobs:
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
 
-          subject: "✅ EMS Deployment Successful"
+          subject: "EMS Deployment Successful"
 
           from: ${{ secrets.SMTP_USERNAME }}
 
@@ -265,11 +341,12 @@ jobs:
                 <td>SUCCESS</td>
               </tr>
 
-            </table>
+              <tr>
+                <td><b>Rollback</b></td>
+                <td>Not required</td>
+              </tr>
 
-  ############################################################
-  # FAILURE EMAIL
-  ############################################################
+            </table>
 
   failure-email:
     name: Send Failure Email
@@ -293,7 +370,7 @@ jobs:
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
 
-          subject: "❌ EMS Deployment Failed"
+          subject: "EMS Deployment Failed - Automatic Rollback"
 
           from: ${{ secrets.SMTP_USERNAME }}
 
@@ -335,6 +412,11 @@ jobs:
               <tr>
                 <td><b>Status</b></td>
                 <td>FAILED</td>
+              </tr>
+
+              <tr>
+                <td><b>Action</b></td>
+                <td>Automatic rollback initiated</td>
               </tr>
 
             </table>
