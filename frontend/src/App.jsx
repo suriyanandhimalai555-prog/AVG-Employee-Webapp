@@ -19,6 +19,7 @@ import { AlertsTab } from './pages/attendance/AlertsTab';
 // lean. The everyday flow (Attendance landing + Profile + Login) is eager-loaded;
 // money / gold / leadership / people / admin pages download only when first visited.
 const MoneyManagementPage      = lazy(() => import('./pages/MoneyManagementPage').then(m => ({ default: m.MoneyManagementPage })));
+const MdDailyCollectionPage    = lazy(() => import('./pages/MdDailyCollectionPage').then(m => ({ default: m.MdDailyCollectionPage })));
 const MoneyWalletPage          = lazy(() => import('./pages/MoneyWalletPage').then(m => ({ default: m.MoneyWalletPage })));
 const BranchRankingsPage       = lazy(() => import('./pages/BranchRankingsPage').then(m => ({ default: m.BranchRankingsPage })));
 const MdAddEntryPage           = lazy(() => import('./pages/MdAddEntryPage').then(m => ({ default: m.MdAddEntryPage })));
@@ -163,6 +164,7 @@ function App() {
         {/* Money */}
         <Route path="/money"                     element={<MoneyManagementPage />} />
         <Route path="/money/wallet"              element={<MoneyWalletPage />} />
+        <Route path="/money/daily-collection"    element={<MdDailyCollectionPage />} />
         <Route path="/money/rankings"            element={<BranchRankingsPage />} />
         <Route path="/money/add-entry"           element={<MdAddEntryPage />} />
         <Route path="/money/projects"            element={<ProjectManagementPage />} />

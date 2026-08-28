@@ -2,10 +2,10 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
-  ChevronRight, ArrowRight,
+  ChevronRight, ChevronLeft, ArrowRight,
   Loader2,
   Briefcase, Trophy, Medal, Layers, Banknote, Sparkles,
-  CircleSlash
+  CircleSlash, CalendarDays
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -16,6 +16,11 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumber } from '../lib/formatters';
 import { SOURCE_META } from '../lib/schemeConstants';
+import { getCurrentPeriod, getPrevPeriod, getNextPeriod } from '../lib/schemePeriod';
+
+// IST-aware "today" string — mirrors server getCompanyToday().
+const getIstToday = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
 // ─── RANK BADGE — used in MD branch rankings section ─────────────────────────
 const RankBadge = ({ rank }) => {
@@ -40,6 +45,29 @@ const RankBadge = ({ rank }) => {
   return <span className="text-[9px] font-bold text-navy/30 uppercase tracking-widest whitespace-nowrap">{rank}th</span>;
 };
 
+// ─── Period picker — prev/next arrows + label, mirrors SalaryManagementPage ──
+const PeriodPicker = ({ period, onChange }) => (
+  <div className="flex items-center gap-2 w-full px-4 py-2.5 rounded-2xl border border-navy/10 bg-white/60">
+    <button
+      type="button"
+      onClick={() => onChange(getPrevPeriod(period.periodMonth, period.periodYear))}
+      className="w-7 h-7 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press shrink-0"
+      aria-label="Previous period"
+    >
+      <ChevronLeft size={14} />
+    </button>
+    <span className="flex-1 text-center text-sm font-semibold text-navy">{period.label}</span>
+    <button
+      type="button"
+      onClick={() => onChange(getNextPeriod(period.periodMonth, period.periodYear))}
+      className="w-7 h-7 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press shrink-0"
+      aria-label="Next period"
+    >
+      <ChevronRight size={14} />
+    </button>
+  </div>
+);
+
 export const MoneyManagementPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -48,8 +76,23 @@ export const MoneyManagementPage = () => {
 
   const isMd = user?.role === 'md';
 
+  // ─── Period filter state (MD only) ───────────────────────────────────────────
+  // mode: 'month' (7-to-7 period) | 'date' (single day) | 'all' (no filter)
+  const [mode, setMode]     = useState('month');
+  const [period, setPeriod] = useState(getCurrentPeriod);
+  const [day, setDay]       = useState(getIstToday);
+
+  // Derive the startDate/endDate arg for the overview hook from the active mode.
+  const overviewArg = useMemo(() => {
+    if (!isMd) return undefined;
+    if (mode === 'month') return { startDate: period.startDate, endDate: period.endDate };
+    if (mode === 'date')  return { startDate: day, endDate: day };
+    return undefined; // all-time: no filter
+  }, [isMd, mode, period, day]);
+
   // Scheme collections — MD only; single source for both grand-total and rankings
-  const { data: schemesData, isLoading: isSchemesLoading } = useGetSchemesOverviewQuery(undefined, { skip: !isMd });
+  const { data: schemesData, isLoading: isSchemesLoading, isFetching: isSchemesFetching } =
+    useGetSchemesOverviewQuery(overviewArg, { skip: !isMd });
   const schemes = schemesData?.schemes ?? [];
 
   // Aggregate schemes[].byBranch[] into a branch-ranking sorted by ₹ collected desc.
@@ -105,16 +148,85 @@ export const MoneyManagementPage = () => {
         <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-16 pt-4">
 
           {/* Header */}
-          <div className="px-6 mb-6">
+          <div className="px-6 mb-4">
             <h2 className="text-3xl font-bold text-navy tracking-tight">Money</h2>
-            <p className="text-xs font-medium text-navy/40 mt-1">Branch rankings · by scheme collections</p>
+            <p className="text-xs font-medium text-navy/40 mt-1">
+              Branch rankings · by scheme collections ·{' '}
+              {mode === 'month' ? period.label : mode === 'date' ? day : 'All time'}
+              {isSchemesFetching && !isSchemesLoading && (
+                <Loader2 size={10} className="inline ml-1.5 animate-spin text-navy/30" />
+              )}
+            </p>
+          </div>
+
+          {/* ── Period filter ── */}
+          <div className="px-4 mb-5 space-y-2">
+            {/* 3-way segmented toggle */}
+            <div className="flex rounded-2xl bg-navy/5 p-1 gap-1">
+              {[['month', 'Month'], ['date', 'Date'], ['all', 'All time']].map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setMode(val)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all tactile-press ${
+                    mode === val
+                      ? 'bg-white text-navy shadow-sm'
+                      : 'text-navy/40 hover:text-navy/60'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Contextual sub-control */}
+            {mode === 'month' && (
+              <PeriodPicker period={period} onChange={setPeriod} />
+            )}
+            {mode === 'date' && (
+              <div className="flex items-center gap-2 bg-white/60 border border-navy/10 rounded-2xl px-4 py-2.5">
+                <CalendarDays size={14} className="text-navy/40 shrink-0" />
+                <input
+                  type="date"
+                  value={day}
+                  max={getIstToday()}
+                  onChange={e => setDay(e.target.value)}
+                  className="bg-transparent text-sm font-semibold text-navy outline-none cursor-pointer w-full"
+                />
+              </div>
+            )}
+            {mode === 'all' && (
+              <p className="text-[11px] text-navy/30 text-center py-1">Showing all-time collections across every period</p>
+            )}
+          </div>
+
+          {/* Daily Collection entry card */}
+          <div className="px-4 mb-5">
+            <button
+              type="button"
+              onClick={() => navigate('/money/daily-collection')}
+              className="w-full bg-gradient-to-br from-indigo to-indigo/80 rounded-2xl p-5 flex items-center justify-between card-shadow tactile-press group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                  <CalendarDays size={20} className="text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-bold text-white">Daily Collection</p>
+                  <p className="text-[10px] font-medium text-white/60">Per-branch breakdown · cash / bank / GPay</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-white/50 group-hover:translate-x-0.5 transition-transform shrink-0" />
+            </button>
           </div>
 
           {/* Grand-total strip */}
           <div className="px-4 mb-5">
             <div className="bg-navy rounded-2xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mb-1">Total collected via schemes · all branches</p>
+                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mb-1">
+                  {mode === 'month' ? period.label : mode === 'date' ? day : 'All time'} · all branches
+                </p>
                 <p className="text-2xl font-black text-white">{formatCurrency(grandTotal)}</p>
               </div>
               <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">

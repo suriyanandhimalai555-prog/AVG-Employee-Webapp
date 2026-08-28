@@ -26,6 +26,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { SCHEME_REGISTRY, getScheme, listSchemes } from './scheme.registry';
 import type { SchemeBranchTotals, SchemeDateFilter } from './scheme.contract';
 import { PendingEnrollmentsService } from '../pending-enrollments/pending-enrollments.service';
+import { getDailyCollection, getDailyCollectionByScheme } from './daily-collection.service';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string | null; }
 interface AuthenticatedRequest extends FastifyRequest { user: AuthenticatedUser; }
@@ -164,6 +165,51 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
             entries,
           },
         });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── GET /daily-collection ──────────────────────────────────────────────
+  // Per-branch scheme payment breakdown for the MD money dashboard.
+  // Query params: date (YYYY-MM-DD, default IST today), branchId (optional UUID).
+  fastify.get('/daily-collection', { onRequest: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        if (!VIEWER_ROLES.has(req.user.role)) {
+          throw new ForbiddenError('Access denied');
+        }
+        const q = request.query as Record<string, string>;
+        const result = await getDailyCollection(
+          fastify.db,
+          q.date     || undefined,
+          q.branchId || undefined,
+        );
+        return reply.send({ success: true, data: result });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── GET /daily-collection-by-scheme ───────────────────────────────────────
+  // Per-scheme breakdown for a single branch — gold/chit split new vs renewal.
+  // Query params: date (YYYY-MM-DD, default IST today), branchId (UUID, required).
+  fastify.get('/daily-collection-by-scheme', { onRequest: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        if (!VIEWER_ROLES.has(req.user.role)) {
+          throw new ForbiddenError('Access denied');
+        }
+        const q = request.query as Record<string, string>;
+        if (!q.branchId) {
+          return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'branchId is required' } });
+        }
+        const result = await getDailyCollectionByScheme(
+          fastify.db,
+          q.date     || undefined,
+          q.branchId,
+        );
+        return reply.send({ success: true, data: result });
       } catch (error) { return handleError(error, reply); }
     }
   );

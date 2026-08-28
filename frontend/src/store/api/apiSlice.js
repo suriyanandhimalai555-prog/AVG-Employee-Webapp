@@ -962,6 +962,28 @@ export const apiSlice = createApi({
       providesTags: ['SchemesOverview'],
     }),
 
+    getSchemeDailyCollection: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.date)     qs.set('date',     params.date);
+        if (params.branchId) qs.set('branchId', params.branchId);
+        const q = qs.toString();
+        return `/schemes/daily-collection${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['SchemeDailyCollection'],
+    }),
+
+    getSchemeDailyCollectionByScheme: builder.query({
+      query: ({ date, branchId }) => {
+        const qs = new URLSearchParams({ branchId });
+        if (date) qs.set('date', date);
+        return `/schemes/daily-collection-by-scheme?${qs.toString()}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['SchemeDailyCollection'],
+    }),
+
     getSchemeBranchEntries: builder.query({
       query: ({ code, branchId, startDate, endDate }) => {
         const qs = new URLSearchParams();
@@ -2203,6 +2225,8 @@ export const {
   useRefundLssRoomMutation,
   useSendLssRoomToHeadBranchMutation,
   useGetSchemesOverviewQuery,
+  useGetSchemeDailyCollectionQuery,
+  useGetSchemeDailyCollectionBySchemeQuery,
   useGetSchemeBranchEntriesQuery,
   useLazyGetSchemeBranchEntriesQuery,
   useGetCommissionRulesQuery,
