@@ -13,7 +13,6 @@ import {
   Loader2,
   FileText,
   ExternalLink,
-  ArrowUpRight,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Avatar } from '../components/Avatar';
@@ -26,7 +25,6 @@ import {
   useLazyGetUserOversightBranchesQuery,
   useUpdateUserOversightBranchesMutation,
   useGetUserDocumentsQuery,
-  useSubmitTransferRequestMutation,
 } from '../store/api/apiSlice';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -86,57 +84,6 @@ export const UserManagement = () => {
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
   const [fetchOversightBranches] = useLazyGetUserOversightBranchesQuery();
   const [updateOversightBranches, { isLoading: isUpdatingBranches }] = useUpdateUserOversightBranchesMutation();
-  const [submitTransferRequest, { isLoading: isSubmittingTransfer }] = useSubmitTransferRequestMutation();
-
-  // Transfer request modal state
-  const [transferTarget, setTransferTarget] = useState(null);
-  const [transferForm, setTransferForm] = useState({ kind: 'promotion', newRole: '', newBranchId: '', newManagerId: '', replacementManagerId: '', reason: '' });
-  const [transferError, setTransferError] = useState('');
-  const [transferSuccess, setTransferSuccess] = useState('');
-
-  // Roles that can submit transfer requests (must match TRANSFER_REQUEST_ROLES in role-constants.ts)
-  const CAN_SUBMIT_TRANSFER = new Set(['gm', 'branch_manager', 'branch_admin']);
-
-  // All roles (for the newRole selector in the transfer form)
-  const ALL_ROLES_TRANSFER = [
-    { value: 'director',       label: 'Director' },
-    { value: 'gm',             label: 'General Manager' },
-    { value: 'branch_manager', label: 'Branch Manager' },
-    { value: 'abm',            label: 'Assistant Branch Manager' },
-    { value: 'sales_officer',  label: 'Sales Officer' },
-    { value: 'branch_admin',   label: 'Branch Admin' },
-    { value: 'oa',             label: 'Operations Assistant' },
-  ];
-
-  const openTransferModal = (targetUser) => {
-    setTransferError('');
-    setTransferSuccess('');
-    setTransferForm({ kind: 'promotion', newRole: targetUser.role, newBranchId: targetUser.branchId ?? '', newManagerId: '', replacementManagerId: '', reason: '' });
-    setTransferTarget(targetUser);
-  };
-
-  const handleTransferSubmit = async (e) => {
-    e.preventDefault();
-    setTransferError('');
-    setTransferSuccess('');
-    const payload = {
-      userId:   transferTarget.id,
-      kind:     transferForm.kind,
-      newRole:  transferForm.newRole,
-      reason:   transferForm.reason || undefined,
-    };
-    if (transferForm.newBranchId)        payload.newBranchId        = transferForm.newBranchId;
-    if (transferForm.newManagerId)       payload.newManagerId       = transferForm.newManagerId;
-    if (transferForm.replacementManagerId) payload.replacementManagerId = transferForm.replacementManagerId;
-    try {
-      await submitTransferRequest(payload).unwrap();
-      setTransferSuccess('Request submitted — pending management approval.');
-      setTimeout(() => { setTransferTarget(null); setTransferSuccess(''); }, 2000);
-    } catch (err) {
-      setTransferError(err?.data?.error?.message || 'Failed to submit request');
-    }
-  };
-
   // Oversight branch editor state (MD editing Director/GM assignments)
   const [editOversightUser, setEditOversightUser] = useState(null);
 
@@ -489,18 +436,6 @@ export const UserManagement = () => {
                 </div>
               )}
 
-              {/* Promote / Transfer — for GM / BM / branch_admin submitters */}
-              {CAN_SUBMIT_TRANSFER.has(user?.role) && u.id !== user?.id && (
-                <div className="flex items-center gap-2 flex-wrap mt-1">
-                  <button
-                    onClick={() => openTransferModal(u)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white transition-all text-[10px] font-bold tactile-press border border-amber-100"
-                  >
-                    <ArrowUpRight size={12} />
-                    Promote / Transfer
-                  </button>
-                </div>
-              )}
             </div>
           </Card>
         ))}
@@ -833,151 +768,6 @@ export const UserManagement = () => {
                   <CheckCircle2 className="mr-2" size={18} />
                   Create Account
                 </>
-              )}
-            </Button>
-          </div>
-        </form>
-      </GlassModal>
-
-      {/* Promote / Transfer Request Modal */}
-      <GlassModal
-        isOpen={!!transferTarget}
-        onClose={() => setTransferTarget(null)}
-        title={`Promote / Transfer — ${transferTarget?.name ?? ''}`}
-      >
-        <form onSubmit={handleTransferSubmit} className="space-y-5 pt-4">
-          {transferError && (
-            <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm font-bold flex items-center gap-x-2 animate-in slide-in-from-top-2">
-              <XCircle size={16} /> {transferError}
-            </div>
-          )}
-          {transferSuccess && (
-            <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-bold flex items-center gap-x-2 animate-in slide-in-from-top-2">
-              <CheckCircle2 size={16} /> {transferSuccess}
-            </div>
-          )}
-
-          {/* Current position pill */}
-          <div className="flex items-center gap-3 p-3 bg-navy/[0.03] rounded-2xl border border-border">
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest mb-0.5">Current Position</p>
-              <p className="text-sm font-bold text-navy">{transferTarget?.role?.replace(/_/g, ' ')} · {transferTarget?.branchName || 'No branch'}</p>
-            </div>
-            <ArrowUpRight size={16} className="text-navy/20 shrink-0" />
-          </div>
-
-          {/* Kind: promotion vs transfer */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Type</label>
-            <div className="flex gap-2">
-              {[{ v: 'promotion', l: 'Promotion (same branch)' }, { v: 'transfer', l: 'Transfer (new branch)' }].map(({ v, l }) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setTransferForm(f => ({ ...f, kind: v, newBranchId: v === 'promotion' ? (transferTarget?.branchId ?? '') : '', newManagerId: '' }))}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all tactile-press ${transferForm.kind === v ? 'bg-indigo text-white border-indigo shadow-md shadow-indigo/20' : 'bg-white text-navy/40 border-border hover:border-indigo/30'}`}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* New Role */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">New Role <span className="text-red-400">*</span></label>
-            <select
-              required
-              className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
-              value={transferForm.newRole}
-              onChange={(e) => setTransferForm(f => ({ ...f, newRole: e.target.value, newManagerId: '' }))}
-            >
-              <option value="">Select new role…</option>
-              {ALL_ROLES_TRANSFER.filter(r => r.value !== transferTarget?.role).map(r => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* New Branch (transfers only) */}
-          {transferForm.kind === 'transfer' && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">New Branch <span className="text-red-400">*</span></label>
-              <select
-                required
-                className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
-                value={transferForm.newBranchId}
-                onChange={(e) => setTransferForm(f => ({ ...f, newBranchId: e.target.value, newManagerId: '' }))}
-              >
-                <option value="">Select branch…</option>
-                {branches.filter(b => b.id !== transferTarget?.branchId).map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* New Manager (optional) */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">New Manager (optional)</label>
-            <select
-              className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
-              value={transferForm.newManagerId}
-              onChange={(e) => setTransferForm(f => ({ ...f, newManagerId: e.target.value }))}
-            >
-              <option value="">Auto-assign by role rules…</option>
-              {allUsers
-                .filter(u => u.id !== transferTarget?.id)
-                .map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role?.replace(/_/g, ' ')})</option>
-                ))}
-            </select>
-          </div>
-
-          {/* Replacement Manager for orphaned team */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
-              Replacement Manager <span className="text-navy/30 font-normal normal-case tracking-normal">(required if this person manages a team)</span>
-            </label>
-            <select
-              className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
-              value={transferForm.replacementManagerId}
-              onChange={(e) => setTransferForm(f => ({ ...f, replacementManagerId: e.target.value }))}
-            >
-              <option value="">Not applicable</option>
-              {allUsers
-                .filter(u => u.id !== transferTarget?.id && u.branchId === transferTarget?.branchId)
-                .map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.role?.replace(/_/g, ' ')})</option>
-                ))}
-            </select>
-          </div>
-
-          {/* Reason */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Reason (optional)</label>
-            <textarea
-              rows={2}
-              placeholder="Briefly explain the reason for this request…"
-              className="w-full px-4 py-3 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none resize-none"
-              value={transferForm.reason}
-              onChange={(e) => setTransferForm(f => ({ ...f, reason: e.target.value }))}
-            />
-          </div>
-
-          <p className="text-[10px] text-navy/30 font-bold uppercase tracking-widest">
-            This request will be reviewed and approved by management before taking effect.
-          </p>
-
-          <div className="flex gap-3 pt-2">
-            <Button type="button" variant="outline" className="flex-1 border-border text-navy/40 hover:bg-navy/5" onClick={() => setTransferTarget(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1 bg-amber-500 text-white shadow-lg shadow-amber-500/20" disabled={isSubmittingTransfer || !transferForm.newRole}>
-              {isSubmittingTransfer ? (
-                <><Loader2 className="animate-spin mr-2" size={16} />Submitting…</>
-              ) : (
-                <><ArrowUpRight className="mr-2" size={16} />Submit for Approval</>
               )}
             </Button>
           </div>

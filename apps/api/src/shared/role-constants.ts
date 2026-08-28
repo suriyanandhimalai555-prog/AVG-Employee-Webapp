@@ -79,16 +79,10 @@ export const USER_DIRECTORY_ROLES: readonly RoleValue[] = [
   Role.MD, Role.MANAGEMENT, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN,
 ];
 
-// Roles allowed to SUBMIT a promotion/transfer request on behalf of their subordinate.
-// Approver ≠ requester (enforced in service) — segregation of duties.
-export const TRANSFER_REQUEST_ROLES: readonly RoleValue[] = [
-  Role.GM, Role.BRANCH_MANAGER, Role.BRANCH_ADMIN,
-];
-
-// Roles allowed to APPROVE or REJECT a pending transfer/promotion request.
-// MD and Management only — they have org-wide authority over org structure.
-export const TRANSFER_APPROVE_ROLES: readonly RoleValue[] = [
-  Role.MD, Role.MANAGEMENT,
+// Roles that may EXECUTE a transfer/promotion directly (single-step, no approval flow).
+// Management-only: they own org-structure changes. MD is view-only and is excluded.
+export const TRANSFER_MANAGE_ROLES: readonly RoleValue[] = [
+  Role.MANAGEMENT,
 ];
 
 // Helper: O(1) membership test against any of the sets above.

@@ -57,9 +57,10 @@ import {
   useSetHeadBranchMutation,
   useGetMobileAppVersionQuery,
   useUpdateMobileAppVersionMutation,
+  useGetManagerOptionsQuery,
   useListTransferRequestsQuery,
-  useApproveTransferRequestMutation,
-  useRejectTransferRequestMutation,
+  useExecuteTransferMutation,
+  useGetUsersQuery,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
@@ -77,7 +78,7 @@ const TABS = [
   { key: 'lss',         label: 'LSS',            Icon: Layers,       roles: null },
   { key: 'land',        label: 'Land',           Icon: Landmark,     roles: null },
   { key: 'corrections', label: 'Corrections',   Icon: ShieldAlert,  roles: null },
-  { key: 'transfers',   label: 'Transfers',      Icon: ArrowUpRight, roles: new Set(['md', 'management']) },
+  { key: 'transfers',   label: 'Transfers',      Icon: ArrowUpRight, roles: new Set(['management']) },
   // Branches tab removed — branch management + geofence lives at /branches (ManagementBranches page)
 ];
 
@@ -158,184 +159,419 @@ const EditCell = ({ value, onSave, type = 'number', prefix, suffix, min = 0 }) =
   );
 };
 
-// ─── Transfers tab (MD / Management — approve or reject pending requests) ─────
+// ─── Transfers tab — Management direct-execute (form on top, history below) ────
 
 const ROLE_LABELS = {
   director: 'Director', gm: 'General Manager', branch_manager: 'Branch Manager',
   abm: 'Asst. Branch Manager', sales_officer: 'Sales Officer',
   branch_admin: 'Branch Admin', oa: 'Operations Asst.', management: 'Management',
+  md: 'MD',
 };
 
+// Roles available as a transfer destination
+const ALL_ROLES_TRANSFER = [
+  { value: 'director',       label: 'Director' },
+  { value: 'gm',             label: 'General Manager' },
+  { value: 'branch_manager', label: 'Branch Manager' },
+  { value: 'abm',            label: 'Asst. Branch Manager' },
+  { value: 'sales_officer',  label: 'Sales Officer' },
+  { value: 'branch_admin',   label: 'Branch Admin' },
+  { value: 'oa',             label: 'Operations Assistant' },
+];
+
 const TransfersTab = () => {
-  const [statusFilter, setStatusFilter] = useState('pending');
-  const [rejectingId, setRejectingId]   = useState(null);
-  const [rejectNote,  setRejectNote]    = useState('');
-  const [actionErr,   setActionErr]     = useState('');
+  // ── employee picker state ──
+  const [empSearch, setEmpSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
 
-  const { data: requests = [], isLoading } = useListTransferRequestsQuery({ status: statusFilter });
-  const [approveRequest, { isLoading: isApproving }] = useApproveTransferRequestMutation();
-  const [rejectRequest,  { isLoading: isRejecting  }] = useRejectTransferRequestMutation();
+  // ── form state ──
+  const [form, setForm] = useState({ kind: 'promotion', newRole: '', newBranchId: '', newManagerId: '', replacementManagerId: '', reason: '' });
+  const [formErr, setFormErr] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
 
-  const handleApprove = async (id) => {
-    setActionErr('');
-    try {
-      await approveRequest({ id }).unwrap();
-    } catch (err) {
-      setActionErr(err?.data?.error?.message || 'Approval failed');
-    }
+  // ── data queries ──
+  // Employee search (skip until user types something)
+  const { data: empResult = {}, isFetching: searchingEmps } = useGetUsersQuery(
+    { search: empSearch || undefined, limit: 50 },
+    { skip: !empSearch }
+  );
+  const empCandidates = empResult.data ?? [];
+
+  const { data: branches = [] } = useGetBranchesQuery();
+
+  // Maps destination role → valid manager roles; mirrors hierarchy-policy.ts ALLOWED_MANAGER_ROLES.
+  // Empty array = no strict-role rule (branch_admin, oa) — New Manager field hidden for those.
+  const MANAGER_ROLE_MAP = {
+    director:       ['md'],
+    gm:             ['director'],
+    branch_manager: ['gm'],
+    abm:            ['branch_manager'],
+    sales_officer:  ['abm', 'oa', 'branch_admin', 'branch_manager'],
+  };
+  // Roles that REQUIRE a manager — backend throws a ValidationError if manager is null.
+  const MANAGER_REQUIRED = new Set(['director', 'gm', 'branch_manager', 'abm', 'sales_officer']);
+
+  // New Manager candidates: fetched cross-branch by role via getManagerOptions so that
+  // GM, Director, and MD (who have branch_id = NULL) actually appear. A branch-filtered
+  // getUsers call returns nothing for them and blocks transfers into high-hierarchy roles.
+  const managerRoles = MANAGER_ROLE_MAP[form.newRole] ?? [];
+  const { data: newManagerCandidates = [] } = useGetManagerOptionsQuery(
+    managerRoles.join(','),
+    { skip: !form.newRole || managerRoles.length === 0 }
+  );
+
+  // Replacement manager candidates — must come from the person's CURRENT branch (backend rule).
+  // camelCase: listUsers returns branchId (aliased in user.service.ts:386).
+  const { data: replMgrResult = {} } = useGetUsersQuery(
+    { branchId: selectedUser?.branchId, limit: 200 },
+    { skip: !selectedUser?.branchId }
+  );
+  const replacementCandidates = (replMgrResult.data ?? []).filter(u => u.id !== selectedUser?.id);
+
+  const { data: history = [], isLoading: historyLoading } = useListTransferRequestsQuery({});
+  const [executeTransfer, { isLoading: isExecuting }] = useExecuteTransferMutation();
+
+  const resetForm = () => {
+    setSelectedUser(null);
+    setEmpSearch('');
+    setForm({ kind: 'promotion', newRole: '', newBranchId: '', newManagerId: '', replacementManagerId: '', reason: '' });
+    setFormErr('');
+    setFormSuccess('');
   };
 
-  const handleReject = async (id) => {
-    if (!rejectNote.trim()) { setActionErr('A reason is required to reject'); return; }
-    setActionErr('');
+  const handleUserSelect = (u) => {
+    setSelectedUser(u);
+    setEmpSearch('');
+    // Pre-fill newRole with the user's current role so management only has to change what's different
+    setForm(f => ({ ...f, kind: 'promotion', newRole: u.role, newBranchId: u.branchId ?? '', newManagerId: '', replacementManagerId: '' }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormErr('');
+    setFormSuccess('');
+    if (!selectedUser) { setFormErr('Select an employee first'); return; }
+    if (!form.newRole) { setFormErr('New role is required'); return; }
+    if (MANAGER_REQUIRED.has(form.newRole) && !form.newManagerId) { setFormErr('A manager is required for this role'); return; }
+    if (form.kind === 'transfer' && !form.newBranchId) { setFormErr('New branch is required for a transfer'); return; }
+    const payload = {
+      userId:  selectedUser.id,
+      kind:    form.kind,
+      newRole: form.newRole,
+      reason:  form.reason || undefined,
+    };
+    if (form.newBranchId)          payload.newBranchId          = form.newBranchId;
+    if (form.newManagerId)         payload.newManagerId         = form.newManagerId;
+    if (form.replacementManagerId) payload.replacementManagerId = form.replacementManagerId;
     try {
-      await rejectRequest({ id, decisionNote: rejectNote }).unwrap();
-      setRejectingId(null);
-      setRejectNote('');
+      await executeTransfer(payload).unwrap();
+      setFormSuccess(`${selectedUser.name} has been transferred successfully.`);
+      setTimeout(resetForm, 2500);
     } catch (err) {
-      setActionErr(err?.data?.error?.message || 'Rejection failed');
+      setFormErr(err?.data?.error?.message || 'Transfer failed');
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Status filter tabs */}
-      <div className="flex gap-2">
-        {['pending', 'approved', 'rejected'].map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => { setStatusFilter(s); setActionErr(''); setRejectingId(null); }}
-            className={`px-4 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all tactile-press ${statusFilter === s ? 'bg-indigo text-white shadow-md shadow-indigo/20' : 'bg-white text-navy/40 border border-border'}`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-6">
 
-      {actionErr && (
-        <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
-          <AlertCircle size={14} /> {actionErr}
-        </div>
-      )}
+      {/* ── New Transfer form ─────────────────────────────────────────── */}
+      <div className="bg-white p-5 rounded-3xl card-shadow border border-border">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-5">
+          New Transfer / Promotion
+        </p>
 
-      {isLoading && (
-        <div className="flex justify-center py-16"><Loader2 className="animate-spin text-indigo/30" size={28} /></div>
-      )}
-
-      {!isLoading && requests.length === 0 && (
-        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
-          <div className="w-16 h-16 rounded-xl bg-navy/5 flex items-center justify-center text-navy/20 mb-4">
-            <ArrowUpRight size={28} />
-          </div>
-          <p className="text-sm font-bold text-navy/40">No {statusFilter} requests</p>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {requests.map((req) => (
-          <div key={req.id} className="bg-white p-5 rounded-3xl card-shadow border border-border space-y-4">
-            {/* Header */}
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-sm font-bold text-navy">{req.user_name}</p>
-                <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-0.5">
-                  Requested by {req.requester_name}
-                </p>
-              </div>
-              <div className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${
-                req.status === 'pending'  ? 'text-amber-500  bg-amber-50  border-amber-200'  :
-                req.status === 'approved' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
-                                            'text-red-500    bg-red-50    border-red-200'
-              }`}>
-                {req.status}
-              </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {formErr && (
+            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={14} /> {formErr}
             </div>
-
-            {/* Change summary grid */}
-            <div className="grid grid-cols-2 gap-3 bg-navy/[0.02] rounded-2xl p-3">
-              <div>
-                <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Current Role</p>
-                <p className="text-xs font-bold text-navy mt-0.5">{ROLE_LABELS[req.current_role] ?? req.current_role}</p>
-              </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Role</p>
-                <p className="text-xs font-bold text-indigo mt-0.5">{ROLE_LABELS[req.new_role] ?? req.new_role}</p>
-              </div>
-              {req.new_branch_name && (
-                <div className="col-span-2">
-                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Branch</p>
-                  <p className="text-xs font-bold text-navy mt-0.5">{req.new_branch_name}</p>
-                </div>
-              )}
-              {req.reason && (
-                <div className="col-span-2">
-                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Reason</p>
-                  <p className="text-xs text-navy/60 mt-0.5">{req.reason}</p>
-                </div>
-              )}
+          )}
+          {formSuccess && (
+            <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 size={14} /> {formSuccess}
             </div>
+          )}
 
-            {/* Decision note for non-pending */}
-            {req.status !== 'pending' && req.decision_note && (
-              <p className="text-[10px] text-navy/40 italic px-1">Note: {req.decision_note}</p>
-            )}
-
-            {/* Actions — pending only */}
-            {req.status === 'pending' && (
-              <div className="space-y-2">
-                {rejectingId === req.id ? (
-                  <div className="space-y-2">
-                    <textarea
-                      rows={2}
-                      placeholder="Reason for rejection (required)…"
-                      className="w-full px-3 py-2.5 bg-white border border-border rounded-xl text-sm font-bold text-navy placeholder:text-navy/20 outline-none focus:ring-2 focus:ring-red-200 resize-none"
-                      value={rejectNote}
-                      onChange={(e) => setRejectNote(e.target.value)}
-                    />
-                    <div className="flex gap-2">
+          {/* Employee picker */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+              Employee <span className="text-red-400">*</span>
+            </label>
+            {selectedUser ? (
+              /* Selected employee pill */
+              <div className="flex items-center justify-between p-3 bg-navy/[0.03] rounded-2xl border border-border">
+                <div>
+                  <p className="text-sm font-bold text-navy">{selectedUser.name}</p>
+                  <p className="text-[10px] text-navy/40 font-bold mt-0.5">
+                    {ROLE_LABELS[selectedUser.role] ?? selectedUser.role}
+                    {` · ${selectedUser.branchName || 'No branch (HQ)'}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-[10px] font-bold text-navy/40 hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 tactile-press"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              /* Search input + dropdown */
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Type employee name or email…"
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  autoComplete="off"
+                />
+                {searchingEmps && (
+                  <Loader2 size={14} className="animate-spin text-indigo/40 absolute right-4 top-1/2 -translate-y-1/2" />
+                )}
+                {empSearch && empCandidates.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-border rounded-2xl card-shadow overflow-hidden max-h-56 overflow-y-auto">
+                    {empCandidates.map((u) => (
                       <button
+                        key={u.id}
                         type="button"
-                        onClick={() => { setRejectingId(null); setRejectNote(''); setActionErr(''); }}
-                        className="flex-1 py-2.5 rounded-xl bg-navy/5 text-navy/40 text-xs font-bold tactile-press"
+                        onClick={() => handleUserSelect(u)}
+                        className="w-full text-left px-4 py-3 hover:bg-indigo/5 transition-colors border-b border-border last:border-b-0"
                       >
-                        Cancel
+                        <p className="text-sm font-bold text-navy">{u.name}</p>
+                        <p className="text-[10px] text-navy/40 font-bold mt-0.5">
+                          {ROLE_LABELS[u.role] ?? u.role}
+                          {` · ${u.branchName || 'No branch (HQ)'}`}
+                        </p>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleReject(req.id)}
-                        disabled={isRejecting}
-                        className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-xs font-bold tactile-press disabled:opacity-60 flex items-center justify-center gap-1.5"
-                      >
-                        {isRejecting ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
-                        Confirm Reject
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { setRejectingId(req.id); setActionErr(''); }}
-                      className="flex-[0.35] py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 flex items-center justify-center gap-1.5 text-xs font-bold tactile-press"
-                    >
-                      <X size={14} /> Reject
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApprove(req.id)}
-                      disabled={isApproving}
-                      className="flex-1 py-3 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 tactile-press disabled:opacity-60"
-                    >
-                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                      Approve & Execute
-                    </button>
+                )}
+                {empSearch && !searchingEmps && empCandidates.length === 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-border rounded-2xl card-shadow px-4 py-3">
+                    <p className="text-xs text-navy/40 font-bold">No employees found</p>
                   </div>
                 )}
               </div>
             )}
           </div>
-        ))}
+
+          {/* Kind toggle (only when employee selected) */}
+          {selectedUser && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Type</label>
+              <div className="flex gap-2">
+                {[{ v: 'promotion', l: 'Promotion (same branch)' }, { v: 'transfer', l: 'Transfer (new branch)' }].map(({ v, l }) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, kind: v, newBranchId: v === 'promotion' ? (selectedUser.branchId ?? '') : '', newManagerId: '' }))}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all tactile-press ${form.kind === v ? 'bg-indigo text-white border-indigo shadow-md shadow-indigo/20' : 'bg-white text-navy/40 border-border hover:border-indigo/30'}`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* New Role */}
+          {selectedUser && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                New Role <span className="text-red-400">*</span>
+              </label>
+              <select
+                required
+                className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
+                value={form.newRole}
+                onChange={(e) => setForm(f => ({ ...f, newRole: e.target.value, newManagerId: '' }))}
+              >
+                <option value="">Select new role…</option>
+                {ALL_ROLES_TRANSFER.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* New Branch (transfers only) */}
+          {selectedUser && form.kind === 'transfer' && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                New Branch <span className="text-red-400">*</span>
+              </label>
+              <select
+                required
+                className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
+                value={form.newBranchId}
+                onChange={(e) => setForm(f => ({ ...f, newBranchId: e.target.value, newManagerId: '' }))}
+              >
+                <option value="">Select branch…</option>
+                {branches.filter(b => b.id !== selectedUser.branchId).map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* New Manager — required for hierarchical roles; hidden for branch_admin / oa (no role rule) */}
+          {selectedUser && managerRoles.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                New Manager
+                {MANAGER_REQUIRED.has(form.newRole)
+                  ? <span className="text-red-400 ml-0.5">*</span>
+                  : <span className="font-normal normal-case tracking-normal text-navy/30"> (optional)</span>
+                }
+              </label>
+              <select
+                required={MANAGER_REQUIRED.has(form.newRole)}
+                className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
+                value={form.newManagerId}
+                onChange={(e) => setForm(f => ({ ...f, newManagerId: e.target.value }))}
+              >
+                <option value="">Select new manager…</option>
+                {newManagerCandidates.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({ROLE_LABELS[u.role] ?? u.role}{u.branchName ? ` · ${u.branchName}` : ''})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Replacement Manager for orphaned team */}
+          {selectedUser && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                Replacement Manager{' '}
+                <span className="text-navy/30 font-normal normal-case tracking-normal">
+                  (required if this person manages a team)
+                </span>
+              </label>
+              <select
+                className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold focus:ring-2 focus:ring-indigo/20 cursor-pointer outline-none appearance-none"
+                value={form.replacementManagerId}
+                onChange={(e) => setForm(f => ({ ...f, replacementManagerId: e.target.value }))}
+              >
+                <option value="">Not applicable</option>
+                {replacementCandidates.map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({ROLE_LABELS[u.role] ?? u.role})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Reason */}
+          {selectedUser && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">Reason (optional)</label>
+              <textarea
+                rows={2}
+                placeholder="Briefly explain the reason…"
+                className="w-full px-4 py-3 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none resize-none"
+                value={form.reason}
+                onChange={(e) => setForm(f => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+          )}
+
+          {selectedUser && (
+            <>
+              <p className="text-[10px] text-navy/30 font-bold uppercase tracking-widest">
+                This takes effect immediately.
+              </p>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex-1 py-3 rounded-xl border border-border text-navy/40 text-xs font-bold hover:bg-navy/5 transition-colors tactile-press"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isExecuting || !form.newRole}
+                  className="flex-1 py-3 rounded-xl bg-indigo text-white text-xs font-bold shadow-lg shadow-indigo/20 disabled:opacity-60 flex items-center justify-center gap-1.5 tactile-press"
+                >
+                  {isExecuting ? (
+                    <><Loader2 className="animate-spin" size={14} /> Executing…</>
+                  ) : (
+                    <><ArrowUpRight size={14} /> Execute Transfer</>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+        </form>
+      </div>
+
+      {/* ── Transfer history (read-only) ─────────────────────────────── */}
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30 mb-3">
+          Transfer History
+        </p>
+
+        {historyLoading && (
+          <div className="flex justify-center py-12">
+            <Loader2 className="animate-spin text-indigo/30" size={28} />
+          </div>
+        )}
+
+        {!historyLoading && history.length === 0 && (
+          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
+            <div className="w-16 h-16 rounded-xl bg-navy/5 flex items-center justify-center text-navy/20 mb-4">
+              <ArrowUpRight size={28} />
+            </div>
+            <p className="text-sm font-bold text-navy/40">No transfers yet</p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {history.map((rec) => (
+            <div key={rec.id} className="bg-white p-5 rounded-3xl card-shadow border border-border space-y-4">
+              {/* Header */}
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-bold text-navy">{rec.user_name}</p>
+                  <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-0.5">
+                    Executed by {rec.executed_by_name}
+                    {rec.decided_at ? ` · ${new Date(rec.decided_at).toLocaleDateString('en-IN')}` : ''}
+                  </p>
+                </div>
+                <div className="px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 border-emerald-200">
+                  {rec.kind}
+                </div>
+              </div>
+
+              {/* Change summary grid */}
+              <div className="grid grid-cols-2 gap-3 bg-navy/[0.02] rounded-2xl p-3">
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Previous Role</p>
+                  <p className="text-xs font-bold text-navy mt-0.5">{ROLE_LABELS[rec.previous_role] ?? rec.previous_role ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Role</p>
+                  <p className="text-xs font-bold text-indigo mt-0.5">{ROLE_LABELS[rec.new_role] ?? rec.new_role}</p>
+                </div>
+                {rec.new_branch_name && (
+                  <div className="col-span-2">
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Branch</p>
+                    <p className="text-xs font-bold text-navy mt-0.5">{rec.new_branch_name}</p>
+                  </div>
+                )}
+                {rec.reason && (
+                  <div className="col-span-2">
+                    <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Reason</p>
+                    <p className="text-xs text-navy/60 mt-0.5">{rec.reason}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

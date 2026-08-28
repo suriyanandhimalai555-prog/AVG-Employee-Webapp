@@ -2,7 +2,7 @@
 import { Pool, PoolClient } from 'pg';
 import bcrypt from 'bcrypt';
 import Redis from 'ioredis';
-import { CreateUserInput, UserResponse, UpdateOversightBranchesInput, SubmitTransferRequestInput, ApproveTransferRequestInput, RejectTransferRequestInput } from './user.schema';
+import { CreateUserInput, UserResponse, UpdateOversightBranchesInput, ExecuteTransferInput } from './user.schema';
 import { populateAvatarUrls } from '../../shared/avatar.util';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
@@ -10,7 +10,7 @@ import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
-import { Role, TRANSFER_APPROVE_ROLES, TRANSFER_REQUEST_ROLES } from '../../shared/role-constants';
+import { Role, TRANSFER_MANAGE_ROLES } from '../../shared/role-constants';
 import { runInTransaction } from '../../shared/transaction-helper';
 
 export interface UserDocument {
@@ -593,185 +593,88 @@ export const UserService = {
     return result.rows[0];
   },
 
-  // ─── TRANSFER / PROMOTION REQUEST FLOW ────────────────────────────────────────
-  // Two-step: submit (pending) → approve (executes the users mutation) / reject.
-  // Separation of duties: requester ≠ approver.
+  // ─── TRANSFER / PROMOTION — MANAGEMENT DIRECT EXECUTE ────────────────────────
+  // Single-step: Management fills the form → transfer executes immediately.
+  // The user_transfer_requests table is used as an audit trail (status='approved',
+  // requested_by = decided_by = actor).  No pending/approval/rejection flow.
 
-  // ── submitTransferRequest ─────────────────────────────────────────────────────
-  // Creates a pending request for a promotion or branch transfer.
-  // No users row is changed at this stage. Validates early so obviously-bad
-  // requests don't clutter the management inbox.
-  async submitTransferRequest(
-    db: Pool,
-    requesterId: string,
-    requesterRole: string,
-    payload: SubmitTransferRequestInput
-  ): Promise<any> {
-    // TS: check requester is in an allowed submitter role
-    if (!(TRANSFER_REQUEST_ROLES as readonly string[]).includes(requesterRole)) {
-      throw new ForbiddenError('Only GM, Branch Manager, or Branch Admin may submit transfer requests');
-    }
-
-    // Load the target user (must be active)
-    const targetRes = await db.query(
-      `SELECT id, role, branch_id, manager_id, name FROM users WHERE id = $1 AND is_active = true`,
-      [payload.userId]
-    );
-    if (targetRes.rows.length === 0) throw new NotFoundError('Target user not found or inactive');
-    const target = targetRes.rows[0];
-
-    // Early hierarchy validation: new manager must be valid for the new role/branch
-    await resolveAndValidateManagerId(db, { id: requesterId, role: requesterRole }, {
-      role:      payload.newRole,
-      branchId:  payload.newBranchId ?? target.branch_id,
-      managerId: payload.newManagerId ?? null,
-    });
-
-    // If the target has active direct reports, a replacement manager is required
-    const reportsRes = await db.query(
-      `SELECT id FROM users WHERE manager_id = $1 AND is_active = true LIMIT 1`,
-      [target.id]
-    );
-    if (reportsRes.rows.length > 0) {
-      if (!payload.replacementManagerId) {
-        throw new ValidationError('This user has active reports — a replacement manager must be specified');
-      }
-      // Validate the replacement: must be active, in the target's CURRENT branch, and a legal manager
-      const replRes = await db.query(
-        `SELECT id, role, branch_id, is_active FROM users WHERE id = $1`,
-        [payload.replacementManagerId]
-      );
-      if (replRes.rows.length === 0 || !replRes.rows[0].is_active) {
-        throw new ValidationError('Replacement manager not found or inactive');
-      }
-      const repl = replRes.rows[0];
-      if (repl.branch_id !== target.branch_id) {
-        throw new ValidationError('Replacement manager must belong to the same branch as the person being moved');
-      }
-      // TS: ensure the replacement can actually manage the orphaned reports
-      // (uses the canonical ALLOWED_MANAGER_ROLES from hierarchy-policy at approve time too)
-    }
-
-    // Insert the pending request
-    const insertRes = await db.query(
-      `INSERT INTO user_transfer_requests
-         (user_id, kind, new_role, new_branch_id, new_manager_id,
-          replacement_manager_id, reason, requested_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING *`,
-      [
-        payload.userId,
-        payload.kind,
-        payload.newRole,
-        payload.newBranchId ?? null,
-        payload.newManagerId ?? null,
-        payload.replacementManagerId ?? null,
-        payload.reason ?? null,
-        requesterId,
-      ]
-    );
-    return insertRes.rows[0];
-  },
-
-  // ── listTransferRequests ──────────────────────────────────────────────────────
-  // Returns transfer requests visible to the caller, with the user's name for display.
-  async listTransferRequests(
-    db: Pool,
-    requesterRole: string,
-    status?: string
-  ): Promise<any[]> {
-    // TS: only management/MD approvers see the inbox; requesters see their own
-    if (!(TRANSFER_APPROVE_ROLES as readonly string[]).includes(requesterRole)) {
-      throw new ForbiddenError('Only MD or Management may view the transfer request inbox');
-    }
-    const statusFilter = status ?? 'pending';
-    const res = await db.query(
-      `SELECT r.*,
-              u.name  AS user_name,  u.role  AS current_role,
-              b.name  AS new_branch_name,
-              rb.name AS requester_name
-       FROM user_transfer_requests r
-       JOIN users u   ON u.id = r.user_id
-       LEFT JOIN branches b  ON b.id = r.new_branch_id
-       JOIN users rb  ON rb.id = r.requested_by
-       WHERE r.status = $1
-       ORDER BY r.created_at ASC`,
-      [statusFilter]
-    );
-    return res.rows;
-  },
-
-  // ── approveTransferRequest ────────────────────────────────────────────────────
-  // Validates (state may have drifted since submit), then executes the users mutation
-  // atomically: re-parent any orphaned reports, update the target, bust caches.
-  async approveTransferRequest(
+  // ── executeTransfer ───────────────────────────────────────────────────────────
+  // Validates the move then executes it atomically in one transaction:
+  // re-parent orphaned reports, update the target user, clear oversight if GM/Director,
+  // write one audit row, bust all affected hierarchy + profile caches.
+  async executeTransfer(
     db: Pool,
     redis: Redis,
-    deciderId: string,
-    deciderRole: string,
-    requestId: string,
-    payload: ApproveTransferRequestInput
+    actorId: string,
+    actorRole: string,
+    payload: ExecuteTransferInput
   ): Promise<any> {
-    // TS: only MD/Management may approve
-    if (!(TRANSFER_APPROVE_ROLES as readonly string[]).includes(deciderRole)) {
-      throw new ForbiddenError('Only MD or Management may approve transfer requests');
+    // TS: only Management may execute transfers (MD is view-only)
+    if (!(TRANSFER_MANAGE_ROLES as readonly string[]).includes(actorRole)) {
+      throw new ForbiddenError('Only Management may execute transfers');
     }
 
     return runInTransaction(db, async (client: PoolClient) => {
-      // Lock the request row to prevent double-approval
-      const reqRes = await client.query(
-        `SELECT * FROM user_transfer_requests WHERE id = $1 FOR UPDATE`,
-        [requestId]
-      );
-      if (reqRes.rows.length === 0) throw new NotFoundError('Transfer request not found');
-      const req = reqRes.rows[0];
-      if (req.status !== 'pending') {
-        throw new ValidationError(`Request is already ${req.status}`);
-      }
-      // Segregation of duties: the approver must not be the same person who submitted
-      if (req.requested_by === deciderId) {
-        throw new ForbiddenError('You cannot approve a request you submitted');
-      }
-
-      // Lock target user — re-read current state (may have changed since submit)
+      // Lock + re-read target user (is_active guard ensures we don't move a deactivated account)
       const targetRes = await client.query(
         `SELECT id, role, branch_id, manager_id FROM users WHERE id = $1 AND is_active = true FOR UPDATE`,
-        [req.user_id]
+        [payload.userId]
       );
-      if (targetRes.rows.length === 0) throw new NotFoundError('Target user not found or has been deactivated');
+      if (targetRes.rows.length === 0) throw new NotFoundError('Target user not found or inactive');
       const target = targetRes.rows[0];
 
-      // Re-validate the proposed destination
-      await resolveAndValidateManagerId(db, { id: deciderId, role: deciderRole }, {
-        role:      req.new_role,
-        branchId:  req.new_branch_id ?? target.branch_id,
-        managerId: req.new_manager_id ?? null,
+      // Validate the proposed destination (role + branch + manager hierarchy rules)
+      await resolveAndValidateManagerId(db, { id: actorId, role: actorRole }, {
+        role:      payload.newRole,
+        branchId:  payload.newBranchId ?? target.branch_id,
+        managerId: payload.newManagerId ?? null,
       });
 
-      // Collect IDs of users that need cache clearing (re-parented reports)
+      // If the target has active direct reports, a replacement manager is required
+      const reportsRes = await client.query(
+        `SELECT id FROM users WHERE manager_id = $1 AND is_active = true LIMIT 1`,
+        [target.id]
+      );
+      if (reportsRes.rows.length > 0) {
+        if (!payload.replacementManagerId) {
+          throw new ValidationError('This user has active reports — a replacement manager must be specified');
+        }
+        // TS: validate the replacement is active and in the target's current branch
+        const replRes = await client.query(
+          `SELECT id, branch_id, is_active FROM users WHERE id = $1`,
+          [payload.replacementManagerId]
+        );
+        if (replRes.rows.length === 0 || !replRes.rows[0].is_active) {
+          throw new ValidationError('Replacement manager not found or inactive');
+        }
+        if (replRes.rows[0].branch_id !== target.branch_id) {
+          throw new ValidationError('Replacement manager must belong to the same branch as the person being moved');
+        }
+      }
+
+      // TS: collect IDs of re-parented reports for cache busting below
       const reparentedIds: string[] = [];
 
       // Re-parent orphaned direct reports to the replacement manager if provided
-      if (req.replacement_manager_id) {
-        const reportsRes = await client.query(
+      if (payload.replacementManagerId) {
+        const reparentRes = await client.query(
           `UPDATE users SET manager_id = $1
            WHERE manager_id = $2 AND is_active = true
            RETURNING id`,
-          [req.replacement_manager_id, target.id]
+          [payload.replacementManagerId, target.id]
         );
-        // TS: collect IDs so we can clear their profile + hierarchy caches below
-        reparentedIds.push(...reportsRes.rows.map((r: { id: string }) => r.id));
+        reparentedIds.push(...reparentRes.rows.map((r: { id: string }) => r.id));
       }
 
       // Apply the position change to the target user
-      const newBranchId = req.new_branch_id ?? target.branch_id;
+      const newBranchId = payload.newBranchId ?? target.branch_id;
       await client.query(
         `UPDATE users SET role = $1, branch_id = $2, manager_id = $3 WHERE id = $4`,
-        [req.new_role, newBranchId, req.new_manager_id ?? null, target.id]
+        [payload.newRole, newBranchId, payload.newManagerId ?? null, target.id]
       );
 
       // If the target was a GM/Director, clear their oversight branch assignments
-      // (those were scoped to the old position; the new admin will re-assign as needed)
+      // (scoped to the old position; the new admin will re-assign as needed)
       if ([Role.GM, Role.DIRECTOR].includes(target.role as typeof Role.GM)) {
         await client.query(
           `DELETE FROM user_oversight_branches WHERE user_id = $1`,
@@ -779,39 +682,47 @@ export const UserService = {
         );
       }
 
-      // Stamp the audit trail snapshot onto the request row
+      // Write one audit row: actor is both requester and decider (direct execute)
       await client.query(
-        `UPDATE user_transfer_requests
-         SET status           = 'approved',
-             decided_by       = $1,
-             decided_at       = now(),
-             decision_note    = $2,
-             previous_role    = $3,
-             previous_branch_id = $4,
-             previous_manager_id = $5
-         WHERE id = $6`,
-        [deciderId, payload.decisionNote ?? null,
-         target.role, target.branch_id, target.manager_id, requestId]
+        `INSERT INTO user_transfer_requests
+           (user_id, kind, new_role, new_branch_id, new_manager_id,
+            replacement_manager_id, reason,
+            status, requested_by, decided_by, decided_at,
+            previous_role, previous_branch_id, previous_manager_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,
+                 'approved',$8,$8,now(),
+                 $9,$10,$11)`,
+        [
+          target.id,
+          payload.kind,
+          payload.newRole,
+          payload.newBranchId ?? null,
+          payload.newManagerId ?? null,
+          payload.replacementManagerId ?? null,
+          payload.reason ?? null,
+          actorId,
+          target.role,
+          target.branch_id,
+          target.manager_id,
+        ]
       );
 
       // ── Cache invalidation ────────────────────────────────────────────────────
-      // Bust the old ancestor chain (before the move), then the new chain (after).
-      // bustHierarchyCache walks manager_id upward, so we call it on the old manager
-      // to clean stale subtree/oversight caches for everyone above in the old chain.
+      // Bust the old ancestor chain then the new chain so subtree/oversight caches
+      // for everyone above in both paths are cleared (GAPS.md #15).
       const allAffected = [target.id, ...reparentedIds];
-      if (req.replacement_manager_id) allAffected.push(req.replacement_manager_id);
+      if (payload.replacementManagerId) allAffected.push(payload.replacementManagerId);
       if (target.manager_id) await bustHierarchyCache(target.manager_id);  // old chain
-      if (req.new_manager_id) await bustHierarchyCache(req.new_manager_id); // new chain
+      if (payload.newManagerId) await bustHierarchyCache(payload.newManagerId); // new chain
       await Promise.allSettled(allAffected.map(id => bustHierarchyCache(id)));
-      // Clear 30-min profile cache so the next /me call sees the new role/branch (GAPS.md #15)
+      // Clear 30-min profile cache so the next /me call sees the new role/branch
       await Promise.allSettled(allAffected.map(id => redis.del(`user:${id}`)));
 
       return {
-        requestId,
         userId: target.id,
         previousRole: target.role,
         previousBranchId: target.branch_id,
-        newRole: req.new_role,
+        newRole: payload.newRole,
         newBranchId,
         reparentedReports: reparentedIds.length,
         oversightCleared: [Role.GM, Role.DIRECTOR].includes(target.role as typeof Role.GM),
@@ -819,33 +730,32 @@ export const UserService = {
     });
   },
 
-  // ── rejectTransferRequest ─────────────────────────────────────────────────────
-  // Marks a request as rejected. No users row is changed.
-  async rejectTransferRequest(
+  // ── listTransferRequests ──────────────────────────────────────────────────────
+  // Returns executed-transfer history for Management. Defaults to approved rows.
+  async listTransferRequests(
     db: Pool,
-    deciderId: string,
-    deciderRole: string,
-    requestId: string,
-    payload: RejectTransferRequestInput
-  ): Promise<any> {
-    // TS: only MD/Management may reject
-    if (!(TRANSFER_APPROVE_ROLES as readonly string[]).includes(deciderRole)) {
-      throw new ForbiddenError('Only MD or Management may reject transfer requests');
+    requesterRole: string,
+    status?: string
+  ): Promise<any[]> {
+    // TS: Management-only — this is the audit trail for management actions
+    if (!(TRANSFER_MANAGE_ROLES as readonly string[]).includes(requesterRole)) {
+      throw new ForbiddenError('Only Management may view the transfer history');
     }
-
+    // Default to 'approved' — there are no pending rows in the new model
+    const statusFilter = status ?? 'approved';
     const res = await db.query(
-      `UPDATE user_transfer_requests
-       SET status        = 'rejected',
-           decided_by    = $1,
-           decided_at    = now(),
-           decision_note = $2
-       WHERE id = $3 AND status = 'pending'
-       RETURNING *`,
-      [deciderId, payload.decisionNote, requestId]
+      `SELECT r.*,
+              u.name  AS user_name,  u.role  AS current_role,
+              b.name  AS new_branch_name,
+              rb.name AS executed_by_name
+       FROM user_transfer_requests r
+       JOIN users u   ON u.id = r.user_id
+       LEFT JOIN branches b  ON b.id = r.new_branch_id
+       JOIN users rb  ON rb.id = r.requested_by
+       WHERE r.status = $1
+       ORDER BY r.created_at DESC`,
+      [statusFilter]
     );
-    if (res.rows.length === 0) {
-      throw new NotFoundError('Request not found or already decided');
-    }
-    return res.rows[0];
+    return res.rows;
   },
 };

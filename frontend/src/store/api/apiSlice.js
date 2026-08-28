@@ -2085,26 +2085,17 @@ export const apiSlice = createApi({
       invalidatesTags: ['MobileAppVersion'],
     }),
 
-    // ─── Transfer / Promotion Requests ─────────────────────────────────────────
-    submitTransferRequest: builder.mutation({
-      query: (data) => ({ url: '/users/transfer-requests', method: 'POST', body: data }),
-      transformResponse: (response) => response.data,
-      invalidatesTags: ['TransferRequests'],
-    }),
-    listTransferRequests: builder.query({
-      query: ({ status } = {}) => `/users/transfer-requests${status ? `?status=${status}` : ''}`,
-      transformResponse: (response) => response.data,
-      providesTags: ['TransferRequests'],
-    }),
-    approveTransferRequest: builder.mutation({
-      query: ({ id, ...data }) => ({ url: `/users/transfer-requests/${id}/approve`, method: 'POST', body: data }),
+    // ─── Transfer / Promotion — Management direct execute ──────────────────────
+    // Management fills the form and the transfer takes effect immediately.
+    executeTransfer: builder.mutation({
+      query: (data) => ({ url: '/users/transfers', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['TransferRequests', 'Users'],
     }),
-    rejectTransferRequest: builder.mutation({
-      query: ({ id, ...data }) => ({ url: `/users/transfer-requests/${id}/reject`, method: 'POST', body: data }),
+    listTransferRequests: builder.query({
+      query: ({ status } = {}) => `/users/transfers${status ? `?status=${status}` : ''}`,
       transformResponse: (response) => response.data,
-      invalidatesTags: ['TransferRequests'],
+      providesTags: ['TransferRequests'],
     }),
   }),
 });
@@ -2349,8 +2340,6 @@ export const {
   useRetryPendingEnrollmentMutation,
   useGetMobileAppVersionQuery,
   useUpdateMobileAppVersionMutation,
-  useSubmitTransferRequestMutation,
+  useExecuteTransferMutation,
   useListTransferRequestsQuery,
-  useApproveTransferRequestMutation,
-  useRejectTransferRequestMutation,
 } = apiSlice;

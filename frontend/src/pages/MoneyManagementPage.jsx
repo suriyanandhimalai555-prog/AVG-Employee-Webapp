@@ -1,585 +1,212 @@
-import { useState } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import {
-  Wallet, Plus, History, XCircle, CheckCircle2, ChevronRight, ArrowRight,
-  Loader2, Clock, AlertCircle,
-  Briefcase, TrendingUp, Building2, AlertTriangle,
-  BarChart3, PenLine, MapPin, ArrowUpRight, Layers, Banknote, Sparkles
+  ChevronRight, ArrowRight,
+  Loader2,
+  Briefcase, Trophy, Medal, Layers, Banknote, Sparkles,
+  CircleSlash
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
   useGetMoneyCollectionsQuery,
   useGetMoneyWalletQuery,
-  useGetMoneyAdminOverviewQuery,
-  useGetMoneyBranchDrilldownQuery,
+  useGetSchemesOverviewQuery,
 } from '../store/api/apiSlice';
 import { useNavigate } from 'react-router-dom';
-import { PhotoProof } from '../components/money/PhotoProof';
+import { formatCurrency, formatNumber } from '../lib/formatters';
+import { SOURCE_META } from '../lib/schemeConstants';
 
-// Status colors (used in MD drilldown collections log)
-const STATUS_COLORS = {
-  pending: 'text-amber-500 bg-amber-50 border-amber-200',
-  approved: 'text-emerald-500 bg-emerald-50 border-emerald-200',
-  rejected: 'text-red-500 bg-red-50 border-red-200'
-};
-
-const MODE_LABELS = {
-  gpay: 'Google Pay',
-  bank_receipt: 'Bank Receipt',
-  cash: 'Cash in Hand',
-  cash_transfer: 'Cash Transfer'
+// ─── RANK BADGE — used in MD branch rankings section ─────────────────────────
+const RankBadge = ({ rank }) => {
+  if (rank === 1) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <Trophy size={18} className="text-yellow-500" />
+      <span className="text-[9px] font-black text-yellow-600 uppercase tracking-widest">1st</span>
+    </div>
+  );
+  if (rank === 2) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <Trophy size={18} className="text-slate-400" />
+      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">2nd</span>
+    </div>
+  );
+  if (rank === 3) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <Medal size={18} className="text-amber-700" />
+      <span className="text-[9px] font-black text-amber-800 uppercase tracking-widest">3rd</span>
+    </div>
+  );
+  return <span className="text-[9px] font-bold text-navy/30 uppercase tracking-widest whitespace-nowrap">{rank}th</span>;
 };
 
 export const MoneyManagementPage = () => {
   const user = useSelector(selectCurrentUser);
   const navigate = useNavigate();
-  const [drillBranchId, setDrillBranchId] = useState(null);
+  // Which branch row is expanded in the scheme-rankings list (MD only)
+  const [expandedBranchId, setExpandedBranchId] = useState(null);
 
-  // Admin overview — MD only
-  const { data: adminOverview, isLoading: isOverviewLoading } = useGetMoneyAdminOverviewQuery({}, { skip: user?.role !== 'md' });
-  const { data: drilldown, isLoading: isDrilldownLoading } = useGetMoneyBranchDrilldownQuery(drillBranchId, { skip: !drillBranchId });
+  const isMd = user?.role === 'md';
 
-  // Collections — used on home to detect pending approvals for non-MD roles
-  const { data: collectionsResult } = useGetMoneyCollectionsQuery(undefined, { skip: user?.role === 'md' });
+  // Scheme collections — MD only; single source for both grand-total and rankings
+  const { data: schemesData, isLoading: isSchemesLoading } = useGetSchemesOverviewQuery(undefined, { skip: !isMd });
+  const schemes = schemesData?.schemes ?? [];
+
+  // Aggregate schemes[].byBranch[] into a branch-ranking sorted by ₹ collected desc.
+  // Each byBranch row has: branchId, branchName, count, collected, commission.
+  const { branchRanking, grandTotal } = useMemo(() => {
+    const map = new Map();
+    for (const scheme of schemes) {
+      for (const row of (scheme.byBranch ?? [])) {
+        if (!map.has(row.branchId)) {
+          map.set(row.branchId, {
+            branchId:   row.branchId,
+            branchName: row.branchName,
+            collected:  0,
+            count:      0,
+            commission: 0,
+            perScheme:  [],
+          });
+        }
+        const acc = map.get(row.branchId);
+        acc.collected  += row.collected;
+        acc.count      += row.count;
+        acc.commission += row.commission;
+        // Only include schemes where this branch had actual activity
+        if (row.collected > 0 || row.count > 0) {
+          acc.perScheme.push({
+            schemeCode:  scheme.schemeCode,
+            schemeName:  scheme.schemeName,
+            collected:   row.collected,
+            count:       row.count,
+          });
+        }
+      }
+    }
+    const sorted = Array.from(map.values())
+      .sort((a, b) => b.collected - a.collected)
+      .map((b, i) => ({ ...b, rank: i + 1 }));
+    const grandTotal = sorted.reduce((s, b) => s + b.collected, 0);
+    return { branchRanking: sorted, grandTotal };
+  }, [schemes]);
+
+  // Collections — pending approvals indicator for non-MD roles
+  const { data: collectionsResult } = useGetMoneyCollectionsQuery(undefined, { skip: isMd });
   const collections = collectionsResult?.data || [];
   const pendingToVerify = collections.filter(c => c.status === 'pending' && c.assigned_verifier_id === user?.id && c.mode !== 'cash_transfer');
 
-  // MD pending: cash_transfers assigned to MD are excluded from the admin overview "Pending"
-  // KPI (to avoid double-counting). Fetch them separately so MD still sees a notification.
-  const { data: mdPendingResult } = useGetMoneyCollectionsQuery(
-    { status: 'pending' },
-    { skip: user?.role !== 'md' }
-  );
-  // MD sees ALL pending cash transfers system-wide (in-transit visibility)
-  const mdPendingToVerify = (mdPendingResult?.data || []).filter(
-    c => c.mode === 'cash_transfer'
-  );
+  // Wallet — available total shown on non-MD money home
+  const { data: walletItems = [] } = useGetMoneyWalletQuery(undefined, { skip: isMd });
 
-  // Wallet — used on home to show available total
-  const { data: walletItems = [] } = useGetMoneyWalletQuery(undefined, {
-    skip: user?.role === 'md'
-  });
-
-// ─── SHARED ADMIN OVERVIEW VIEW (used for MD and management roles) ───
-  const AdminOverviewContent = () => {
-    const isMd = user?.role === 'md';
-    const ov = adminOverview;
-    const ovTotals = ov?.totals || { collected: 0, verified: 0, pending: 0, rejected: 0, byMode: { gpay: 0, bankReceipt: 0, cash: 0 } };
-    const byBranch = ov?.byBranch || [];
-    const stuckCash = ov?.stuckCash || [];
-    const allHolders = ov?.holders || [];
-    const topVerified = ovTotals.verified > 0 ? ovTotals.verified : 1; // for bar scaling
-
-    return (
-      <div className="pb-28">
-        {/* KPI Strip */}
-        <div className="px-4 mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center"><TrendingUp size={14} /></div>
-                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Collected</p>
-              </div>
-              <p className="text-xl font-bold text-navy">₹{ovTotals.collected.toLocaleString()}</p>
-            </div>
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center"><CheckCircle2 size={14} /></div>
-                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Verified</p>
-              </div>
-              <p className="text-xl font-bold text-navy">₹{ovTotals.verified.toLocaleString()}</p>
-            </div>
-            <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center"><Clock size={14} /></div>
-                <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Pending</p>
-              </div>
-              <p className="text-xl font-bold text-navy">₹{ovTotals.pending.toLocaleString()}</p>
-            </div>
-            {isMd ? (
-              <div className="bg-navy rounded-3xl p-4 card-shadow">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-xl bg-white/10 text-white flex items-center justify-center"><Wallet size={14} /></div>
-                  <p className="text-[9px] uppercase tracking-widest font-bold text-white/40">Cash on Hand</p>
-                </div>
-                <p className="text-xl font-bold text-white">₹{(ov?.cashOnHand || 0).toLocaleString()}</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-3xl p-4 card-shadow border border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><XCircle size={14} /></div>
-                  <p className="text-[9px] uppercase tracking-widest font-bold text-navy/30">Rejected</p>
-                </div>
-                <p className="text-xl font-bold text-navy">₹{ovTotals.rejected.toLocaleString()}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Mode breakdown strip */}
-        <div className="px-4 mb-6">
-          <div className="bg-white rounded-xl p-4 card-shadow border border-border">
-            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'GPay', val: ovTotals.byMode?.gpay || 0, color: 'bg-indigo/5 text-indigo' },
-                { label: 'Bank', val: ovTotals.byMode?.bankReceipt || 0, color: 'bg-emerald-50 text-emerald-600' },
-                { label: 'Cash', val: ovTotals.byMode?.cash || 0, color: 'bg-amber-50 text-amber-600' },
-              ].map(({ label, val, color }) => (
-                <div key={label} className={`rounded-2xl p-3 ${color}`}>
-                  <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
-                  <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Org-wide cash holders (MD-only) — clickable cards → detail page */}
-        {isMd && allHolders.length > 0 && (
-          <div className="px-4 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Who is Holding Cash</p>
-              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2.5 py-1 rounded-full">
-                {allHolders.length} {allHolders.length === 1 ? 'holder' : 'holders'}
-              </span>
-            </div>
-            <div className="space-y-2.5">
-              {allHolders.map((h, idx) => (
-                <button
-                  key={h.id}
-                  onClick={() => navigate(`/money/holders/${h.id}`)}
-                  className="w-full bg-white rounded-xl p-4 card-shadow border border-amber-100/60 flex items-center gap-4 group tactile-press text-left hover:border-amber-200 transition-colors"
-                >
-                  {/* Rank badge */}
-                  <div className="w-7 h-7 rounded-xl bg-amber-50 flex items-center justify-center text-[11px] font-bold text-amber-500 shrink-0">
-                    {idx + 1}
-                  </div>
-
-                  {/* Icon */}
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center text-white shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-                    <Wallet size={16} />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-navy truncate group-hover:text-amber-600 transition-colors">
-                      {h.name}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-[9px] font-bold text-navy/30 uppercase tracking-wider capitalize">
-                        {h.role?.replace(/_/g, ' ')}
-                      </span>
-                      {h.branch_name && (
-                        <span className="flex items-center gap-0.5 text-[9px] text-navy/25 font-medium">
-                          <MapPin size={8} />{h.branch_name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Amount + chevron */}
-                  <div className="shrink-0 text-right">
-                    <p className="text-base font-bold text-amber-600">
-                      ₹{parseFloat(h.amount_held).toLocaleString()}
-                    </p>
-                    <ChevronRight size={13} className="text-amber-300 group-hover:translate-x-0.5 transition-transform ml-auto mt-0.5" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Manage Projects (MD-only) */}
-        {isMd && (
-          <div className="px-4 mb-6">
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] mb-3 font-mono">Administration</p>
-            <button
-              onClick={() => navigate('/money/projects')}
-              className="w-full bg-white rounded-2xl p-5 flex items-center justify-between card-shadow border border-border group tactile-press"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Briefcase size={22} />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-bold text-navy">Manage Projects</p>
-                  <p className="text-[10px] font-medium text-navy/30">Edit names, activate/deactivate</p>
-                </div>
-              </div>
-              <ChevronRight size={20} className="text-navy/20 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        )}
-
-        {/* Stuck Cash Alerts (MD-only) */}
-        {isMd && stuckCash.length > 0 && (
-          <div className="px-4 mb-6">
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={16} className="text-red-500" />
-                <p className="text-xs font-bold text-red-700">{stuckCash.length} cash alert{stuckCash.length > 1 ? 's' : ''} — held &gt;3 days</p>
-              </div>
-              <div className="space-y-2">
-                {stuckCash.map(sc => (
-                  <div key={sc.id} className="bg-white rounded-2xl p-3 flex items-center justify-between border border-red-100">
-                    <div>
-                      <p className="text-xs font-bold text-navy">{sc.holder_name}</p>
-                      <p className="text-[9px] font-medium text-navy/40">{sc.branch_name} · {sc.holder_role?.replace('_', ' ')}</p>
-                    </div>
-                    <p className="text-sm font-bold text-red-600">₹{parseFloat(sc.amount).toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Branch Breakdown */}
-        <div className="px-4 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] font-bold text-navy/30 uppercase tracking-[0.2em] font-mono">Branch Breakdown</p>
-            {isMd && <p className="text-[9px] font-bold text-navy/20 uppercase tracking-wider">incl. cash on hand</p>}
-          </div>
-          <div className="space-y-3">
-            {isOverviewLoading ? (
-              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-navy/20" size={28} /></div>
-            ) : byBranch.length === 0 ? (
-              <p className="text-center text-sm text-navy/30 py-6">No branch data yet.</p>
-            ) : (
-              byBranch.map(b => (
-                <button
-                  key={b.branchId}
-                  onClick={() => setDrillBranchId(b.branchId)}
-                  className="w-full bg-white rounded-xl p-4 card-shadow border border-border text-left tactile-press group"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-indigo/5 text-indigo flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Building2 size={15} />
-                      </div>
-                      <p className="text-sm font-bold text-navy">{b.branchName}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isMd && b.cashOnHand > 0 && (
-                        <span className="text-[9px] font-bold text-navy bg-navy/5 px-2 py-1 rounded-lg">
-                          ₹{b.cashOnHand.toLocaleString()} held
-                        </span>
-                      )}
-                      <ChevronRight size={14} className="text-navy/20 group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </div>
-                  {/* Mini bar: verified width relative to top branch */}
-                  <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden mb-2">
-                    <div
-                      className="h-full bg-indigo rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(100, (b.verified / topVerified) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex gap-4 text-[9px] font-bold uppercase tracking-wider mb-3">
-                    <span className="text-emerald-500">₹{b.verified.toLocaleString()} verified</span>
-                    {b.pending > 0 && <span className="text-amber-500">₹{b.pending.toLocaleString()} pending</span>}
-                    {b.rejected > 0 && <span className="text-red-400">₹{b.rejected.toLocaleString()} rejected</span>}
-                  </div>
-                  {/* Mode breakdown */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-border">
-                    {[
-                      { label: 'GPay', val: b.byMode?.gpay || 0, cls: 'text-indigo bg-indigo/5' },
-                      { label: 'Bank', val: b.byMode?.bankReceipt || 0, cls: 'text-emerald-600 bg-emerald-50' },
-                      { label: 'Cash', val: b.byMode?.cash || 0, cls: 'text-amber-600 bg-amber-50' },
-                    ].map(({ label, val, cls }) => (
-                      <div key={label} className={`rounded-xl px-2 py-1.5 ${cls}`}>
-                        <p className="text-[8px] font-bold uppercase tracking-wider opacity-60">{label}</p>
-                        <p className="text-[10px] font-bold mt-0.5">₹{val.toLocaleString()}</p>
-                      </div>
-                    ))}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-      </div>
-    );
-  };
-
-// ─── MD DASHBOARD VIEW ───
-  if (user?.role === 'md') {
-    const mdByBranch = adminOverview?.byBranch || [];
-
+// ─── MD MONEY VIEW ───
+  if (isMd) {
     return (
       <div className="flex flex-col">
-        <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-10 pt-4">
+        <motion.div key="md_money" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 pb-16 pt-4">
+
+          {/* Header */}
           <div className="px-6 mb-6">
-            <h2 className="text-3xl font-bold text-navy tracking-tight">Finances</h2>
-            <p className="text-xs font-medium text-navy/40 mt-1">Global collections overview</p>
+            <h2 className="text-3xl font-bold text-navy tracking-tight">Money</h2>
+            <p className="text-xs font-medium text-navy/40 mt-1">Branch rankings · by scheme collections</p>
           </div>
 
-          {/* MD quick actions */}
-          <div className="px-4 mb-6 grid grid-cols-2 gap-3">
-            <button
-              onClick={() => navigate('/money/rankings')}
-              className="bg-gradient-to-br from-indigo to-indigo/80 rounded-xl p-4 flex flex-col items-start gap-3 card-shadow tactile-press group"
-            >
-              <div className="w-9 h-9 rounded-2xl bg-white/10 flex items-center justify-center">
-                <BarChart3 size={18} className="text-white" />
-              </div>
+          {/* Grand-total strip */}
+          <div className="px-4 mb-5">
+            <div className="bg-navy rounded-2xl p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-white leading-tight">Branch Rankings</p>
-                <p className="text-[9px] font-medium text-white/60 mt-0.5">Top collectors</p>
+                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest mb-1">Total collected via schemes · all branches</p>
+                <p className="text-2xl font-black text-white">{formatCurrency(grandTotal)}</p>
               </div>
-            </button>
-            <button
-              onClick={() => navigate('/money/add-entry')}
-              className="bg-white rounded-xl p-4 flex flex-col items-start gap-3 card-shadow border border-border tactile-press group"
-            >
-              <div className="w-9 h-9 rounded-2xl bg-emerald-50 flex items-center justify-center">
-                <PenLine size={18} className="text-emerald-600" />
+              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center">
+                <Trophy size={22} className="text-white/70" />
               </div>
-              <div>
-                <p className="text-xs font-bold text-navy leading-tight">Add Entry</p>
-                <p className="text-[9px] font-medium text-navy/40 mt-0.5">Direct collection</p>
-              </div>
-            </button>
+            </div>
           </div>
 
-          {/* Pending cash transfers assigned to MD — always visible, not counted in collection totals */}
-          <div className="px-4 mb-6">
-            <button
-              onClick={() => navigate('/money/pending-transfers')}
-              className={`w-full rounded-2xl p-5 tactile-press group text-left space-y-3 border ${
-                mdPendingToVerify.length > 0
-                  ? 'bg-amber-50 border-amber-200'
-                  : 'bg-white border-border card-shadow'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 ${
-                    mdPendingToVerify.length > 0 ? 'bg-amber-100' : 'bg-navy/5'
-                  }`}>
-                    <ArrowUpRight size={20} className={mdPendingToVerify.length > 0 ? 'text-amber-600' : 'text-navy/40'} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-navy">Pending Cash Transfers</p>
-                    <p className="text-[10px] font-medium text-navy/40">
-                      {mdPendingToVerify.length > 0
-                        ? `${mdPendingToVerify.length} transfer${mdPendingToVerify.length > 1 ? 's' : ''} awaiting your approval`
-                        : 'No pending transfers right now'}
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight size={18} className={`group-hover:translate-x-1 transition-transform shrink-0 ${mdPendingToVerify.length > 0 ? 'text-amber-400' : 'text-navy/20'}`} />
+          {/* Ranked branch list */}
+          <div className="px-4 space-y-3">
+            {isSchemesLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="animate-spin text-navy/20" size={28} />
               </div>
-              {mdPendingToVerify.length > 0 && (
-                <div className="flex items-center justify-between border-t border-amber-200/60 pt-3">
-                  <p className="text-xl font-bold text-amber-700">
-                    ₹{mdPendingToVerify.reduce((s, c) => s + parseFloat(c.amount), 0).toLocaleString()}
-                  </p>
-                  <span className="text-[9px] font-bold text-amber-500 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full uppercase tracking-wider">
-                    Not counted in totals
-                  </span>
-                </div>
-              )}
-            </button>
-          </div>
+            ) : branchRanking.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
+                <CircleSlash size={26} className="text-navy/20 mx-auto mb-2" />
+                <p className="text-sm font-bold text-navy">No scheme activity yet</p>
+              </div>
+            ) : (
+              branchRanking.map(b => {
+                const isExpanded = expandedBranchId === b.branchId;
+                return (
+                  <div key={b.branchId} className="bg-white rounded-2xl card-shadow border border-border overflow-hidden">
 
-          <AdminOverviewContent />
-        </motion.div>
-
-        {/* Branch Drilldown — rendered via portal to ensure viewport centering */}
-        {createPortal(
-          <AnimatePresence>
-            {drillBranchId && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-navy/40 backdrop-blur-sm pointer-events-none"
-                onClick={() => setDrillBranchId(null)}
-              >
-                <motion.div
-                  initial={{ scale: 0.92, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.92, opacity: 0 }}
-                  transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-                  onClick={e => e.stopPropagation()}
-                  className="bg-white w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
-                >
-                  <div className="flex items-center justify-between p-5 border-b border-border">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-2xl bg-indigo/5 text-indigo flex items-center justify-center"><Building2 size={18} /></div>
-                      <div>
-                        <p className="text-[9px] font-bold text-navy/30 uppercase tracking-widest">Branch Detail</p>
-                        <p className="text-base font-bold text-navy">
-                          {mdByBranch.find(b => b.branchId === drillBranchId)?.branchName || 'Branch'}
-                        </p>
+                    {/* Row — tap to toggle per-scheme breakdown */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedBranchId(isExpanded ? null : b.branchId)}
+                      className="w-full p-4 flex items-center gap-3 text-left tactile-press"
+                    >
+                      {/* Rank number */}
+                      <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-black text-navy/40">{b.rank}</span>
                       </div>
-                    </div>
-                    <button onClick={() => setDrillBranchId(null)} type="button" aria-label="Close branch detail" className="p-2 hover:bg-navy/5 rounded-full">
-                      <XCircle size={20} className="text-navy/30" aria-hidden="true" />
+
+                      {/* Branch name + entry count */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-navy truncate">{b.branchName}</p>
+                        <p className="text-[10px] font-medium text-navy/40">{formatNumber(b.count)} entries</p>
+                      </div>
+
+                      {/* Collected amount */}
+                      <div className="text-right shrink-0 mr-2">
+                        <p className="text-base font-black text-navy">{formatCurrency(b.collected)}</p>
+                        <p className="text-[9px] text-navy/30">via schemes</p>
+                      </div>
+
+                      {/* Rank badge */}
+                      <div className="shrink-0 w-10 flex flex-col items-center">
+                        <RankBadge rank={b.rank} />
+                      </div>
+
+                      {/* Expand chevron */}
+                      <ChevronRight
+                        size={16}
+                        className={`shrink-0 text-navy/30 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                      />
                     </button>
-                  </div>
 
-                  <div className="overflow-y-auto max-h-[80vh] p-4 space-y-6">
-                    {isDrilldownLoading ? (
-                      <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo/40" size={28} /></div>
-                    ) : drilldown ? (
-                      <>
-                        {/* Flow totals */}
-                        <div className="grid grid-cols-2 gap-3">
-                          {[
-                            { label: 'Collected', val: drilldown.totals.collected, icon: <TrendingUp size={13} />, bg: 'bg-indigo/5 text-indigo' },
-                            { label: 'Verified',  val: drilldown.totals.verified,  icon: <CheckCircle2 size={13} />, bg: 'bg-emerald-50 text-emerald-500' },
-                            { label: 'Pending',   val: drilldown.totals.pending,   icon: <Clock size={13} />, bg: 'bg-amber-50 text-amber-500' },
-                            { label: 'Rejected',  val: drilldown.totals.rejected,  icon: <XCircle size={13} />, bg: 'bg-red-50 text-red-400' },
-                          ].map(({ label, val, icon, bg }) => (
-                            <div key={label} className="bg-white rounded-xl p-4 card-shadow border border-border">
-                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center mb-2 ${bg}`}>{icon}</div>
-                              <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
-                              <p className="text-base font-bold text-navy mt-0.5">₹{val.toLocaleString()}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Mode breakdown */}
-                        <div className="bg-white rounded-xl p-4 card-shadow border border-border">
-                          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collected by Mode</p>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { label: 'GPay', val: drilldown.totals.byMode?.gpay || 0, cls: 'bg-indigo/5 text-indigo' },
-                              { label: 'Bank', val: drilldown.totals.byMode?.bankReceipt || 0, cls: 'bg-emerald-50 text-emerald-600' },
-                              { label: 'Cash', val: drilldown.totals.byMode?.cash || 0, cls: 'bg-amber-50 text-amber-600' },
-                            ].map(({ label, val, cls }) => (
-                              <div key={label} className={`rounded-2xl p-3 ${cls}`}>
-                                <p className="text-[9px] font-bold uppercase tracking-wider opacity-60 mb-1">{label}</p>
-                                <p className="text-sm font-bold">₹{val.toLocaleString()}</p>
+                    {/* Expanded: per-scheme breakdown */}
+                    {isExpanded && (
+                      <div className="border-t border-border px-4 py-3 space-y-2 bg-navy/[0.02]">
+                        {b.perScheme.length === 0 ? (
+                          <p className="text-[11px] text-navy/30 py-1">No detailed scheme data for this branch.</p>
+                        ) : (
+                          b.perScheme.map(s => {
+                            const meta = SOURCE_META[s.schemeCode] ?? SOURCE_META.scheme;
+                            const Icon = meta.Icon;
+                            return (
+                              <div key={s.schemeCode} className="flex items-center gap-3 py-1">
+                                <div className={`w-8 h-8 rounded-xl bg-white flex items-center justify-center shrink-0 border border-border ${meta.color}`}>
+                                  <Icon size={14} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-navy truncate">{s.schemeName}</p>
+                                  <p className="text-[10px] text-navy/40">{formatNumber(s.count)} entries</p>
+                                </div>
+                                <p className="text-sm font-bold text-navy shrink-0">{formatCurrency(s.collected)}</p>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Cash holders (MD-only) */}
-                        {drilldown.holders && drilldown.holders.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Current Cash Holders</p>
-                            <div className="space-y-2">
-                              {drilldown.holders.map(h => (
-                                <div key={h.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center text-navy/30"><Wallet size={15} /></div>
-                                    <div>
-                                      <p className="text-xs font-bold text-navy">{h.name}</p>
-                                      <p className="text-[9px] font-medium text-navy/40 capitalize">{h.role?.replace('_', ' ')}</p>
-                                    </div>
-                                  </div>
-                                  <p className="text-sm font-bold text-navy">₹{parseFloat(h.amount_held).toLocaleString()}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                            );
+                          })
                         )}
-
-                        {/* Top collectors */}
-                        {drilldown.topCollectors && drilldown.topCollectors.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Top Collectors</p>
-                            <div className="space-y-2">
-                              {drilldown.topCollectors.map((c, idx) => (
-                                <div key={c.id} className="bg-white rounded-xl p-4 card-shadow border border-border flex items-center gap-3">
-                                  <span className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-[10px] font-bold text-navy/30 shrink-0">{idx + 1}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-bold text-navy truncate">{c.name}</p>
-                                    <p className="text-[10px] font-medium text-navy/40 capitalize">{c.role?.replace('_', ' ')}</p>
-                                  </div>
-                                  <p className="text-sm font-bold text-indigo shrink-0">₹{parseFloat(c.total_collected).toLocaleString()}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Project split */}
-                        {drilldown.projectSplit && drilldown.projectSplit.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Project Split</p>
-                            <div className="space-y-2">
-                              {drilldown.projectSplit.map(p => {
-                                const pct = drilldown.totals.collected > 0
-                                  ? Math.round((parseFloat(p.total_amount) / drilldown.totals.collected) * 100)
-                                  : 0;
-                                return (
-                                  <div key={p.id} className="bg-white rounded-xl p-4 card-shadow border border-border">
-                                    <div className="flex justify-between items-center mb-2">
-                                      <p className="text-xs font-bold text-navy truncate w-2/3">{p.name}</p>
-                                      <div className="text-right shrink-0">
-                                        <p className="text-xs font-bold text-indigo">₹{parseFloat(p.total_amount).toLocaleString()}</p>
-                                        <p className="text-[9px] font-bold text-navy/20">{pct}%</p>
-                                      </div>
-                                    </div>
-                                    <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden">
-                                      <div className="h-full bg-indigo rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Collections log with proof photos */}
-                        {drilldown.collections && drilldown.collections.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-navy/30 mb-3 font-mono">Collections Log</p>
-                            <div className="space-y-3">
-                              {drilldown.collections.map(col => (
-                                <div key={col.id} className="bg-white rounded-xl p-4 card-shadow border border-border space-y-3">
-                                  <div className="flex items-start justify-between">
-                                    <div>
-                                      <p className="text-xs font-bold text-navy">{col.submitter_name}</p>
-                                      <p className="text-[9px] text-navy/40 capitalize">{col.submitter_role?.replace(/_/g, ' ')}</p>
-                                      {col.verifier_name && (
-                                        <p className="text-[9px] font-semibold text-indigo mt-0.5">→ {col.verifier_name}</p>
-                                      )}
-                                    </div>
-                                    <span className={`px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-wider ${STATUS_COLORS[col.status]}`}>
-                                      {col.status}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <p className="text-base font-bold text-navy">₹{parseFloat(col.amount).toLocaleString()}</p>
-                                      <p className="text-[9px] text-navy/40">{col.client_name} · {col.project_name}</p>
-                                    </div>
-                                    <span className="text-[9px] font-bold text-navy/30 bg-navy/5 px-2 py-1 rounded-lg uppercase">
-                                      {MODE_LABELS[col.mode] || col.mode}
-                                    </span>
-                                  </div>
-                                  {col.photo_key && <PhotoProof photoKey={col.photo_key} />}
-                                  {col.rejection_note && (
-                                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-100 flex items-start gap-2">
-                                      <AlertCircle size={12} className="text-red-500 shrink-0 mt-0.5" />
-                                      <p className="text-[9px] font-medium text-red-700 leading-relaxed">{col.rejection_note}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : null}
+                      </div>
+                    )}
                   </div>
-                </motion.div>
-              </motion.div>
+                );
+              })
             )}
-          </AnimatePresence>,
-          document.body
-        )}
+          </div>
+
+        </motion.div>
       </div>
     );
   }
@@ -627,47 +254,6 @@ export const MoneyManagementPage = () => {
             </button>
 
             {/* ── EVERYTHING ELSE below ── */}
-            <button onClick={() => navigate('/money/submit')} className="bg-gradient-to-br from-indigo to-indigo/80 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left">
-              <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
-              <div className="relative z-10 w-3/4">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-white mb-4">
-                  <Plus size={24} />
-                </div>
-                <p className="text-xl font-bold text-white mb-1">New Entry</p>
-                <p className="text-xs font-medium text-white/70">Record a new payment collection</p>
-              </div>
-              <div className="relative z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center mt-2 group-hover:bg-white/20 transition-colors">
-                <ArrowRight size={20} className="text-white" />
-              </div>
-            </button>
-
-            <button onClick={() => navigate('/money/history')} className="bg-white p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-border">
-              <div className="relative z-10 w-3/4">
-                <div className="w-12 h-12 rounded-2xl bg-navy/5 flex items-center justify-center text-navy mb-4 group-hover:scale-110 transition-transform">
-                  <History size={24} />
-                </div>
-                <p className="text-xl font-bold text-navy mb-1">Transactions</p>
-                <p className="text-xs font-medium text-navy/40">View your collection history</p>
-              </div>
-              <div className="relative z-10 w-10 h-10 rounded-full bg-navy/5 flex items-center justify-center mt-2 group-hover:bg-navy/10 transition-colors">
-                <ArrowRight size={20} className="text-navy/40" />
-              </div>
-            </button>
-
-            {pendingToVerify.length > 0 && (
-              <button onClick={() => navigate('/money/history')} className="bg-amber-50 p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-amber-200">
-                <div className="relative z-10 w-3/4">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-4 group-hover:scale-110 transition-transform">
-                    <CheckCircle2 size={24} />
-                  </div>
-                  <p className="text-xl font-bold text-navy mb-1">Pending Approvals</p>
-                  <p className="text-xs font-medium text-navy/40">{pendingToVerify.length} collection{pendingToVerify.length > 1 ? 's' : ''} waiting for your review</p>
-                </div>
-                <div className="relative z-10 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mt-2 group-hover:bg-amber-200 transition-colors">
-                  <ArrowRight size={20} className="text-amber-600" />
-                </div>
-              </button>
-            )}
 
             {user?.role !== 'md' && (
               <button onClick={() => navigate('/money/wallet')} className="bg-white p-6 rounded-2xl card-shadow flex items-start justify-between relative overflow-hidden tactile-press group text-left border border-border">

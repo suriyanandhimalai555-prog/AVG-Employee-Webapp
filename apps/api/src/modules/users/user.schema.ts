@@ -50,8 +50,9 @@ export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UserResponse = z.infer<typeof UserResponseSchema>;
 export type UpdateOversightBranchesInput = z.infer<typeof UpdateOversightBranchesSchema>;
 
-// Schema for submitting a promotion or transfer request (requester: GM / BM / branch_admin)
-export const SubmitTransferRequestSchema = z.object({
+// Schema for directly executing a promotion or transfer (management-only, single-step).
+// The transfer takes effect immediately — no approval step.
+export const ExecuteTransferSchema = z.object({
   userId:                z.string().uuid(),
   kind:                  z.enum(['promotion', 'transfer']),
   newRole:               UserRole,
@@ -63,16 +64,4 @@ export const SubmitTransferRequestSchema = z.object({
   reason:                z.string().max(500).optional(),
 });
 
-// Schema for approving a request (approver: MD / management)
-export const ApproveTransferRequestSchema = z.object({
-  decisionNote: z.string().max(500).optional(),
-});
-
-// Schema for rejecting a request (approver: MD / management)
-export const RejectTransferRequestSchema = z.object({
-  decisionNote: z.string().max(500),
-});
-
-export type SubmitTransferRequestInput  = z.infer<typeof SubmitTransferRequestSchema>;
-export type ApproveTransferRequestInput = z.infer<typeof ApproveTransferRequestSchema>;
-export type RejectTransferRequestInput  = z.infer<typeof RejectTransferRequestSchema>;
+export type ExecuteTransferInput = z.infer<typeof ExecuteTransferSchema>;

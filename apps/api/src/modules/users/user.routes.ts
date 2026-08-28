@@ -4,8 +4,8 @@ import { UserService } from './user.service';
 import { CreateUserSchema, UpdateOversightBranchesSchema } from './user.schema';
 import { AppError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { USER_DIRECTORY_ROLES, DEACTIVATED_USERS_MANAGE_ROLES, TRANSFER_APPROVE_ROLES } from '../../shared/role-constants';
-import { SubmitTransferRequestSchema, ApproveTransferRequestSchema, RejectTransferRequestSchema } from './user.schema';
+import { USER_DIRECTORY_ROLES, DEACTIVATED_USERS_MANAGE_ROLES, TRANSFER_MANAGE_ROLES } from '../../shared/role-constants';
+import { ExecuteTransferSchema } from './user.schema';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
@@ -283,62 +283,24 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ─── POST /api/users/transfer-requests ───
-  // Submit a promotion or branch-transfer request (GM / BM / branch_admin).
-  // No users row is changed — creates a pending request for management approval.
-  fastify.post('/transfer-requests', {
+  // ─── POST /api/users/transfers ───
+  // Execute a promotion or branch-transfer immediately (Management-only).
+  // The transfer takes effect in this request — no pending/approval step.
+  fastify.post('/transfers', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const payload = SubmitTransferRequestSchema.parse(request.body);
-      const data = await UserService.submitTransferRequest(
-        fastify.db,
-        req.user.id,
-        req.user.role,
-        payload
-      );
-      return reply.code(201).send({ success: true, data });
-    } catch (error) {
-      return handleError(error, reply);
-    }
-  });
-
-  // ─── GET /api/users/transfer-requests ───
-  // List transfer requests (MD / Management — the approval inbox).
-  // Pass ?status=pending|approved|rejected (defaults to pending).
-  fastify.get('/transfer-requests', {
-    onRequest: [fastify.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const req = request as AuthenticatedRequest;
-      // TS: TRANSFER_APPROVE_ROLES guard is enforced in the service; early check here for fast 403
-      if (!(TRANSFER_APPROVE_ROLES as readonly string[]).includes(req.user.role)) {
+      // TS: fast 403 before parsing body; service re-checks for defence-in-depth
+      if (!(TRANSFER_MANAGE_ROLES as readonly string[]).includes(req.user.role)) {
         throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
       }
-      const { status } = req.query as { status?: string };
-      const data = await UserService.listTransferRequests(fastify.db, req.user.role, status);
-      return reply.send({ success: true, data });
-    } catch (error) {
-      return handleError(error, reply);
-    }
-  });
-
-  // ─── POST /api/users/transfer-requests/:id/approve ───
-  // Approve a pending request: executes the users mutation atomically.
-  fastify.post('/transfer-requests/:id/approve', {
-    onRequest: [fastify.authenticate],
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const req = request as AuthenticatedRequest;
-      const { id } = req.params as { id: string };
-      const payload = ApproveTransferRequestSchema.parse(request.body);
-      const data = await UserService.approveTransferRequest(
+      const payload = ExecuteTransferSchema.parse(request.body);
+      const data = await UserService.executeTransfer(
         fastify.db,
         fastify.redis,
         req.user.id,
         req.user.role,
-        id,
         payload
       );
       return reply.send({ success: true, data });
@@ -347,22 +309,20 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ─── POST /api/users/transfer-requests/:id/reject ───
-  // Reject a pending request. No users row is changed.
-  fastify.post('/transfer-requests/:id/reject', {
+  // ─── GET /api/users/transfers ───
+  // Transfer history for Management (audit trail of executed transfers).
+  // Pass ?status=approved (default) — pending/rejected no longer exist.
+  fastify.get('/transfers', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const { id } = req.params as { id: string };
-      const payload = RejectTransferRequestSchema.parse(request.body);
-      const data = await UserService.rejectTransferRequest(
-        fastify.db,
-        req.user.id,
-        req.user.role,
-        id,
-        payload
-      );
+      // TS: Management-only; fast 403 before service call
+      if (!(TRANSFER_MANAGE_ROLES as readonly string[]).includes(req.user.role)) {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+      const { status } = req.query as { status?: string };
+      const data = await UserService.listTransferRequests(fastify.db, req.user.role, status);
       return reply.send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);
