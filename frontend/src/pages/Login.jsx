@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { PasswordInput } from '../components/PasswordInput';
 import { apiSlice, useLoginMutation } from '../store/api/apiSlice';
 import { setCredentials } from '../store/slices/authSlice';
 
@@ -76,7 +77,7 @@ export const Login = () => {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
                   placeholder="your@email.com"
                   required
                   autoComplete="email"
@@ -89,20 +90,20 @@ export const Login = () => {
               <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
                 Password
               </label>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/25 group-focus-within:text-indigo transition-colors duration-200">
-                  <Lock size={17} />
-                </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  required
-                  autoComplete="current-password"
-                  className="w-full pl-11 pr-4 py-4 bg-white/70 rounded-2xl text-navy font-semibold placeholder:text-navy/20 outline-none border border-navy/[0.07] focus:border-indigo/35 focus:ring-4 focus:ring-indigo/8 transition-all duration-200 text-sm"
-                />
-              </div>
+              {/* wrapperClassName="group" enables the group-focus-within colour
+                  transition on the Lock icon when the input is focused */}
+              <PasswordInput
+                wrapperClassName="group"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                required
+                autoComplete="current-password"
+                leftIcon={
+                  <Lock size={17} className="text-navy/25 group-focus-within:text-indigo transition-colors duration-200" />
+                }
+                className="w-full pl-11 py-4 bg-white/70 rounded-2xl text-navy font-semibold placeholder:text-navy/20 outline-none border border-navy/[0.07] focus:border-indigo/35 focus:ring-4 focus:ring-indigo/8 transition-all duration-200 text-sm"
+              />
             </div>
 
             <AnimatePresence>

@@ -161,11 +161,15 @@ export const BuildersIncentivesService = {
   },
 
   // ─── MONTHLY: credit per recorded customer payout ──────────────────────────
-  // Credits the SO (referrer) their tier-based monthly incentive.
-  // Only fires when the plan has a referrer AND the referrer is a sales_officer.
-  // Managers above the SO do NOT earn monthly incentives.
+  // Credits the original referrer their tier-based monthly incentive.
+  // Only fires when the plan has a referrer_id stored on the plan row.
+  // Managers above the referrer do NOT earn monthly incentives in the Builders scheme.
   // No-op when plan.referrer_id is null.
   // effectiveDate overrides created_at so backdated payouts credit the right period.
+  //
+  // NOTE: the referrer is paid the SO-tier monthly amount regardless of their current role.
+  // The role-gate was intentionally removed so promoted/transferred earners keep receiving
+  // their old-customer monthly commission (the stored referrer_id is stable and branch-independent).
   async creditMonthly(
     client: PoolClient,
     args: {
@@ -176,13 +180,6 @@ export const BuildersIncentivesService = {
     }
   ): Promise<void> {
     if (!args.plan.referrer_id) return;
-
-    // Confirm the referrer is a sales_officer — monthly is SO-only
-    const soCheck = await client.query(
-      `SELECT id FROM users WHERE id = $1 AND role = 'sales_officer'`,
-      [args.plan.referrer_id]
-    );
-    if (soCheck.rows.length === 0) return;
 
     const rulesMap = await BuildersIncentivesService.loadRulesMap(client);
     const key: RulesKey = `${args.plan.package_number}:sales_officer:monthly`;

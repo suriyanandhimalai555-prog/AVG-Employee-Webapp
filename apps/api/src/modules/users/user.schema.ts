@@ -49,3 +49,30 @@ export const UpdateOversightBranchesSchema = z.object({
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UserResponse = z.infer<typeof UserResponseSchema>;
 export type UpdateOversightBranchesInput = z.infer<typeof UpdateOversightBranchesSchema>;
+
+// Schema for submitting a promotion or transfer request (requester: GM / BM / branch_admin)
+export const SubmitTransferRequestSchema = z.object({
+  userId:                z.string().uuid(),
+  kind:                  z.enum(['promotion', 'transfer']),
+  newRole:               UserRole,
+  // Required for transfers (branch changes); optional for same-branch promotions
+  newBranchId:           z.string().uuid().nullable().optional(),
+  newManagerId:          z.string().uuid().nullable().optional(),
+  // Required when the person being moved has active direct reports
+  replacementManagerId:  z.string().uuid().nullable().optional(),
+  reason:                z.string().max(500).optional(),
+});
+
+// Schema for approving a request (approver: MD / management)
+export const ApproveTransferRequestSchema = z.object({
+  decisionNote: z.string().max(500).optional(),
+});
+
+// Schema for rejecting a request (approver: MD / management)
+export const RejectTransferRequestSchema = z.object({
+  decisionNote: z.string().max(500),
+});
+
+export type SubmitTransferRequestInput  = z.infer<typeof SubmitTransferRequestSchema>;
+export type ApproveTransferRequestInput = z.infer<typeof ApproveTransferRequestSchema>;
+export type RejectTransferRequestInput  = z.infer<typeof RejectTransferRequestSchema>;

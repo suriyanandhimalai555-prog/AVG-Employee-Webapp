@@ -297,6 +297,18 @@ frontend/.env: `VITE_API_URL=http://localhost:3001/api`
 Never commit live secrets. `.gitignore` excludes `.env*`. Keep both
 `.env.example` files in sync with `env.ts` when adding variables.
 
+### DEV DATABASE (Railway)
+
+```
+DATABASE_URL=postgresql://postgres:RLlGzGBgbHrPnGCUbzxYtSJbGgZqbXPP@viaduct.proxy.rlwy.net:22629/railway
+```
+
+⚠️ **PRODUCTION DB IS SEPARATE AND HAS LIVE USERS.**
+- NEVER run migrations, seeds, or any write against the production DB.
+- NEVER change `DATABASE_URL` to the production connection string in any
+  local `.env` or script.
+- All local development and all migration testing use the dev DB above ONLY.
+
 ---
 
 ## GOTCHAS — things that look right but aren't

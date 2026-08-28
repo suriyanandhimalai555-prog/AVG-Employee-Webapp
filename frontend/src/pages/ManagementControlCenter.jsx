@@ -19,6 +19,7 @@ import {
   Layers, Landmark, Edit2, Check, X, Loader2,
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
   MessageCircle, Smartphone, UserX, RotateCcw, CalendarX, MapPin,
+  ArrowUpRight, CheckCircle2, XCircle, AlertCircle,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -56,6 +57,9 @@ import {
   useSetHeadBranchMutation,
   useGetMobileAppVersionQuery,
   useUpdateMobileAppVersionMutation,
+  useListTransferRequestsQuery,
+  useApproveTransferRequestMutation,
+  useRejectTransferRequestMutation,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
@@ -73,6 +77,7 @@ const TABS = [
   { key: 'lss',         label: 'LSS',            Icon: Layers,       roles: null },
   { key: 'land',        label: 'Land',           Icon: Landmark,     roles: null },
   { key: 'corrections', label: 'Corrections',   Icon: ShieldAlert,  roles: null },
+  { key: 'transfers',   label: 'Transfers',      Icon: ArrowUpRight, roles: new Set(['md', 'management']) },
   // Branches tab removed — branch management + geofence lives at /branches (ManagementBranches page)
 ];
 
@@ -149,6 +154,189 @@ const EditCell = ({ value, onSave, type = 'number', prefix, suffix, min = 0 }) =
         className="w-5 h-5 rounded-md bg-navy/5 text-navy/30 opacity-0 group-hover:opacity-100 flex items-center justify-center tactile-press transition-opacity" aria-label="Edit">
         <Edit2 size={9} />
       </button>
+    </div>
+  );
+};
+
+// ─── Transfers tab (MD / Management — approve or reject pending requests) ─────
+
+const ROLE_LABELS = {
+  director: 'Director', gm: 'General Manager', branch_manager: 'Branch Manager',
+  abm: 'Asst. Branch Manager', sales_officer: 'Sales Officer',
+  branch_admin: 'Branch Admin', oa: 'Operations Asst.', management: 'Management',
+};
+
+const TransfersTab = () => {
+  const [statusFilter, setStatusFilter] = useState('pending');
+  const [rejectingId, setRejectingId]   = useState(null);
+  const [rejectNote,  setRejectNote]    = useState('');
+  const [actionErr,   setActionErr]     = useState('');
+
+  const { data: requests = [], isLoading } = useListTransferRequestsQuery({ status: statusFilter });
+  const [approveRequest, { isLoading: isApproving }] = useApproveTransferRequestMutation();
+  const [rejectRequest,  { isLoading: isRejecting  }] = useRejectTransferRequestMutation();
+
+  const handleApprove = async (id) => {
+    setActionErr('');
+    try {
+      await approveRequest({ id }).unwrap();
+    } catch (err) {
+      setActionErr(err?.data?.error?.message || 'Approval failed');
+    }
+  };
+
+  const handleReject = async (id) => {
+    if (!rejectNote.trim()) { setActionErr('A reason is required to reject'); return; }
+    setActionErr('');
+    try {
+      await rejectRequest({ id, decisionNote: rejectNote }).unwrap();
+      setRejectingId(null);
+      setRejectNote('');
+    } catch (err) {
+      setActionErr(err?.data?.error?.message || 'Rejection failed');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Status filter tabs */}
+      <div className="flex gap-2">
+        {['pending', 'approved', 'rejected'].map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => { setStatusFilter(s); setActionErr(''); setRejectingId(null); }}
+            className={`px-4 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all tactile-press ${statusFilter === s ? 'bg-indigo text-white shadow-md shadow-indigo/20' : 'bg-white text-navy/40 border border-border'}`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {actionErr && (
+        <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
+          <AlertCircle size={14} /> {actionErr}
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex justify-center py-16"><Loader2 className="animate-spin text-indigo/30" size={28} /></div>
+      )}
+
+      {!isLoading && requests.length === 0 && (
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
+          <div className="w-16 h-16 rounded-xl bg-navy/5 flex items-center justify-center text-navy/20 mb-4">
+            <ArrowUpRight size={28} />
+          </div>
+          <p className="text-sm font-bold text-navy/40">No {statusFilter} requests</p>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {requests.map((req) => (
+          <div key={req.id} className="bg-white p-5 rounded-3xl card-shadow border border-border space-y-4">
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-bold text-navy">{req.user_name}</p>
+                <p className="text-[10px] font-bold text-navy/40 uppercase tracking-widest mt-0.5">
+                  Requested by {req.requester_name}
+                </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${
+                req.status === 'pending'  ? 'text-amber-500  bg-amber-50  border-amber-200'  :
+                req.status === 'approved' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
+                                            'text-red-500    bg-red-50    border-red-200'
+              }`}>
+                {req.status}
+              </div>
+            </div>
+
+            {/* Change summary grid */}
+            <div className="grid grid-cols-2 gap-3 bg-navy/[0.02] rounded-2xl p-3">
+              <div>
+                <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Current Role</p>
+                <p className="text-xs font-bold text-navy mt-0.5">{ROLE_LABELS[req.current_role] ?? req.current_role}</p>
+              </div>
+              <div>
+                <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Role</p>
+                <p className="text-xs font-bold text-indigo mt-0.5">{ROLE_LABELS[req.new_role] ?? req.new_role}</p>
+              </div>
+              {req.new_branch_name && (
+                <div className="col-span-2">
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">New Branch</p>
+                  <p className="text-xs font-bold text-navy mt-0.5">{req.new_branch_name}</p>
+                </div>
+              )}
+              {req.reason && (
+                <div className="col-span-2">
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-navy/30">Reason</p>
+                  <p className="text-xs text-navy/60 mt-0.5">{req.reason}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Decision note for non-pending */}
+            {req.status !== 'pending' && req.decision_note && (
+              <p className="text-[10px] text-navy/40 italic px-1">Note: {req.decision_note}</p>
+            )}
+
+            {/* Actions — pending only */}
+            {req.status === 'pending' && (
+              <div className="space-y-2">
+                {rejectingId === req.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      rows={2}
+                      placeholder="Reason for rejection (required)…"
+                      className="w-full px-3 py-2.5 bg-white border border-border rounded-xl text-sm font-bold text-navy placeholder:text-navy/20 outline-none focus:ring-2 focus:ring-red-200 resize-none"
+                      value={rejectNote}
+                      onChange={(e) => setRejectNote(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setRejectingId(null); setRejectNote(''); setActionErr(''); }}
+                        className="flex-1 py-2.5 rounded-xl bg-navy/5 text-navy/40 text-xs font-bold tactile-press"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReject(req.id)}
+                        disabled={isRejecting}
+                        className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-xs font-bold tactile-press disabled:opacity-60 flex items-center justify-center gap-1.5"
+                      >
+                        {isRejecting ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
+                        Confirm Reject
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setRejectingId(req.id); setActionErr(''); }}
+                      className="flex-[0.35] py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 flex items-center justify-center gap-1.5 text-xs font-bold tactile-press"
+                    >
+                      <X size={14} /> Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(req.id)}
+                      disabled={isApproving}
+                      className="flex-1 py-3 rounded-xl bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 tactile-press disabled:opacity-60"
+                    >
+                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                      Approve & Execute
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -1568,6 +1756,7 @@ export const ManagementControlCenter = () => {
         {activeTab === 'goldcoin'    && <GoldCoinTab />}
         {activeTab === 'lss'         && <LssTab />}
         {activeTab === 'land'        && <LandTab navigate={navigate} />}
+        {activeTab === 'transfers'   && <TransfersTab />}
         {activeTab === 'corrections' && (
           <div className="py-4">
             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-4">

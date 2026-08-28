@@ -35,7 +35,8 @@ export const AuthService = {
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.email = $1`,
-      [input.email]
+      // Normalise to lowercase so casing differences never cause login failures.
+      [input.email.toLowerCase()]
     );
 
     // Step 2: If no user was found, throw a generic 401 Unauthorized error

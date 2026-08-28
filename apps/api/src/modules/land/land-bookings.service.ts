@@ -265,6 +265,28 @@ export const LandBookingsService = {
           plotSiteNumber: plot.site_number,
           effectiveDate:  payload.bookingDate,
         });
+
+        // Snapshot the earner chain at enrollment so that distributeMonthly pays each
+        // earner at their CURRENT role/tier, even if they are later promoted or transferred.
+        // This mirrors the existing referrer_name denormalization ("so the record survives
+        // referrer deactivation") but for the full chain and their tier at enrollment.
+        const earnerChain = await LandIncentivesService._walkChain(client, payload.referrerId);
+        if (earnerChain.length > 0) {
+          const earnerValues = earnerChain
+            .map((_: any, i: number) => `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`)
+            .join(', ');
+          const earnerParams = earnerChain.flatMap((e: { id: string; role: string }) => [
+            booking.id,
+            e.id,
+            e.role,
+          ]);
+          await client.query(
+            `INSERT INTO land_booking_earners (booking_id, user_id, role)
+             VALUES ${earnerValues}
+             ON CONFLICT (booking_id, user_id) DO NOTHING`,
+            earnerParams
+          );
+        }
       }
 
       await LandAuditService.log(client, {

@@ -171,6 +171,13 @@ export const LandIncentivesService = {
   //   - Veppur:  SO earns for 36 months, others get null → skip after month 36
   //   - Tirupathi Hare Rama: all 4 roles earn for 60 months
   // The monthNumber guard is per-role, so each role stops independently.
+  //
+  // Earner chain is read from land_booking_earners (snapshot written at createBooking),
+  // NOT re-resolved from current manager_id. This ensures promoted or transferred
+  // employees keep earning at the role/tier they held when the booking was made,
+  // and manager-override portions stay with the old-branch managers.
+  // For bookings created before migration 087, the snapshot was backfilled with current
+  // manager_id at migration time; those rows fall back to current-role resolution.
   async distributeMonthly(
     client: PoolClient,
     args: {
@@ -184,8 +191,19 @@ export const LandIncentivesService = {
       effectiveDate?: string;
     }
   ): Promise<void> {
-    const map   = await LandIncentivesService._loadRulesMap(client, args.layoutId);
-    const chain = await LandIncentivesService._walkChain(client, args.referrerId);
+    const map = await LandIncentivesService._loadRulesMap(client, args.layoutId);
+
+    // Read the frozen earner chain for this booking
+    const snapshotRes = await client.query(
+      `SELECT user_id, role FROM land_booking_earners WHERE booking_id = $1`,
+      [args.bookingId]
+    );
+
+    // Fall back to live chain if no snapshot exists (pre-migration bookings not backfilled)
+    const chain: Array<{ id: string; role: string }> = snapshotRes.rows.length > 0
+      ? snapshotRes.rows.map((r: { user_id: string; role: string }) => ({ id: r.user_id, role: r.role }))
+      : await LandIncentivesService._walkChain(client, args.referrerId);
+
     for (const person of chain) {
       const rule = map[person.role];
       // TS: null monthly_months = no monthly commission configured for this role

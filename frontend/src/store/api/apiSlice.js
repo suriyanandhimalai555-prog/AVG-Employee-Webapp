@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -2084,6 +2084,28 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       invalidatesTags: ['MobileAppVersion'],
     }),
+
+    // ─── Transfer / Promotion Requests ─────────────────────────────────────────
+    submitTransferRequest: builder.mutation({
+      query: (data) => ({ url: '/users/transfer-requests', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TransferRequests'],
+    }),
+    listTransferRequests: builder.query({
+      query: ({ status } = {}) => `/users/transfer-requests${status ? `?status=${status}` : ''}`,
+      transformResponse: (response) => response.data,
+      providesTags: ['TransferRequests'],
+    }),
+    approveTransferRequest: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/users/transfer-requests/${id}/approve`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TransferRequests', 'Users'],
+    }),
+    rejectTransferRequest: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/users/transfer-requests/${id}/reject`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['TransferRequests'],
+    }),
   }),
 });
 
@@ -2327,4 +2349,8 @@ export const {
   useRetryPendingEnrollmentMutation,
   useGetMobileAppVersionQuery,
   useUpdateMobileAppVersionMutation,
+  useSubmitTransferRequestMutation,
+  useListTransferRequestsQuery,
+  useApproveTransferRequestMutation,
+  useRejectTransferRequestMutation,
 } = apiSlice;

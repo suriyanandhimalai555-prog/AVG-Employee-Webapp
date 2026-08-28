@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, UserCircle2, ShieldCheck } from 'lucide-react';
+import { PasswordInput } from '../components/PasswordInput';
 import { BottomNav } from '../components/attendance/BottomNav';
 import { selectCurrentUser, clearCredentials } from '../store/slices/authSlice';
 import {
@@ -216,24 +217,21 @@ export const ProfilePage = () => {
 
       <form onSubmit={handleChangePassword} className="bg-white rounded-3xl card-shadow p-5 space-y-3">
         <p className="text-xs font-bold text-navy/40 uppercase tracking-widest">Change Password</p>
-        <input
-          type="password"
+        <PasswordInput
           placeholder="Current password"
           className="w-full px-3 py-2.5 rounded-xl bg-navy/[0.03]"
           value={passwordData.currentPassword}
           onChange={(e) => setPasswordData((p) => ({ ...p, currentPassword: e.target.value }))}
           required
         />
-        <input
-          type="password"
+        <PasswordInput
           placeholder="New password"
           className="w-full px-3 py-2.5 rounded-xl bg-navy/[0.03]"
           value={passwordData.newPassword}
           onChange={(e) => setPasswordData((p) => ({ ...p, newPassword: e.target.value }))}
           required
         />
-        <input
-          type="password"
+        <PasswordInput
           placeholder="Confirm new password"
           className="w-full px-3 py-2.5 rounded-xl bg-navy/[0.03]"
           value={passwordData.confirmPassword}
