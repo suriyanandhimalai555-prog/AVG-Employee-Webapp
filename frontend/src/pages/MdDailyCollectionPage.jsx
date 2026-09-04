@@ -11,10 +11,7 @@ import {
   useGetBranchesQuery,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
-
-// IST-aware "today" for the date-picker default — mirrors server getCompanyToday().
-const getIstToday = () =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+import { getISTToday as getIstToday } from '../lib/date';
 
 // Export the multi-branch summary view as CSV.
 const exportSummaryCsv = (rows, date) => {

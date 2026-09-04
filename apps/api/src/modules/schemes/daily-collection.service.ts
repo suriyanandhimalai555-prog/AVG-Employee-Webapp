@@ -15,6 +15,7 @@
 import type { Pool } from 'pg';
 import { getCompanyToday } from '../../shared/date';
 import { getPeriodStartForDate } from '../../shared/scheme-period';
+import { ValidationError } from '../../shared/errors';
 
 export interface DailyCollectionRow {
   branchId:      string;
@@ -200,8 +201,8 @@ export async function getDailyCollectionByScheme(
   date?:    string,
   branchId?: string,
 ): Promise<DailyCollectionBySchemeResult> {
-  // TS: branchId is mandatory — callers must validate before calling.
-  if (!branchId) throw new Error('branchId is required for per-scheme breakdown');
+  // TS: branchId is mandatory — ValidationError maps to 400 at every call site.
+  if (!branchId) throw new ValidationError('branchId is required for per-scheme breakdown');
 
   const selectedDate = date ?? getCompanyToday();
   const periodStart  = getPeriodStartForDate(selectedDate);

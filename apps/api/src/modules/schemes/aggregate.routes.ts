@@ -40,6 +40,12 @@ const DateFilterSchema = z.object({
   endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'endDate must be YYYY-MM-DD').optional(),
 });
 
+// TS: validates the optional date and optional/required branchId on daily-collection routes.
+const DailyCollectionQuerySchema = z.object({
+  date:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
+  branchId: z.string().uuid('branchId must be a valid UUID').optional(),
+});
+
 // Sum byBranch rows into a single totals object for the scheme card.
 function sumTotals(byBranch: SchemeBranchTotals[]): { count: number; collected: number; commission: number; branchCount: number } {
   let count = 0, collected = 0, commission = 0;
@@ -179,11 +185,11 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
         if (!VIEWER_ROLES.has(req.user.role)) {
           throw new ForbiddenError('Access denied');
         }
-        const q = request.query as Record<string, string>;
+        const q = DailyCollectionQuerySchema.parse(request.query ?? {});
         const result = await getDailyCollection(
           fastify.db,
-          q.date     || undefined,
-          q.branchId || undefined,
+          q.date,
+          q.branchId,
         );
         return reply.send({ success: true, data: result });
       } catch (error) { return handleError(error, reply); }
@@ -200,13 +206,13 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
         if (!VIEWER_ROLES.has(req.user.role)) {
           throw new ForbiddenError('Access denied');
         }
-        const q = request.query as Record<string, string>;
+        const q = DailyCollectionQuerySchema.parse(request.query ?? {});
         if (!q.branchId) {
           return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'branchId is required' } });
         }
         const result = await getDailyCollectionByScheme(
           fastify.db,
-          q.date     || undefined,
+          q.date,
           q.branchId,
         );
         return reply.send({ success: true, data: result });

@@ -17,10 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatNumber } from '../lib/formatters';
 import { SOURCE_META } from '../lib/schemeConstants';
 import { getCurrentPeriod, getPrevPeriod, getNextPeriod } from '../lib/schemePeriod';
-
-// IST-aware "today" string — mirrors server getCompanyToday().
-const getIstToday = () =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+import { getISTToday as getIstToday } from '../lib/date';
 
 // ─── RANK BADGE — used in MD branch rankings section ─────────────────────────
 const RankBadge = ({ rank }) => {
