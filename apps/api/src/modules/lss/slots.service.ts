@@ -92,6 +92,25 @@ export const SlotsService = {
       // 6. Insert slots across all allocated rooms.
       //    Allocations are ordered: current room first, overflow room second.
       //    slots[0] is therefore the creation-order anchor used by incentive logic.
+
+      // Distribute the TOTAL cash portion across the N slot rows so that:
+      //   Σ(cash_i) = totalCash, and each row keeps cash_i + secondary_i = amount_paid.
+      // The anchor slot (index 0) absorbs any rounding residual paise.
+      // TS: isSplit flags both split modes so the same distribution applies to cash_gpay
+      const isSplit = payload.paymentMode === 'cash_bank' || payload.paymentMode === 'cash_gpay';
+      // TS: round2 rounds to 2 decimal places — safe for NUMERIC(12,2) columns
+      const round2 = (n: number): number => Math.round(n * 100) / 100;
+      const cashPerSlot: number[] = [];
+      if (isSplit) {
+        // TS: non-null asserted — schema superRefine guarantees cashAmount is set when isSplit
+        const base = round2(payload.cashAmount! / quantity);
+        for (let k = 0; k < quantity; k++) cashPerSlot.push(base);
+        // TS: anchor slot gets the residual so Σ cash_i = totalCash exactly (no paise drift)
+        cashPerSlot[0] = round2(payload.cashAmount! - base * (quantity - 1));
+      }
+      // TS: slotIdx tracks position across all allocations so each slot gets its own per-slot cash value
+      let slotIdx = 0;
+
       const slots: any[] = [];
       for (const alloc of allocations) {
         for (let i = 0; i < alloc.count; i++) {
@@ -116,11 +135,12 @@ export const SlotsService = {
               payload.proofKey?.length ? payload.proofKey : null,
               // transactionId is TEXT[] — bind array directly; empty array → NULL
               payload.transactionId?.length ? payload.transactionId : null,
-              // cash_bank/cash_gpay share the cash portion column; per-slot split
-              (payload.paymentMode === 'cash_bank' || payload.paymentMode === 'cash_gpay') ? payload.cashAmount : null,
-              payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
-              // cash_gpay split: gpay portion — null unless mode is cash_gpay
-              payload.paymentMode === 'cash_gpay' ? payload.gpayAmount : null,
+              // cash_bank/cash_gpay: per-slot cash portion from the distributed array
+              isSplit ? cashPerSlot[slotIdx] : null,
+              // TS: bank portion = amount_paid − cash_i so every row sums to amount_paid
+              payload.paymentMode === 'cash_bank' ? round2(payload.amountPaid - cashPerSlot[slotIdx]) : null,
+              // TS: gpay portion = amount_paid − cash_i (same complement formula)
+              payload.paymentMode === 'cash_gpay' ? round2(payload.amountPaid - cashPerSlot[slotIdx]) : null,
               payload.referrerId ?? null,
               payload.notes ?? null,
               enteredBy,
@@ -129,6 +149,7 @@ export const SlotsService = {
             ]
           );
           slots.push(slotRes.rows[0]);
+          slotIdx++;
         }
       }
 

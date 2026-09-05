@@ -99,8 +99,8 @@ export const GoldCoinAddSlotPage = () => {
     }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
 
-    // Deposit is against the TOTAL (perSlot × quantity); full-mode cash_bank is per-slot.
-    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : perSlot;
+    // Deposit is against the TOTAL (perSlot × quantity); full-mode cash_bank is also total.
+    const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : totalAmount;
     if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
     if (payMode === 'deposit' && payAmount > totalAmount + 0.01) { setError('Deposit cannot exceed the total price.'); return; }
     if (form.paymentMode !== 'cash' && (!proofKey.length || !txnId.length)) {
@@ -369,7 +369,7 @@ export const GoldCoinAddSlotPage = () => {
           bankAmount={split.bankAmount}
           gpayAmount={split.gpayAmount}
           onChange={setSplit}
-          expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : perSlot) || undefined}
+          expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : totalAmount) || undefined}
           showError={showProofErr}
         />
 

@@ -12,10 +12,10 @@ export const CreateSlotSchema = z.object({
   proofKey:    z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional(),
-  // cash_bank split: how the PER-SLOT amountPaid divides between cash and bank
+  // cash_bank split: the TOTAL purchase (amountPaid × quantity) divided between cash and bank
   cashAmount:  z.number().positive().optional(),
   bankAmount:  z.number().positive().optional(),
-  // cash_gpay split: how the PER-SLOT amountPaid divides between cash and gpay
+  // cash_gpay split: the TOTAL purchase (amountPaid × quantity) divided between cash and gpay
   gpayAmount:  z.number().positive().optional(),
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
@@ -39,7 +39,8 @@ export const CreateSlotSchema = z.object({
       path: ['transactionId'],
     });
   }
-  // cash_bank: split is per-slot and must sum to amountPaid (the per-slot price)
+  // cash_bank: split is the TOTAL (amountPaid × quantity) divided between cash and bank.
+  // The backend distributes the total across slot rows; each row keeps cash_i + bank_i = amount_paid.
   if (data.paymentMode === 'cash_bank') {
     if (!data.cashAmount || !data.bankAmount) {
       ctx.addIssue({
@@ -47,15 +48,16 @@ export const CreateSlotSchema = z.object({
         message: 'cashAmount and bankAmount are required for cash_bank payments',
         path: ['cashAmount'],
       });
-    } else if (Math.abs(data.cashAmount + data.bankAmount - data.amountPaid) > 0.01) {
+    } else if (Math.abs(data.cashAmount + data.bankAmount - data.amountPaid * (data.quantity ?? 1)) > 0.01) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'cashAmount + bankAmount must equal amountPaid (per slot)',
+        message: 'cashAmount + bankAmount must equal the total (amountPaid × quantity)',
         path: ['bankAmount'],
       });
     }
   }
-  // cash_gpay: split is per-slot and must sum to amountPaid (the per-slot price)
+  // cash_gpay: split is the TOTAL (amountPaid × quantity) divided between cash and gpay.
+  // The backend distributes the total across slot rows; each row keeps cash_i + gpay_i = amount_paid.
   if (data.paymentMode === 'cash_gpay') {
     if (!data.cashAmount || !data.gpayAmount) {
       ctx.addIssue({
@@ -63,10 +65,10 @@ export const CreateSlotSchema = z.object({
         message: 'cashAmount and gpayAmount are required for cash_gpay payments',
         path: ['cashAmount'],
       });
-    } else if (Math.abs(data.cashAmount + data.gpayAmount - data.amountPaid) > 0.01) {
+    } else if (Math.abs(data.cashAmount + data.gpayAmount - data.amountPaid * (data.quantity ?? 1)) > 0.01) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'cashAmount + gpayAmount must equal amountPaid (per slot)',
+        message: 'cashAmount + gpayAmount must equal the total (amountPaid × quantity)',
         path: ['gpayAmount'],
       });
     }
