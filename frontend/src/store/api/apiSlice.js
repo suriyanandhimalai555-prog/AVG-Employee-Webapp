@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection', 'BranchIncentives'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -605,6 +605,48 @@ export const apiSlice = createApi({
       query: (data) => ({ url: '/incentives', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
       invalidatesTags: ['Incentives', 'IncentiveWallet'],
+    }),
+
+    // ─── Branch Incentive Overview (MD + Management) ───
+
+    // Level 1: all branches with incentive totals for the period (or all time).
+    getBranchIncentiveRollup: builder.query({
+      query: (params = {}) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/incentives/branch-rollup${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['BranchIncentives'],
+    }),
+
+    // Level 2: employees in a branch with their incentive totals.
+    getBranchPeopleIncentives: builder.query({
+      query: ({ branchId, ...params }) => {
+        const qs = new URLSearchParams();
+        if (params.startDate)          qs.set('startDate', params.startDate);
+        if (params.endDate)            qs.set('endDate', params.endDate);
+        if (params.onlyWithIncentives) qs.set('onlyWithIncentives', 'true');
+        const q = qs.toString();
+        return `/incentives/branch-rollup/${branchId}/people${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['BranchIncentives'],
+    }),
+
+    // Level 3: individual incentive rows for one employee inside a branch.
+    getEmployeeIncentiveDetail: builder.query({
+      query: ({ branchId, userId, ...params }) => {
+        const qs = new URLSearchParams();
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        const q = qs.toString();
+        return `/incentives/branch-rollup/${branchId}/people/${userId}${q ? `?${q}` : ''}`;
+      },
+      transformResponse: (response) => response.data,
+      providesTags: ['BranchIncentives'],
     }),
 
     // ─── Trading Academy Scheme ───
@@ -2366,4 +2408,7 @@ export const {
   useUpdateMobileAppVersionMutation,
   useExecuteTransferMutation,
   useListTransferRequestsQuery,
+  useGetBranchIncentiveRollupQuery,
+  useGetBranchPeopleIncentivesQuery,
+  useGetEmployeeIncentiveDetailQuery,
 } = apiSlice;

@@ -20,6 +20,7 @@ import { AlertsTab } from './pages/attendance/AlertsTab';
 // money / gold / leadership / people / admin pages download only when first visited.
 const MoneyManagementPage      = lazy(() => import('./pages/MoneyManagementPage').then(m => ({ default: m.MoneyManagementPage })));
 const MdDailyCollectionPage    = lazy(() => import('./pages/MdDailyCollectionPage').then(m => ({ default: m.MdDailyCollectionPage })));
+const IncentivesOverviewPage   = lazy(() => import('./pages/IncentivesOverviewPage').then(m => ({ default: m.IncentivesOverviewPage })));
 const MoneyWalletPage          = lazy(() => import('./pages/MoneyWalletPage').then(m => ({ default: m.MoneyWalletPage })));
 const BranchRankingsPage       = lazy(() => import('./pages/BranchRankingsPage').then(m => ({ default: m.BranchRankingsPage })));
 const MdAddEntryPage           = lazy(() => import('./pages/MdAddEntryPage').then(m => ({ default: m.MdAddEntryPage })));
@@ -217,6 +218,12 @@ function App() {
         <Route path="/gold"                      element={<Navigate to="/money/schemes/gold" replace />} />
         <Route path="/gold/add"                  element={<Navigate to="/money/schemes/gold/add" replace />} />
         <Route path="/gold/:id"                  element={<Navigate to="/money/schemes/gold" replace />} />
+
+        {/* Incentive Overview — MD + Management only. Three sibling routes so the
+            browser/hardware back button steps up one level at a time. */}
+        <Route path="/incentives-overview"                                            element={<IncentivesOverviewPage />} />
+        <Route path="/incentives-overview/branch/:branchId"                           element={<IncentivesOverviewPage />} />
+        <Route path="/incentives-overview/branch/:branchId/person/:userId"            element={<IncentivesOverviewPage />} />
 
         {/* Management Control Center */}
         <Route path="/control-center"             element={<ManagementControlCenter />} />

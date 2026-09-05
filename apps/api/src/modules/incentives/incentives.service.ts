@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { getSubtreeIds } from '../../shared/hierarchy';
-import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissionRuleInput } from './incentives.schema';
+import type { AddIncentiveInput, GetIncentivesQuery, GetWalletQuery, SetCommissionRuleInput, BranchRollupQuery, BranchPeopleQuery } from './incentives.schema';
 
 // TS: round a money value to 2 decimal places (paise precision) to eliminate
 // IEEE-754 float drift before writing to the NUMERIC(12,2) ledger column.
@@ -479,6 +479,153 @@ export const IncentiveService = {
         count:      parseInt(r.count, 10),
       })),
       recent: recentResult.rows,
+    };
+  },
+
+  // ─── BRANCH OVERVIEW (MD + MANAGEMENT only) ───
+
+  // Level 1: aggregate incentives per branch for the given period.
+  // Uses a LEFT JOIN chain so branches with zero incentives still appear.
+  // pg returns NUMERIC as strings — parseFloat at every read site.
+  async getBranchIncentiveRollup(
+    db: Pool,
+    filter: BranchRollupQuery
+  ): Promise<any[]> {
+    const params: any[] = [];
+    let idx = 1;
+    // Build the period WHERE fragment for the incentives join condition.
+    let periodWhere = '';
+    if (filter.startDate) {
+      periodWhere += ` AND i.created_at >= $${idx++}::date`;
+      params.push(filter.startDate);
+    }
+    if (filter.endDate) {
+      periodWhere += ` AND i.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(filter.endDate);
+    }
+
+    const result = await db.query(`
+      SELECT
+        b.id                                      AS branch_id,
+        b.name                                    AS branch_name,
+        COALESCE(SUM(i.amount), 0)                AS total,
+        COUNT(DISTINCT CASE WHEN i.amount IS NOT NULL THEN i.user_id END) AS employee_count
+      FROM branches b
+      LEFT JOIN users u  ON u.branch_id = b.id AND u.role != 'client'
+      LEFT JOIN employee_incentives i
+             ON i.user_id = u.id ${periodWhere}
+      GROUP BY b.id, b.name
+      ORDER BY total DESC, b.name
+    `, params);
+
+    return result.rows.map((r: any) => ({
+      branchId:      r.branch_id,
+      branchName:    r.branch_name,
+      // pg returns NUMERIC as string — always parseFloat at the read site
+      total:         parseFloat(r.total),
+      employeeCount: parseInt(r.employee_count, 10),
+    }));
+  },
+
+  // Level 2: all employees in a branch with their incentive totals.
+  // LEFT JOIN means zero-earners appear with total=0.
+  // onlyWithIncentives=true switches to an effective inner join via HAVING.
+  async getBranchPeopleIncentives(
+    db: Pool,
+    branchId: string,
+    filter: BranchPeopleQuery
+  ): Promise<any[]> {
+    const params: any[] = [branchId];
+    let idx = 2;
+    let periodWhere = '';
+    if (filter.startDate) {
+      periodWhere += ` AND i.created_at >= $${idx++}::date`;
+      params.push(filter.startDate);
+    }
+    if (filter.endDate) {
+      periodWhere += ` AND i.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(filter.endDate);
+    }
+
+    // HAVING clause filters out zero-earners when onlyWithIncentives is requested.
+    const having = filter.onlyWithIncentives ? 'HAVING COALESCE(SUM(i.amount), 0) > 0' : '';
+
+    const result = await db.query(`
+      SELECT
+        u.id                             AS user_id,
+        u.name,
+        u.role,
+        COALESCE(SUM(i.amount), 0)       AS total,
+        COUNT(i.id)                      AS entry_count
+      FROM users u
+      LEFT JOIN employee_incentives i
+             ON i.user_id = u.id ${periodWhere}
+      WHERE u.branch_id = $1
+        AND u.role != 'client'
+      GROUP BY u.id, u.name, u.role
+      ${having}
+      ORDER BY total DESC, u.name
+    `, params);
+
+    return result.rows.map((r: any) => ({
+      userId:     r.user_id,
+      name:       r.name,
+      role:       r.role,
+      // pg returns NUMERIC as string — parseFloat
+      total:      parseFloat(r.total),
+      entryCount: parseInt(r.entry_count, 10),
+    }));
+  },
+
+  // Level 3: individual incentive rows for one employee inside a branch.
+  // Confirms the user belongs to the given branch before returning data (403 otherwise).
+  async getEmployeeIncentiveDetail(
+    db: Pool,
+    branchId: string,
+    userId: string,
+    filter: BranchRollupQuery
+  ): Promise<{ user: any; rows: any[] }> {
+    // Verify the user belongs to the requested branch — prevents cross-branch peeking.
+    const userRow = await db.query(
+      `SELECT id, name, role FROM users WHERE id = $1 AND branch_id = $2`,
+      [userId, branchId]
+    );
+    if (userRow.rowCount === 0) {
+      throw new NotFoundError('Employee not found in this branch');
+    }
+
+    const params: any[] = [userId];
+    let idx = 2;
+    let periodWhere = '';
+    if (filter.startDate) {
+      periodWhere += ` AND i.created_at >= $${idx++}::date`;
+      params.push(filter.startDate);
+    }
+    if (filter.endDate) {
+      periodWhere += ` AND i.created_at < ($${idx++}::date + INTERVAL '1 day')`;
+      params.push(filter.endDate);
+    }
+
+    const result = await db.query(`
+      SELECT
+        i.id,
+        i.amount,
+        i.source_type,
+        i.scheme_code,
+        i.payment_event,
+        i.source_description,
+        i.created_at,
+        u.name  AS credited_by_name
+      FROM employee_incentives i
+      JOIN users u ON i.credited_by = u.id
+      WHERE i.user_id = $1 ${periodWhere}
+      ORDER BY i.created_at DESC
+    `, params);
+
+    return {
+      user: userRow.rows[0],
+      // parseFloat amount at the read site — pg returns NUMERIC as string
+      rows: result.rows.map((r: any) => ({ ...r, amount: parseFloat(r.amount) })),
     };
   },
 };

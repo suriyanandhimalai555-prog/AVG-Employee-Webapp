@@ -2,12 +2,15 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ForbiddenError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { IncentiveService } from './incentives.service';
+import { hasRole, INCENTIVE_OVERVIEW_ROLES } from '../../shared/role-constants';
 import {
   AddIncentiveSchema,
   GetIncentivesQuerySchema,
   GetWalletQuerySchema,
   SetCommissionRuleSchema,
   DistributeIncentivesSchema,
+  BranchRollupQuerySchema,
+  BranchPeopleQuerySchema,
 } from './incentives.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
@@ -125,6 +128,55 @@ export default async function incentiveRoutes(fastify: FastifyInstance): Promise
       const body = AddIncentiveSchema.parse(req.body);
       const data = await IncentiveService.addIncentive(fastify.db, req.user.id, body);
       return reply.code(201).send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── GET /incentives/branch-rollup — Level 1: all branches with incentive totals ───
+  // Restricted to MD and Management — they see all branches without further scoping.
+  fastify.get('/branch-rollup', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // Gate: only INCENTIVE_OVERVIEW_ROLES (md, management) may access this endpoint.
+      if (!hasRole(req.user.role, INCENTIVE_OVERVIEW_ROLES)) {
+        throw new ForbiddenError('Access restricted to MD and Management');
+      }
+      const query = BranchRollupQuerySchema.parse(req.query);
+      const data  = await IncentiveService.getBranchIncentiveRollup(fastify.db, query);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── GET /incentives/branch-rollup/:branchId/people — Level 2: employees in a branch ───
+  fastify.get('/branch-rollup/:branchId/people', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (!hasRole(req.user.role, INCENTIVE_OVERVIEW_ROLES)) {
+        throw new ForbiddenError('Access restricted to MD and Management');
+      }
+      const { branchId } = req.params as { branchId: string };
+      const query = BranchPeopleQuerySchema.parse(req.query);
+      const data  = await IncentiveService.getBranchPeopleIncentives(fastify.db, branchId, query);
+      return reply.send({ success: true, data });
+    } catch (error) { return handleError(error, reply); }
+  });
+
+  // ─── GET /incentives/branch-rollup/:branchId/people/:userId — Level 3: person detail ───
+  fastify.get('/branch-rollup/:branchId/people/:userId', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      if (!hasRole(req.user.role, INCENTIVE_OVERVIEW_ROLES)) {
+        throw new ForbiddenError('Access restricted to MD and Management');
+      }
+      const { branchId, userId } = req.params as { branchId: string; userId: string };
+      const query = BranchRollupQuerySchema.parse(req.query);
+      const data  = await IncentiveService.getEmployeeIncentiveDetail(fastify.db, branchId, userId, query);
+      return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }
   });
 }

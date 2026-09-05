@@ -85,6 +85,12 @@ export const TRANSFER_MANAGE_ROLES: readonly RoleValue[] = [
   Role.MANAGEMENT,
 ];
 
+// Roles allowed to view the branch-wise incentive overview (all branches, all people).
+// Director excluded by design — they use their scoped subtree views instead.
+export const INCENTIVE_OVERVIEW_ROLES: readonly RoleValue[] = [
+  Role.MD, Role.MANAGEMENT,
+];
+
 // Helper: O(1) membership test against any of the sets above.
 export const hasRole = (
   role: string,

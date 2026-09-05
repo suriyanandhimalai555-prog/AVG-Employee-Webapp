@@ -11,7 +11,9 @@ const TAB_ROUTES = new Set(['/', '/attendance', '/alerts', '/branches', '/money'
 // These route prefixes manage their own back navigation (SchemePageHeader / inline arrows).
 // PageHeader stays in brand-only mode so there is never a duplicate back button.
 // /money/salaries has a role-aware in-page arrow (OA goes home, others to /money).
-const SELF_NAVIGATING_PREFIXES = ['/money/schemes', '/money/incentives', '/money/salaries'];
+// /incentives-overview has three levels all rendered by the same component — it owns
+// its own in-bar back arrow so the global header must stay brand-only on all three.
+const SELF_NAVIGATING_PREFIXES = ['/money/schemes', '/money/incentives', '/money/salaries', '/incentives-overview'];
 
 const pageManagesOwnBack = (pathname) =>
   SELF_NAVIGATING_PREFIXES.some(
@@ -34,6 +36,7 @@ const getPageTitle = (pathname) => {
   if (matchPath('/money/pending-transfers', pathname))     return 'Pending Transfers';
   if (matchPath('/money/salaries', pathname))              return 'Salaries';
   if (matchPath('/money/holders/:id', pathname))           return 'Cash Detail';
+  if (matchPath('/incentives-overview', pathname))         return 'Incentives';
   if (matchPath('/control-center', pathname))              return 'Control Center';
   if (matchPath('/control-center/corrections', pathname))  return 'Corrections';
   if (matchPath('/branches/:id', pathname))                return 'Branch';
@@ -52,6 +55,7 @@ const getDesktopSectionTitle = (pathname) => {
   if (pathname === '/alerts')                       return 'Alerts';
   if (pathname.startsWith('/branches'))             return 'Branches';
   if (pathname.startsWith('/schemes'))              return 'Schemes';
+  if (pathname.startsWith('/incentives-overview'))  return 'Incentives';
   if (pathname.startsWith('/control-center'))       return 'Control Center';
   if (pathname.startsWith('/user-management'))      return 'Staff';
   if (pathname.startsWith('/profile'))              return 'Profile';

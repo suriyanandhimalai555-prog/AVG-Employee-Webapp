@@ -51,8 +51,26 @@ export const DistributeIncentivesSchema = z.object({
   // creditedBy is injected from request.user.id in the route, not from the body
 });
 
+// Query params for the branch-wide incentive rollup (Level 1: all branches).
+// Both dates are optional — omitting them means "all time".
+export const BranchRollupQuerySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+});
+
+// Query params for the per-branch people list (Level 2).
+// Inherits date range; adds optional filter for earners-only.
+export const BranchPeopleQuerySchema = z.object({
+  startDate:          z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  endDate:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  // Coerce the string 'true'/'false' that comes from URLSearchParams into a boolean.
+  onlyWithIncentives: z.coerce.boolean().optional().default(false),
+});
+
 export type AddIncentiveInput          = z.infer<typeof AddIncentiveSchema>;
 export type GetIncentivesQuery         = z.infer<typeof GetIncentivesQuerySchema>;
 export type GetWalletQuery             = z.infer<typeof GetWalletQuerySchema>;
 export type SetCommissionRuleInput     = z.infer<typeof SetCommissionRuleSchema>;
 export type DistributeIncentivesInput  = z.infer<typeof DistributeIncentivesSchema>;
+export type BranchRollupQuery          = z.infer<typeof BranchRollupQuerySchema>;
+export type BranchPeopleQuery          = z.infer<typeof BranchPeopleQuerySchema>;

@@ -1,4 +1,4 @@
-import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2, Layers, Settings2 } from 'lucide-react';
+import { Home, Fingerprint, Wallet, Bell, UserCircle2, Building2, Layers, Settings2, Award } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { selectCurrentUser } from '../../store/slices/authSlice';
@@ -14,8 +14,10 @@ export const NAV_TABS = [
   { key: 'profile',    icon: UserCircle2, label: 'Profile',    path: '/profile' },
 ];
 
-export const MD_TAB             = { key: 'branches',       icon: Building2, label: 'Branches', path: '/branches' };
-export const CONTROL_CENTER_TAB = { key: 'control-center', icon: Settings2, label: 'Control',  path: '/control-center' };
+export const MD_TAB             = { key: 'branches',       icon: Building2, label: 'Branches',    path: '/branches' };
+export const CONTROL_CENTER_TAB = { key: 'control-center', icon: Settings2, label: 'Control',     path: '/control-center' };
+// Incentive overview tab — visible to MD and Management only.
+export const INCENTIVES_TAB     = { key: 'incentives',     icon: Award,     label: 'Incentives',  path: '/incentives-overview' };
 
 // Cross-scheme dashboard. Visible to MD, Director and Management only — the page
 // itself is gated again server-side, so this is purely a discoverability hint.
@@ -26,7 +28,8 @@ export const getActiveTab = (pathname) => {
   if (pathname.startsWith('/attendance')) return 'attendance';
   if (pathname.startsWith('/branches')) return 'branches';
   if (pathname === '/schemes' || pathname.startsWith('/schemes/')) return 'schemes';
-  if (pathname.startsWith('/control-center')) return 'control-center';
+  if (pathname.startsWith('/control-center'))     return 'control-center';
+  if (pathname.startsWith('/incentives-overview')) return 'incentives';
   if (pathname.startsWith('/money')) return 'money';
   if (pathname === '/alerts') return 'alerts';
   if (pathname === '/profile') return 'profile';
@@ -64,10 +67,14 @@ export const useNavTabs = () => {
   const showSchemes = role === 'md' || role === 'director' || role === 'management';
   // MD_TAB is the shared Branches tab — MD gets the classic page, management gets
   // the new full-featured page (role-dispatched inside BranchesRoute in App.jsx).
+  // INCENTIVES_TAB is visible to md and management so they can see the branch-wise
+  // incentive breakdown without going through Control Center.
+  const showIncentivesOverview = role === 'md' || role === 'management';
   const tabs = [
     ...baseTabs,
     ...(showSchemes ? [SCHEMES_TAB] : []),
     ...(role === 'md' || role === 'management' ? [MD_TAB] : []),
+    ...(showIncentivesOverview ? [INCENTIVES_TAB] : []),
     ...managementTabs,
   ];
   const activeTab = getActiveTab(location.pathname);
