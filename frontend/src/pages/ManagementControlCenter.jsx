@@ -20,6 +20,7 @@ import {
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
   MessageCircle, Smartphone, UserX, RotateCcw, CalendarX, MapPin,
   ArrowUpRight, CheckCircle2, XCircle, AlertCircle,
+  UserPen, ArrowRight, History,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -61,6 +62,8 @@ import {
   useListTransferRequestsQuery,
   useExecuteTransferMutation,
   useGetUsersQuery,
+  useRenameUserMutation,
+  useGetRenameHistoryQuery,
 } from '../store/api/apiSlice';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
@@ -79,6 +82,7 @@ const TABS = [
   { key: 'land',        label: 'Land',           Icon: Landmark,     roles: null },
   { key: 'corrections', label: 'Corrections',   Icon: ShieldAlert,  roles: null },
   { key: 'transfers',   label: 'Transfers',      Icon: ArrowUpRight, roles: new Set(['management']) },
+  { key: 'rename',      label: 'Rename',         Icon: UserPen,      roles: new Set(['management']) },
   // Branches tab removed — branch management + geofence lives at /branches (ManagementBranches page)
 ];
 
@@ -178,6 +182,329 @@ const ALL_ROLES_TRANSFER = [
   { value: 'branch_admin',   label: 'Branch Admin' },
   { value: 'oa',             label: 'Operations Assistant' },
 ];
+
+// ─── RenameTab ────────────────────────────────────────────────────────────────
+// Management-only tool to correct an employee's display name.
+// Pattern mirrors TransfersTab exactly: inline search picker → form → audit history.
+const RenameTab = () => {
+  // ── employee picker state ──
+  const [empSearch, setEmpSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
+
+  // ── form state ──
+  const [newName, setNewName] = useState('');
+  const [reason, setReason] = useState('');
+  const [formErr, setFormErr] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+
+  // ── RTK Query ──
+  const { data: empResult = {}, isFetching: searchingEmps } = useGetUsersQuery(
+    { search: empSearch || undefined, limit: 50 },
+    { skip: !empSearch }
+  );
+  const empCandidates = empResult.data ?? [];
+
+  const { data: history = [], isLoading: historyLoading } = useGetRenameHistoryQuery();
+  const [renameUser, { isLoading: isRenaming }] = useRenameUserMutation();
+
+  const resetForm = () => {
+    setSelectedUser(null);
+    setEmpSearch('');
+    setNewName('');
+    setReason('');
+    setFormErr('');
+    setFormSuccess('');
+  };
+
+  const handleUserSelect = (u) => {
+    setSelectedUser(u);
+    setEmpSearch('');
+    // Pre-fill the new-name field with the person's current name so management
+    // only edits the part that changed (avoids re-typing the whole name).
+    setNewName(u.name);
+    setFormErr('');
+    setFormSuccess('');
+  };
+
+  const trimmedName = newName.trim();
+  const isUnchanged = selectedUser && trimmedName === selectedUser.name.trim();
+  const canSubmit = selectedUser && trimmedName.length >= 2 && !isUnchanged && !isRenaming;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormErr('');
+    setFormSuccess('');
+    if (!selectedUser) { setFormErr('Select an employee first'); return; }
+    if (trimmedName.length < 2) { setFormErr('Name must be at least 2 characters'); return; }
+    if (isUnchanged) { setFormErr('Name is unchanged — enter a different name'); return; }
+    try {
+      await renameUser({
+        userId: selectedUser.id,
+        name:   trimmedName,
+        reason: reason.trim() || undefined,
+      }).unwrap();
+      setFormSuccess(`Renamed "${selectedUser.name}" → "${trimmedName}" successfully.`);
+      setTimeout(resetForm, 2800);
+    } catch (err) {
+      setFormErr(err?.data?.error?.message || 'Rename failed — please try again');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Rename form card ─────────────────────────────────────────── */}
+      <div className="bg-white p-5 rounded-3xl card-shadow border border-border">
+        <div className="flex items-center gap-2.5 mb-5">
+          <div className="w-8 h-8 rounded-xl bg-indigo/10 flex items-center justify-center shrink-0">
+            <UserPen size={15} className="text-indigo" />
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30">
+            Rename Employee
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {formErr && (
+            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={14} /> {formErr}
+            </div>
+          )}
+          {formSuccess && (
+            <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 size={14} /> {formSuccess}
+            </div>
+          )}
+
+          {/* Employee picker */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+              Employee <span className="text-red-400">*</span>
+            </label>
+            {selectedUser ? (
+              /* Selected pill — same style as TransfersTab */
+              <div className="flex items-center justify-between p-3 bg-navy/[0.03] rounded-2xl border border-border">
+                <div>
+                  <p className="text-sm font-bold text-navy">{selectedUser.name}</p>
+                  <p className="text-[10px] text-navy/40 font-bold mt-0.5">
+                    {ROLE_LABELS[selectedUser.role] ?? selectedUser.role}
+                    {` · ${selectedUser.branchName || 'No branch (HQ)'}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-[10px] font-bold text-navy/40 hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-red-50 tactile-press"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              /* Inline search dropdown */
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Type employee name or email…"
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  autoComplete="off"
+                />
+                {searchingEmps && (
+                  <Loader2 size={14} className="animate-spin text-indigo/40 absolute right-4 top-1/2 -translate-y-1/2" />
+                )}
+                {empSearch && empCandidates.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-border rounded-2xl card-shadow overflow-hidden max-h-56 overflow-y-auto">
+                    {empCandidates.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => handleUserSelect(u)}
+                        className="w-full text-left px-4 py-3 hover:bg-indigo/5 transition-colors border-b border-border last:border-b-0"
+                      >
+                        <p className="text-sm font-bold text-navy">{u.name}</p>
+                        <p className="text-[10px] text-navy/40 font-bold mt-0.5">
+                          {ROLE_LABELS[u.role] ?? u.role}
+                          {` · ${u.branchName || 'No branch (HQ)'}`}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {empSearch && !searchingEmps && empCandidates.length === 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-border rounded-2xl card-shadow px-4 py-3">
+                    <p className="text-xs text-navy/40 font-bold">No employees found</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Name fields + live preview — only visible once an employee is selected */}
+          {selectedUser && (
+            <>
+              {/* New name input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                  New Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Enter the corrected name…"
+                  maxLength={200}
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none"
+                />
+              </div>
+
+              {/* Live Before → After preview — the "stunning" element */}
+              <div className={`rounded-2xl border p-4 transition-all duration-200 ${
+                isUnchanged
+                  ? 'bg-amber-50 border-amber-200'
+                  : trimmedName.length >= 2
+                  ? 'bg-indigo/[0.04] border-indigo/20'
+                  : 'bg-navy/[0.02] border-border'
+              }`}>
+                <p className="text-[9px] font-black text-navy/30 uppercase tracking-[0.2em] mb-3">
+                  Preview
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Before */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-black text-navy/30 uppercase tracking-wider mb-1">Before</p>
+                    <p className="text-sm font-bold text-navy/50 line-through decoration-red-400/60 truncate">
+                      {selectedUser.name}
+                    </p>
+                  </div>
+                  {/* Arrow */}
+                  <div className="shrink-0">
+                    <ArrowRight size={18} className={`transition-colors ${
+                      trimmedName.length >= 2 && !isUnchanged ? 'text-indigo' : 'text-navy/20'
+                    }`} />
+                  </div>
+                  {/* After */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-black text-navy/30 uppercase tracking-wider mb-1">After</p>
+                    <p className={`text-sm font-bold truncate transition-colors ${
+                      trimmedName.length >= 2 && !isUnchanged
+                        ? 'text-indigo'
+                        : 'text-navy/25 italic'
+                    }`}>
+                      {trimmedName.length >= 2 ? trimmedName : 'Type a new name…'}
+                    </p>
+                  </div>
+                </div>
+                {isUnchanged && (
+                  <p className="text-[10px] font-bold text-amber-600 mt-2">
+                    Name is unchanged — edit the name above.
+                  </p>
+                )}
+              </div>
+
+              {/* Reason (optional) */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1">
+                  Reason <span className="text-navy/20 font-medium normal-case">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. spelling correction, legal name change…"
+                  maxLength={500}
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-navy font-bold text-sm placeholder:text-navy/20 focus:ring-2 focus:ring-indigo/20 outline-none"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className={`w-full py-3.5 rounded-2xl text-sm font-black tracking-wide transition-all tactile-press flex items-center justify-center gap-2 ${
+              canSubmit
+                ? 'bg-indigo text-white hover:bg-indigo/90 shadow-md shadow-indigo/20'
+                : 'bg-navy/5 text-navy/25 cursor-not-allowed'
+            }`}
+          >
+            {isRenaming ? (
+              <><Loader2 size={15} className="animate-spin" /> Renaming…</>
+            ) : (
+              <><UserPen size={15} /> Rename Employee</>
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* ── Rename history ───────────────────────────────────────────── */}
+      <div className="bg-white p-5 rounded-3xl card-shadow border border-border">
+        <div className="flex items-center gap-2.5 mb-5">
+          <div className="w-8 h-8 rounded-xl bg-navy/[0.05] flex items-center justify-center shrink-0">
+            <History size={15} className="text-navy/40" />
+          </div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-navy/30">
+            Recent Renames
+          </p>
+        </div>
+
+        {historyLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-16 bg-navy/[0.04] rounded-2xl animate-pulse" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <div className="text-center py-10">
+            <UserPen size={28} className="text-navy/15 mx-auto mb-2" />
+            <p className="text-xs font-bold text-navy/30">No renames recorded yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {history.map((row) => (
+              <div
+                key={row.id}
+                className="p-4 bg-navy/[0.02] rounded-2xl border border-border hover:bg-indigo/[0.03] transition-colors"
+              >
+                {/* Who was renamed */}
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="text-sm font-black text-navy/50 line-through decoration-red-400/60 shrink-0">
+                      {row.previous_name}
+                    </span>
+                    <ArrowRight size={13} className="text-indigo shrink-0" />
+                    <span className="text-sm font-black text-navy shrink-0">{row.new_name}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-navy/30 whitespace-nowrap shrink-0 mt-0.5">
+                    {new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </span>
+                </div>
+                {/* Meta row: role chip + branch + renamed by */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-navy/40 bg-navy/5 px-2 py-0.5 rounded-full">
+                    {ROLE_LABELS[row.current_role] ?? row.current_role}
+                  </span>
+                  {row.branch_name && (
+                    <span className="text-[10px] text-navy/30 font-medium">· {row.branch_name}</span>
+                  )}
+                  <span className="text-[10px] text-navy/25 font-medium ml-auto">
+                    by {row.renamed_by_name}
+                  </span>
+                </div>
+                {/* Reason, if provided */}
+                {row.reason && (
+                  <p className="text-[11px] text-navy/40 mt-1.5 italic">"{row.reason}"</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+};
 
 const TransfersTab = () => {
   // ── employee picker state ──
@@ -1993,6 +2320,7 @@ export const ManagementControlCenter = () => {
         {activeTab === 'lss'         && <LssTab />}
         {activeTab === 'land'        && <LandTab navigate={navigate} />}
         {activeTab === 'transfers'   && <TransfersTab />}
+        {activeTab === 'rename'      && <RenameTab />}
         {activeTab === 'corrections' && (
           <div className="py-4">
             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-4">

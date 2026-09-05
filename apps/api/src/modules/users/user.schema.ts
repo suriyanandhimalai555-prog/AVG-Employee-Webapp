@@ -65,3 +65,15 @@ export const ExecuteTransferSchema = z.object({
 });
 
 export type ExecuteTransferInput = z.infer<typeof ExecuteTransferSchema>;
+
+// Schema for renaming an employee (management-only, single-step name correction).
+export const RenameUserSchema = z.object({
+  // Target employee's UUID
+  userId: z.string().uuid(),
+  // New display name — same validation bounds as CreateUserSchema.name
+  name:   z.string().trim().min(2).max(200),
+  // Optional free-text note recorded in the audit trail
+  reason: z.string().max(500).optional(),
+});
+
+export type RenameUserInput = z.infer<typeof RenameUserSchema>;

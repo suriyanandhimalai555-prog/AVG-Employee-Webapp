@@ -28,7 +28,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection', 'BranchIncentives'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection', 'BranchIncentives', 'UserRenames'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -2161,6 +2161,22 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       providesTags: ['TransferRequests'],
     }),
+
+    // ── Employee rename (management-only) ────────────────────────────────────
+    // POST /users/rename — changes the display name, writes an audit row, busts caches.
+    renameUser: builder.mutation({
+      query: (data) => ({ url: '/users/rename', method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      // Invalidate Users so employee-search dropdowns reflect the new name immediately.
+      invalidatesTags: ['Users', 'UserRenames'],
+    }),
+
+    // GET /users/rename-history — full audit log (newest first, max 100 rows).
+    getRenameHistory: builder.query({
+      query: () => '/users/rename-history',
+      transformResponse: (response) => response.data,
+      providesTags: ['UserRenames'],
+    }),
   }),
 });
 
@@ -2411,4 +2427,6 @@ export const {
   useGetBranchIncentiveRollupQuery,
   useGetBranchPeopleIncentivesQuery,
   useGetEmployeeIncentiveDetailQuery,
+  useRenameUserMutation,
+  useGetRenameHistoryQuery,
 } = apiSlice;

@@ -85,6 +85,12 @@ export const TRANSFER_MANAGE_ROLES: readonly RoleValue[] = [
   Role.MANAGEMENT,
 ];
 
+// Roles allowed to rename any employee (management back-office name-correction tool).
+// Management-only: mirrors TRANSFER_MANAGE_ROLES; MD is excluded (view-only access).
+export const USER_RENAME_ROLES: readonly RoleValue[] = [
+  Role.MANAGEMENT,
+];
+
 // Roles allowed to view the branch-wise incentive overview (all branches, all people).
 // Director excluded by design — they use their scoped subtree views instead.
 export const INCENTIVE_OVERVIEW_ROLES: readonly RoleValue[] = [

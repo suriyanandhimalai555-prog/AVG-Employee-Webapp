@@ -2,7 +2,7 @@
 import { Pool, PoolClient } from 'pg';
 import bcrypt from 'bcrypt';
 import Redis from 'ioredis';
-import { CreateUserInput, UserResponse, UpdateOversightBranchesInput, ExecuteTransferInput } from './user.schema';
+import { CreateUserInput, UserResponse, UpdateOversightBranchesInput, ExecuteTransferInput, RenameUserInput } from './user.schema';
 import { populateAvatarUrls } from '../../shared/avatar.util';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
@@ -10,7 +10,7 @@ import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
-import { Role, TRANSFER_MANAGE_ROLES } from '../../shared/role-constants';
+import { Role, TRANSFER_MANAGE_ROLES, USER_RENAME_ROLES } from '../../shared/role-constants';
 import { runInTransaction } from '../../shared/transaction-helper';
 
 export interface UserDocument {
@@ -755,6 +755,105 @@ export const UserService = {
        WHERE r.status = $1
        ORDER BY r.created_at DESC`,
       [statusFilter]
+    );
+    return res.rows;
+  },
+
+  // ── renameUser ────────────────────────────────────────────────────────────────
+  // Changes an employee's display name. Management-only, single-step, immediate.
+  // Writes a permanent audit row and busts the user profile + hierarchy caches.
+  async renameUser(
+    // TS: pg connection pool — all queries run through this
+    db: Pool,
+    // TS: ioredis client for cache invalidation
+    redis: Redis,
+    // TS: UUID of the acting management account
+    actorId: string,
+    // TS: role string of the actor — re-checked here for defence-in-depth
+    actorRole: string,
+    // TS: validated rename payload from the Zod schema
+    payload: RenameUserInput
+  ): Promise<{ userId: string; previousName: string; newName: string }> {
+    // TS: re-check the role inside the service as defence-in-depth (route guards first)
+    if (!(USER_RENAME_ROLES as readonly string[]).includes(actorRole)) {
+      throw new ForbiddenError('Only Management may rename employees');
+    }
+
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Lock the target row so concurrent renames on the same user are serialised
+      const res = await client.query(
+        `SELECT id, name FROM users WHERE id = $1 AND is_active = true FOR UPDATE`,
+        [payload.userId]
+      );
+      if (res.rows.length === 0) {
+        throw new NotFoundError('Employee not found or inactive');
+      }
+      // TS: row is typed as any — extract fields explicitly
+      const previous_name: string = res.rows[0].name;
+
+      // Reject no-op renames so the audit log stays meaningful
+      if (payload.name.trim() === previous_name.trim()) {
+        throw new ValidationError('Name unchanged — enter a different name');
+      }
+
+      // Apply the name change
+      await client.query(
+        `UPDATE users SET name = $1 WHERE id = $2`,
+        [payload.name.trim(), payload.userId]
+      );
+
+      // Write a permanent, append-only audit row
+      await client.query(
+        `INSERT INTO user_rename_audit
+           (user_id, previous_name, new_name, reason, renamed_by)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [payload.userId, previous_name, payload.name.trim(), payload.reason ?? null, actorId]
+      );
+
+      // ── Cache invalidation (GAPS.md #15) ────────────────────────────────────
+      // The 30-min profile blob (user:{id}) includes name — must bust it so the
+      // next /me call returns the updated name. Also bust hierarchy caches because
+      // org-tree endpoints that join name through users may embed the stale name.
+      await redis.del(`user:${payload.userId}`);
+      await bustHierarchyCache(payload.userId);
+
+      return {
+        userId:       payload.userId,
+        previousName: previous_name,
+        newName:      payload.name.trim(),
+      };
+    });
+  },
+
+  // ── listRenameHistory ──────────────────────────────────────────────────────────
+  // Returns the full rename audit log for Management (newest first, max 100 rows).
+  async listRenameHistory(
+    // TS: pg connection pool
+    db: Pool,
+    // TS: role of the requesting user — guards are also at the route level
+    requesterRole: string
+  ): Promise<any[]> {
+    // TS: re-check role for defence-in-depth
+    if (!(USER_RENAME_ROLES as readonly string[]).includes(requesterRole)) {
+      throw new ForbiddenError('Only Management may view the rename history');
+    }
+    const res = await db.query(
+      `SELECT
+         a.id,
+         a.user_id,
+         a.previous_name,
+         a.new_name,
+         a.reason,
+         a.created_at,
+         u.role              AS current_role,
+         b.name              AS branch_name,
+         rb.name             AS renamed_by_name
+       FROM user_rename_audit a
+       JOIN  users    u  ON u.id  = a.user_id
+       LEFT  JOIN branches b  ON b.id  = u.branch_id
+       JOIN  users    rb ON rb.id = a.renamed_by
+       ORDER BY a.created_at DESC
+       LIMIT 100`
     );
     return res.rows;
   },

@@ -4,8 +4,8 @@ import { UserService } from './user.service';
 import { CreateUserSchema, UpdateOversightBranchesSchema } from './user.schema';
 import { AppError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
-import { USER_DIRECTORY_ROLES, DEACTIVATED_USERS_MANAGE_ROLES, TRANSFER_MANAGE_ROLES } from '../../shared/role-constants';
-import { ExecuteTransferSchema } from './user.schema';
+import { USER_DIRECTORY_ROLES, DEACTIVATED_USERS_MANAGE_ROLES, TRANSFER_MANAGE_ROLES, USER_RENAME_ROLES } from '../../shared/role-constants';
+import { ExecuteTransferSchema, RenameUserSchema } from './user.schema';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; role: string; branchId: string | null };
@@ -323,6 +323,50 @@ export default async function userRoutes(fastify: FastifyInstance) {
       }
       const { status } = req.query as { status?: string };
       const data = await UserService.listTransferRequests(fastify.db, req.user.role, status);
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── POST /api/users/rename ───
+  // Changes an employee's display name immediately (Management-only, no approval step).
+  // Static path registered before /:id so Fastify matches this before the wildcard param.
+  fastify.post('/rename', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: fast 403 before parsing body; service re-checks for defence-in-depth
+      if (!(USER_RENAME_ROLES as readonly string[]).includes(req.user.role)) {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+      const payload = RenameUserSchema.parse(request.body);
+      const data = await UserService.renameUser(
+        fastify.db,
+        fastify.redis,
+        req.user.id,
+        req.user.role,
+        payload
+      );
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  // ─── GET /api/users/rename-history ───
+  // Audit log of all name changes executed by Management (newest first, max 100).
+  fastify.get('/rename-history', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+      // TS: Management-only; fast 403 before service call
+      if (!(USER_RENAME_ROLES as readonly string[]).includes(req.user.role)) {
+        throw new AppError('Forbidden', 403, 'ACCESS_DENIED');
+      }
+      const data = await UserService.listRenameHistory(fastify.db, req.user.role);
       return reply.send({ success: true, data });
     } catch (error) {
       return handleError(error, reply);
