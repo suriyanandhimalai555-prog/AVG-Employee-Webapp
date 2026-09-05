@@ -44,7 +44,7 @@ export const GoldSchemeAddPage = () => {
   });
   const [proofKey,    setProofKey]    = useState([]);
   const [txnId,       setTxnId]       = useState([]);
-  const [split,       setSplit]       = useState({ cashAmount: '', bankAmount: '' });
+  const [split,       setSplit]       = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -75,10 +75,17 @@ export const GoldSchemeAddPage = () => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.firstPaymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.firstPaymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - payAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
 
@@ -102,8 +109,9 @@ export const GoldSchemeAddPage = () => {
             paidDate:      form.startDate,
             proofKey:      proofKey.length ? proofKey : undefined,
             transactionId: txnId.length ? txnId : undefined,
-            cashAmount:    form.firstPaymentMode === 'cash_bank' ? splitCash : undefined,
+            cashAmount:    (form.firstPaymentMode === 'cash_bank' || form.firstPaymentMode === 'cash_gpay') ? splitCash : undefined,
             bankAmount:    form.firstPaymentMode === 'cash_bank' ? splitBank : undefined,
+            gpayAmount:    form.firstPaymentMode === 'cash_gpay' ? splitGpay : undefined,
           },
         }).unwrap();
         navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
@@ -120,8 +128,9 @@ export const GoldSchemeAddPage = () => {
         firstPaymentMode:      form.firstPaymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
         firstPaymentTransactionId: txnId.length ? txnId : undefined,
-        firstPaymentCashAmount: form.firstPaymentMode === 'cash_bank' ? splitCash : undefined,
+        firstPaymentCashAmount: (form.firstPaymentMode === 'cash_bank' || form.firstPaymentMode === 'cash_gpay') ? splitCash : undefined,
         firstPaymentBankAmount: form.firstPaymentMode === 'cash_bank' ? splitBank : undefined,
+        firstPaymentGpayAmount: form.firstPaymentMode === 'cash_gpay' ? splitGpay : undefined,
         notes:                 form.notes.trim() || undefined,
         branchId:              isManagement ? branchId : undefined,
       }).unwrap();
@@ -271,7 +280,7 @@ export const GoldSchemeAddPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={form.firstPaymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, firstPaymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
             includeSplit
           />
@@ -286,6 +295,7 @@ export const GoldSchemeAddPage = () => {
           mode={form.firstPaymentMode}
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
+          gpayAmount={split.gpayAmount}
           onChange={setSplit}
           expectedTotal={
             (payMode === 'deposit' ? parseFloat(deposit) : parseFloat(form.monthlyAmount)) || undefined

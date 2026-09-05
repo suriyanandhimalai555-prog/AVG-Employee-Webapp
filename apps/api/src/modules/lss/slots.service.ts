@@ -101,10 +101,10 @@ export const SlotsService = {
           const slotRes = await client.query(
             `INSERT INTO lss_slots
                (room_id, slot_number, customer_id, branch_id, amount_paid,
-                payment_mode, proof_key, transaction_id, cash_amount, bank_amount,
+                payment_mode, proof_key, transaction_id, cash_amount, bank_amount, gpay_amount,
                 referrer_id, notes, entered_by, created_at, batch_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                     COALESCE($14::timestamptz, now()), $15)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                     COALESCE($15::timestamptz, now()), $16)
              RETURNING *`,
             [
               alloc.room.id,
@@ -116,9 +116,11 @@ export const SlotsService = {
               payload.proofKey?.length ? payload.proofKey : null,
               // transactionId is TEXT[] — bind array directly; empty array → NULL
               payload.transactionId?.length ? payload.transactionId : null,
-              // cash_bank split is per-slot — null unless mode is cash_bank
-              payload.paymentMode === 'cash_bank' ? payload.cashAmount : null,
+              // cash_bank/cash_gpay share the cash portion column; per-slot split
+              (payload.paymentMode === 'cash_bank' || payload.paymentMode === 'cash_gpay') ? payload.cashAmount : null,
               payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
+              // cash_gpay split: gpay portion — null unless mode is cash_gpay
+              payload.paymentMode === 'cash_gpay' ? payload.gpayAmount : null,
               payload.referrerId ?? null,
               payload.notes ?? null,
               enteredBy,
@@ -275,13 +277,20 @@ export const SlotsService = {
       if (payload.proofKey   != null)       { fields.push(`proof_key = $${idx++}`);    vals.push(payload.proofKey); }
       // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
       if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
-      // cash_bank split: set when correcting to cash_bank, clear when switching to another mode
+      // cash_bank / cash_gpay split columns: set when correcting to a split mode,
+      // clear all three when switching to any other mode.
       if (payload.paymentMode === 'cash_bank') {
         if (payload.cashAmount != null) { fields.push(`cash_amount = $${idx++}`); vals.push(payload.cashAmount); }
         if (payload.bankAmount != null) { fields.push(`bank_amount = $${idx++}`); vals.push(payload.bankAmount); }
+        fields.push(`gpay_amount = NULL`);
+      } else if (payload.paymentMode === 'cash_gpay') {
+        if (payload.cashAmount != null) { fields.push(`cash_amount = $${idx++}`); vals.push(payload.cashAmount); }
+        if (payload.gpayAmount != null) { fields.push(`gpay_amount = $${idx++}`); vals.push(payload.gpayAmount); }
+        fields.push(`bank_amount = NULL`);
       } else if (payload.paymentMode != null) {
         fields.push(`cash_amount = NULL`);
         fields.push(`bank_amount = NULL`);
+        fields.push(`gpay_amount = NULL`);
       }
       if (payload.referrerId !== undefined) { fields.push(`referrer_id = $${idx++}`);  vals.push(payload.referrerId ?? null); }
       // TS: customerId allows admin to re-assign slot to correct customer
@@ -313,12 +322,19 @@ export const SlotsService = {
         if (payload.paymentMode != null)      { batchFields.push(`payment_mode = $${bidx++}`); batchVals.push(payload.paymentMode); }
         if (payload.proofKey   != null)       { batchFields.push(`proof_key = $${bidx++}`);    batchVals.push(payload.proofKey); }
         if (payload.transactionId !== undefined) { batchFields.push(`transaction_id = $${bidx++}`); batchVals.push(payload.transactionId?.length ? payload.transactionId : null); }
+        // cash_bank / cash_gpay: batch-update all sibling slots' split columns too
         if (payload.paymentMode === 'cash_bank') {
           if (payload.cashAmount != null) { batchFields.push(`cash_amount = $${bidx++}`); batchVals.push(payload.cashAmount); }
           if (payload.bankAmount != null) { batchFields.push(`bank_amount = $${bidx++}`); batchVals.push(payload.bankAmount); }
+          batchFields.push(`gpay_amount = NULL`);
+        } else if (payload.paymentMode === 'cash_gpay') {
+          if (payload.cashAmount != null) { batchFields.push(`cash_amount = $${bidx++}`); batchVals.push(payload.cashAmount); }
+          if (payload.gpayAmount != null) { batchFields.push(`gpay_amount = $${bidx++}`); batchVals.push(payload.gpayAmount); }
+          batchFields.push(`bank_amount = NULL`);
         } else if (payload.paymentMode != null) {
           batchFields.push(`cash_amount = NULL`);
           batchFields.push(`bank_amount = NULL`);
+          batchFields.push(`gpay_amount = NULL`);
         }
         if (payload.referrerId !== undefined) { batchFields.push(`referrer_id = $${bidx++}`);  batchVals.push(payload.referrerId ?? null); }
         if (payload.customerId !== undefined) { batchFields.push(`customer_id = $${bidx++}`);  batchVals.push(payload.customerId); }

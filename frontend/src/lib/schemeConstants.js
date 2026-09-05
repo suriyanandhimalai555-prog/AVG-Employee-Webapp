@@ -21,6 +21,7 @@ export const SCHEME_PAYMENT_MODES = [
 export const SCHEME_PAYMENT_MODES_WITH_SPLIT = [
   ...SCHEME_PAYMENT_MODES,
   { value: 'cash_bank',    label: 'Cash + Bank' },
+  { value: 'cash_gpay',    label: 'Cash + GPay' },
 ];
 
 export const SCHEME_MODE_LABELS = {
@@ -28,6 +29,7 @@ export const SCHEME_MODE_LABELS = {
   gpay:         'GPay',
   bank_receipt: 'Bank',
   cash_bank:    'Cash + Bank',
+  cash_gpay:    'Cash + GPay',
 };
 
 export const SCHEME_MODE_STYLES = {
@@ -35,6 +37,7 @@ export const SCHEME_MODE_STYLES = {
   gpay:         'text-indigo bg-indigo/10',
   bank_receipt: 'text-emerald-600 bg-emerald-50',
   cash_bank:    'text-violet-600 bg-violet-50',
+  cash_gpay:    'text-blue-600 bg-blue-50',
 };
 
 // ─── Gold scheme member statuses ──────────────────────────────────────────────

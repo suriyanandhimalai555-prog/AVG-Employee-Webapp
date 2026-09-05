@@ -64,7 +64,7 @@ export const LssAddSlotPage = () => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
-  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,  setError]  = useState(null);
   const [result, setResult] = useState(null);
@@ -109,10 +109,17 @@ export const LssAddSlotPage = () => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - payAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
     try {
@@ -127,8 +134,9 @@ export const LssAddSlotPage = () => {
             amount: payAmount, paymentMode: form.paymentMode, paidDate: form.saleDate || getTodayISO(),
             proofKey: proofKey.length ? proofKey : undefined,
             transactionId: txnId.length ? txnId : undefined,
-            cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+            cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
             bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+            gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
           },
         }).unwrap();
         navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
@@ -142,8 +150,9 @@ export const LssAddSlotPage = () => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
         referrerId:  form.referrerId || undefined,
         notes:       form.notes.trim() || undefined,
         branchId:    isManagement ? branchId : undefined,
@@ -336,7 +345,7 @@ export const LssAddSlotPage = () => {
         <FormField label="Payment mode" required>
           <PaymentModeSelect
             value={form.paymentMode}
-            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
             includeSplit
           />
@@ -346,6 +355,7 @@ export const LssAddSlotPage = () => {
           mode={form.paymentMode}
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
+          gpayAmount={split.gpayAmount}
           onChange={setSplit}
           expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : perSlot) || undefined}
           showError={showProofErr}

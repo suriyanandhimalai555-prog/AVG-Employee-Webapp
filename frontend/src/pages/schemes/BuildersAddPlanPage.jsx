@@ -45,7 +45,7 @@ export const BuildersAddPlanPage = () => {
   const [form,         setForm]       = useState(INITIAL_FORM);
   const [proofKey,     setProofKey]   = useState([]);
   const [txnId,        setTxnId]      = useState([]);
-  const [split,        setSplit]      = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]      = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]      = useState('');
   const [done,         setDone]       = useState(null);  // { plan, customer }
@@ -106,10 +106,17 @@ export const BuildersAddPlanPage = () => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.lumpSumMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.lumpSumMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - payAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
 
@@ -125,8 +132,9 @@ export const BuildersAddPlanPage = () => {
             amount: payAmount, paymentMode: form.lumpSumMode, paidDate: form.lumpSumDate,
             proofKey: proofKey.length ? proofKey : undefined,
             transactionId: txnId.length ? txnId : undefined,
-            cashAmount: form.lumpSumMode === 'cash_bank' ? splitCash : undefined,
+            cashAmount: (form.lumpSumMode === 'cash_bank' || form.lumpSumMode === 'cash_gpay') ? splitCash : undefined,
             bankAmount: form.lumpSumMode === 'cash_bank' ? splitBank : undefined,
+            gpayAmount: form.lumpSumMode === 'cash_gpay' ? splitGpay : undefined,
           },
         }).unwrap();
         navigate(`/money/schemes/pending/${res.pendingId}${isManagement ? `?branchId=${branchId}` : ''}`);
@@ -139,8 +147,9 @@ export const BuildersAddPlanPage = () => {
         lumpSumMode:     form.lumpSumMode,
         lumpSumProofKey: proofKey.length ? proofKey : undefined,
         lumpSumTransactionId: txnId.length ? txnId : undefined,
-        lumpSumCashAmount: form.lumpSumMode === 'cash_bank' ? splitCash : undefined,
+        lumpSumCashAmount: (form.lumpSumMode === 'cash_bank' || form.lumpSumMode === 'cash_gpay') ? splitCash : undefined,
         lumpSumBankAmount: form.lumpSumMode === 'cash_bank' ? splitBank : undefined,
+        lumpSumGpayAmount: form.lumpSumMode === 'cash_gpay' ? splitGpay : undefined,
         referrerId:      form.referrerId || undefined,
         notes:           form.notes || undefined,
         branchId:        isManagement ? branchId : undefined,
@@ -266,7 +275,7 @@ export const BuildersAddPlanPage = () => {
         <FormField label="Payment Mode">
           <PaymentModeSelect
             value={form.lumpSumMode}
-            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            onChange={(val) => { setForm(f => ({ ...f, lumpSumMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
             includeSplit
           />
@@ -276,6 +285,7 @@ export const BuildersAddPlanPage = () => {
           mode={form.lumpSumMode}
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
+          gpayAmount={split.gpayAmount}
           onChange={setSplit}
           expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : selectedPkg?.investmentAmount) || undefined}
           showError={showProofErr}

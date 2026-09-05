@@ -7,7 +7,7 @@ import { X, Loader2, ChevronDown } from 'lucide-react';
 import { useAddTradingMemberMutation, useCreatePendingEnrollmentMutation } from '../../../store/api/apiSlice';
 import { CustomerPicker } from '../../../components/CustomerPicker';
 import { PeriodDateInput } from '../../../components/PeriodDateInput';
-import { TRADING_ROLE_LABELS, createFormSetter, getTodayISO } from '../../../lib/schemeConstants';
+import { TRADING_ROLE_LABELS, SCHEME_MODE_LABELS, createFormSetter, getTodayISO } from '../../../lib/schemeConstants';
 import { FormError } from './FormError';
 import { FormField } from './FormField';
 import { DepositToggle } from './DepositToggle';
@@ -33,7 +33,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
-  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError]   = useState(null);
@@ -61,10 +61,17 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - payAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
     try {
@@ -79,8 +86,9 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
             amount: payAmount, paymentMode: form.paymentMode, paidDate: form.enrollmentDate,
             proofKey: proofKey.length ? proofKey : undefined,
             transactionId: txnId.length ? txnId : undefined,
-            cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+            cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
             bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+            gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
           },
         }).unwrap();
         navigate(`/money/schemes/pending/${res.pendingId}`);
@@ -94,8 +102,9 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         paymentMode:    form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
         notes:          form.notes || undefined,
         branchId:       branchId || undefined,
       }).unwrap();
@@ -211,13 +220,12 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <div className="relative">
             <select
               value={form.paymentMode}
-              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+              onChange={(e) => { set('paymentMode')(e); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
               className={`${SHEET_INPUT_CLASS} appearance-none pr-8`}
             >
-              <option value="cash">Cash</option>
-              <option value="gpay">GPay</option>
-              <option value="bank_receipt">Bank</option>
-              <option value="cash_bank">Cash + Bank</option>
+              {Object.entries(SCHEME_MODE_LABELS).map(([val, lbl]) => (
+                <option key={val} value={val}>{lbl}</option>
+              ))}
             </select>
             <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-navy/40 pointer-events-none" aria-hidden="true" />
           </div>
@@ -228,6 +236,7 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
         mode={form.paymentMode}
         cashAmount={split.cashAmount}
         bankAmount={split.bankAmount}
+        gpayAmount={split.gpayAmount}
         onChange={setSplit}
         expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : parseFloat(form.amount)) || undefined}
         showError={showProofErr}

@@ -65,7 +65,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
-  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,10 +79,17 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - Number(form.amount)) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payout amount.');
+      return;
+    }
+    if (form.paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - Number(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payout amount.');
       return;
     }
     try {
@@ -94,8 +101,9 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onSuccess(res);
@@ -165,7 +173,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40 mb-2">Mode</p>
             <PaymentModeSelect
               value={form.paymentMode}
-              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+              onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
               variant="buttons"
               includeSplit
             />
@@ -175,6 +183,7 @@ const PayoutModal = ({ plan, packages, onClose, onSuccess }) => {
             mode={form.paymentMode}
             cashAmount={split.cashAmount}
             bankAmount={split.bankAmount}
+            gpayAmount={split.gpayAmount}
             onChange={setSplit}
             expectedTotal={form.amount ? Number(form.amount) : undefined}
             showError={showProofErr}
@@ -547,6 +556,12 @@ export const BuildersPlanDetailPage = () => {
                     <p className="text-[10px] font-medium text-navy/50 mt-1">
                       Cash <span className="font-bold text-amber-600">{formatCurrency(p.cash_amount)}</span>
                       {' · '}Bank <span className="font-bold text-emerald-600">{formatCurrency(p.bank_amount)}</span>
+                    </p>
+                  )}
+                  {p.payment_mode === 'cash_gpay' && (
+                    <p className="text-[10px] font-medium text-navy/50 mt-1">
+                      Cash <span className="font-bold text-amber-600">{formatCurrency(p.cash_amount)}</span>
+                      {' · '}GPay <span className="font-bold text-blue-600">{formatCurrency(p.gpay_amount)}</span>
                     </p>
                   )}
                   <PhotoProof photoKey={p.proof_key} />

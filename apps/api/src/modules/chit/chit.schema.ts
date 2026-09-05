@@ -31,7 +31,7 @@ export const AddChitMemberSchema = z.object({
   customerId:           z.string().uuid(),
   referrerId:           z.string().uuid().optional(),
   firstPaymentDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  firstPaymentMode:     z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
+  firstPaymentMode:     z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).default('cash'),
   firstPaymentProofKey: z.array(z.string()).max(5).optional(),
   // firstPaymentTransactionId is an array of up to 5 UPI/bank reference strings
   firstPaymentTransactionId: z.array(z.string().max(100)).max(5).optional(),
@@ -40,6 +40,9 @@ export const AddChitMemberSchema = z.object({
   // validated in the service (not here).
   firstPaymentCashAmount: z.number().positive().optional(),
   firstPaymentBankAmount: z.number().positive().optional(),
+  // cash_gpay split: how the first month's amount divides between cash and gpay.
+  // Sum validated server-side against the package amount.
+  firstPaymentGpayAmount: z.number().positive().optional(),
   notes:                z.string().max(500).optional(),
   branchId:             z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -65,19 +68,29 @@ export const AddChitMemberSchema = z.object({
       path: ['firstPaymentCashAmount'],
     });
   }
+  // cash_gpay: both split amounts required; sum verified server-side against the month amount
+  if (data.firstPaymentMode === 'cash_gpay' && (!data.firstPaymentCashAmount || !data.firstPaymentGpayAmount)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'firstPaymentCashAmount and firstPaymentGpayAmount are required for cash_gpay payments',
+      path: ['firstPaymentCashAmount'],
+    });
+  }
 });
 
 export const RecordChitPaymentSchema = z.object({
   monthNumber:  z.number().int().min(1).max(20),
   amount:       z.number().positive(),
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
-  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).default('cash'),
   proofKey:     z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional(),
   // cash_bank split: how this payment's amount divides between cash and bank
   cashAmount:   z.number().positive().optional(),
   bankAmount:   z.number().positive().optional(),
+  // cash_gpay split: how this payment's amount divides between cash and gpay
+  gpayAmount:   z.number().positive().optional(),
   notes:        z.string().max(500).optional(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -108,6 +121,22 @@ export const RecordChitPaymentSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'cashAmount + bankAmount must equal amount',
         path: ['bankAmount'],
+      });
+    }
+  }
+  // cash_gpay: both split amounts required and must sum to the payment amount
+  if (data.paymentMode === 'cash_gpay') {
+    if (!data.cashAmount || !data.gpayAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount and gpayAmount are required for cash_gpay payments',
+        path: ['cashAmount'],
+      });
+    } else if (Math.abs(data.cashAmount + data.gpayAmount - data.amount) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount + gpayAmount must equal amount',
+        path: ['gpayAmount'],
       });
     }
   }
@@ -161,13 +190,15 @@ export const CorrectChitPaymentSchema = z.object({
   monthNumber:  z.number().int().min(1).max(20).optional(),
   amount:       z.number().positive().optional(),
   paymentDate:  z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).optional(),
+  paymentMode:  z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).optional(),
   proofKey:     z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   // cash_bank split amounts (nullable so a correction can clear them)
   cashAmount:   z.number().positive().optional().nullable(),
   bankAmount:   z.number().positive().optional().nullable(),
+  // cash_gpay split amount (nullable so a correction can clear it)
+  gpayAmount:   z.number().positive().optional().nullable(),
   notes:        z.string().max(500).optional().nullable(),
   branchId:     z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
@@ -199,6 +230,22 @@ export const CorrectChitPaymentSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'cashAmount + bankAmount must equal amount',
         path: ['bankAmount'],
+      });
+    }
+  }
+  // cash_gpay: both split amounts required; when amount is also supplied, verify the sum here
+  if (data.paymentMode === 'cash_gpay') {
+    if (!data.cashAmount || !data.gpayAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount and gpayAmount are required when setting paymentMode to cash_gpay',
+        path: ['cashAmount'],
+      });
+    } else if (data.amount != null && Math.abs(data.cashAmount + data.gpayAmount - data.amount) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount + gpayAmount must equal amount',
+        path: ['gpayAmount'],
       });
     }
   }

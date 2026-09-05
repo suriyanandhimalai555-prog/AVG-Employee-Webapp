@@ -1,35 +1,50 @@
-// Shared cash + bank split input used across scheme payment forms.
-// Renders nothing unless mode is 'cash_bank'. The customer paid part of this
-// payment in cash and part by bank transfer — capture both amounts. The bank
-// portion's proof + transaction ids are captured by ProofUploadField /
-// TransactionIdField (which already render for any non-cash mode).
+// Shared cash + split input used across scheme payment forms.
+// Renders for 'cash_bank' (cash + bank transfer) and 'cash_gpay' (cash + GPay),
+// both of which split one payment row into two portions that must sum to the total.
+// Returns null for any other mode so it is always safe to render unconditionally.
 //
 // Props:
-//   mode           - 'cash' | 'gpay' | 'bank_receipt' | 'cash_bank'
+//   mode           - 'cash' | 'gpay' | 'bank_receipt' | 'cash_bank' | 'cash_gpay'
 //   cashAmount     - current cash portion (string or number)
-//   bankAmount     - current bank portion (string or number)
-//   onChange({ cashAmount, bankAmount }) - called on every keystroke
+//   bankAmount     - current bank portion — used when mode is 'cash_bank'
+//   gpayAmount     - current GPay portion — used when mode is 'cash_gpay'
+//   onChange({ cashAmount, bankAmount, gpayAmount }) - called on every keystroke;
+//                    the unused second-portion key is passed through unchanged so
+//                    callers can hold a single split state object.
 //   expectedTotal  - optional locked total (fixed-amount schemes); when set, the
 //                    split must sum to it. When omitted the total is just shown.
 //   showError      - true to highlight when invalid after a submit attempt
 
 import { formatCurrency } from '../../lib/formatters';
 
+// Derive the second-portion label and colour from the payment mode.
+function getSecondConfig(mode) {
+  if (mode === 'cash_gpay') return { label: 'GPay', colorClass: 'text-indigo' };
+  return { label: 'Bank', colorClass: 'text-emerald-600' };
+}
+
 export const CashBankSplitField = ({
   mode,
   cashAmount,
   bankAmount,
+  gpayAmount,
   onChange,
   expectedTotal,
   showError = false,
 }) => {
-  if (mode !== 'cash_bank') return null;
+  const isCashBank = mode === 'cash_bank';
+  const isCashGpay = mode === 'cash_gpay';
+  if (!isCashBank && !isCashGpay) return null;
 
-  const cash = parseFloat(cashAmount) || 0;
-  const bank = parseFloat(bankAmount) || 0;
-  const total = cash + bank;
+  const { label: secondLabel, colorClass: secondColor } = getSecondConfig(mode);
 
-  const bothEntered = cash > 0 && bank > 0;
+  const cash       = parseFloat(cashAmount) || 0;
+  // second-portion value depends on the current mode
+  const secondRaw  = isCashGpay ? gpayAmount : bankAmount;
+  const second     = parseFloat(secondRaw) || 0;
+  const total      = cash + second;
+
+  const bothEntered  = cash > 0 && second > 0;
   const matchesTotal = expectedTotal == null
     ? true
     : Math.abs(total - Number(expectedTotal)) < 0.01;
@@ -40,10 +55,24 @@ export const CashBankSplitField = ({
       showError && bad ? 'border-red-400' : 'border-navy/10'
     } text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 placeholder:text-navy/30`;
 
+  // When the cash input changes, emit unchanged gpayAmount / bankAmount too so the
+  // caller's split state stays consistent regardless of which mode is active.
+  const onCashChange = (val) =>
+    onChange({ cashAmount: val, bankAmount, gpayAmount });
+
+  // Second-portion change: emit the right key for each mode.
+  const onSecondChange = (val) => {
+    if (isCashGpay) {
+      onChange({ cashAmount, bankAmount, gpayAmount: val });
+    } else {
+      onChange({ cashAmount, bankAmount: val, gpayAmount });
+    }
+  };
+
   return (
     <div className="space-y-2">
       <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block">
-        Cash + Bank split <span className="text-red-400">*</span>
+        Cash + {secondLabel} split <span className="text-red-400">*</span>
       </label>
 
       <div className="flex gap-2">
@@ -54,7 +83,7 @@ export const CashBankSplitField = ({
             min="0"
             step="0.01"
             value={cashAmount ?? ''}
-            onChange={(e) => onChange({ cashAmount: e.target.value, bankAmount })}
+            onChange={(e) => onCashChange(e.target.value)}
             placeholder="Cash ₹"
             className={inputClass(showError && cash <= 0)}
           />
@@ -66,12 +95,12 @@ export const CashBankSplitField = ({
             inputMode="decimal"
             min="0"
             step="0.01"
-            value={bankAmount ?? ''}
-            onChange={(e) => onChange({ cashAmount, bankAmount: e.target.value })}
-            placeholder="Bank ₹"
-            className={inputClass(showError && bank <= 0)}
+            value={secondRaw ?? ''}
+            onChange={(e) => onSecondChange(e.target.value)}
+            placeholder={`${secondLabel} ₹`}
+            className={inputClass(showError && second <= 0)}
           />
-          <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 mt-1 ml-1">Bank</p>
+          <p className={`text-[9px] font-bold uppercase tracking-wider mt-1 ml-1 ${secondColor}`}>{secondLabel}</p>
         </div>
       </div>
 
@@ -91,8 +120,8 @@ export const CashBankSplitField = ({
       {showError && invalid && (
         <p className="text-[10px] text-red-500 font-medium">
           {!bothEntered
-            ? 'Enter both the cash and bank amounts.'
-            : `Cash + bank must equal ${formatCurrency(Number(expectedTotal))}.`}
+            ? `Enter both the cash and ${secondLabel.toLowerCase()} amounts.`
+            : `Cash + ${secondLabel.toLowerCase()} must equal ${formatCurrency(Number(expectedTotal))}.`}
         </p>
       )}
     </div>

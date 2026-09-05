@@ -13,35 +13,45 @@ export const IN_SCOPE_SCHEMES = [
 ] as const;
 
 // Raw shape of one part-payment (deposit or later installment). Mirrors the scheme
-// payment-proof + cash_bank contract from migration 076.
+// payment-proof + cash_bank/cash_gpay contract from migrations 076 and 081.
 const partPaymentShape = {
   amount:        z.number().positive(),
-  paymentMode:   z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
+  paymentMode:   z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).default('cash'),
   cashAmount:    z.number().positive().optional(),
   bankAmount:    z.number().positive().optional(),
+  // cash_gpay split: the GPay portion (cash portion reuses cashAmount)
+  gpayAmount:    z.number().positive().optional(),
   proofKey:      z.array(z.string()).max(5).optional(),
   transactionId: z.array(z.string().max(100)).max(5).optional(),
   paidDate:      z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD'),
 };
 
 // Shared refine: non-cash needs proof + a transaction id; cash_bank needs both split
-// amounts summing to the payment amount (same rules as every scheme payment form).
+// amounts summing to the payment amount; cash_gpay likewise (same rules as every
+// scheme payment form).
 function refinePartPayment(p: {
   amount: number; paymentMode: string;
-  cashAmount?: number; bankAmount?: number;
+  cashAmount?: number; bankAmount?: number; gpayAmount?: number;
   proofKey?: string[]; transactionId?: string[];
 }, ctx: z.RefinementCtx, basePath: (string | number)[] = []) {
   if (p.paymentMode !== 'cash' && !p.proofKey?.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'proofKey is required for gpay/bank_receipt/cash_bank payments', path: [...basePath, 'proofKey'] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'proofKey is required for gpay/bank_receipt/cash_bank/cash_gpay payments', path: [...basePath, 'proofKey'] });
   }
   if (p.paymentMode !== 'cash' && !p.transactionId?.length) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'transactionId is required for gpay/bank_receipt/cash_bank payments', path: [...basePath, 'transactionId'] });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'transactionId is required for gpay/bank_receipt/cash_bank/cash_gpay payments', path: [...basePath, 'transactionId'] });
   }
   if (p.paymentMode === 'cash_bank') {
     if (!p.cashAmount || !p.bankAmount) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'cashAmount and bankAmount are required for cash_bank payments', path: [...basePath, 'cashAmount'] });
     } else if (Math.abs(p.cashAmount + p.bankAmount - p.amount) > 0.01) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'cashAmount + bankAmount must equal amount', path: [...basePath, 'bankAmount'] });
+    }
+  }
+  if (p.paymentMode === 'cash_gpay') {
+    if (!p.cashAmount || !p.gpayAmount) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'cashAmount and gpayAmount are required for cash_gpay payments', path: [...basePath, 'cashAmount'] });
+    } else if (Math.abs(p.cashAmount + p.gpayAmount - p.amount) > 0.01) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'cashAmount + gpayAmount must equal amount', path: [...basePath, 'gpayAmount'] });
     }
   }
 }

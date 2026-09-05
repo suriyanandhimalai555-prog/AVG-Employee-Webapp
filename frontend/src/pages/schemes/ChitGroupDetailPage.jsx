@@ -102,7 +102,7 @@ function PaymentModal({ member, group, onClose, groupId, displayName }) {
   const [paymentMode,   setPaymentMode]   = useState('cash');
   const [proofKey,      setProofKey]      = useState([]);
   const [txnId,         setTxnId]         = useState([]);
-  const [split,         setSplit]         = useState({ cashAmount: '', bankAmount: '' });
+  const [split,         setSplit]         = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr,  setShowProofErr]  = useState(false);
   const [notes,         setNotes]         = useState('');
   const [error,         setError]         = useState(null);
@@ -129,14 +129,21 @@ function PaymentModal({ member, group, onClose, groupId, displayName }) {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(amount)) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
       return;
     }
+    if (paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - parseFloat(amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
+      return;
+    }
     try {
-      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, transactionId: txnId.length ? txnId : undefined, cashAmount: paymentMode === 'cash_bank' ? splitCash : undefined, bankAmount: paymentMode === 'cash_bank' ? splitBank : undefined, notes: notes.trim() || undefined }).unwrap();
+      await recordPayment({ groupId, memberId: member.id, monthNumber: selectedMonth, amount: parseFloat(amount), paymentDate, paymentMode, proofKey: proofKey.length ? proofKey : undefined, transactionId: txnId.length ? txnId : undefined, cashAmount: (paymentMode === 'cash_bank' || paymentMode === 'cash_gpay') ? splitCash : undefined, bankAmount: paymentMode === 'cash_bank' ? splitBank : undefined, gpayAmount: paymentMode === 'cash_gpay' ? splitGpay : undefined, notes: notes.trim() || undefined }).unwrap();
       onClose();
     } catch (err) { setError(err?.data?.error?.message || 'Failed to record payment.'); }
   };
@@ -201,7 +208,7 @@ function PaymentModal({ member, group, onClose, groupId, displayName }) {
             <FormField label="Mode" required>
               <PaymentModeSelect
                 value={paymentMode}
-                onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+                onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
                 variant="buttons"
                 includeSplit
               />
@@ -211,6 +218,7 @@ function PaymentModal({ member, group, onClose, groupId, displayName }) {
               mode={paymentMode}
               cashAmount={split.cashAmount}
               bankAmount={split.bankAmount}
+              gpayAmount={split.gpayAmount}
               onChange={setSplit}
               expectedTotal={amount ? parseFloat(amount) : undefined}
               showError={showProofErr}

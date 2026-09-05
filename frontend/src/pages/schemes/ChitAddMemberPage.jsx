@@ -42,7 +42,7 @@ export const ChitAddMemberPage = () => {
   const [paymentMode,  setPaymentMode]  = useState('cash');
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
-  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
   const [error,        setError]        = useState(null);
   const [result,       setResult]       = useState(null);
@@ -79,10 +79,17 @@ export const ChitAddMemberPage = () => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - payAmount) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - payAmount) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
     try {
@@ -97,8 +104,9 @@ export const ChitAddMemberPage = () => {
             amount: payAmount, paymentMode, paidDate: paymentDate,
             proofKey: proofKey.length ? proofKey : undefined,
             transactionId: txnId.length ? txnId : undefined,
-            cashAmount: paymentMode === 'cash_bank' ? splitCash : undefined,
+            cashAmount: (paymentMode === 'cash_bank' || paymentMode === 'cash_gpay') ? splitCash : undefined,
             bankAmount: paymentMode === 'cash_bank' ? splitBank : undefined,
+            gpayAmount: paymentMode === 'cash_gpay' ? splitGpay : undefined,
           },
         }).unwrap();
         navigate(`/money/schemes/pending/${res.pendingId}`);
@@ -112,8 +120,9 @@ export const ChitAddMemberPage = () => {
         firstPaymentMode:      paymentMode,
         firstPaymentProofKey:  proofKey.length ? proofKey : undefined,
         firstPaymentTransactionId: txnId.length ? txnId : undefined,
-        firstPaymentCashAmount: paymentMode === 'cash_bank' ? splitCash : undefined,
+        firstPaymentCashAmount: (paymentMode === 'cash_bank' || paymentMode === 'cash_gpay') ? splitCash : undefined,
         firstPaymentBankAmount: paymentMode === 'cash_bank' ? splitBank : undefined,
+        firstPaymentGpayAmount: paymentMode === 'cash_gpay' ? splitGpay : undefined,
       }).unwrap();
       setResult(res);
     } catch (err) {
@@ -280,7 +289,7 @@ export const ChitAddMemberPage = () => {
         <FormField label="Month 1 Payment Mode" required>
           <PaymentModeSelect
             value={paymentMode}
-            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            onChange={(val) => { setPaymentMode(val); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
             variant="buttons"
             includeSplit
           />
@@ -295,6 +304,7 @@ export const ChitAddMemberPage = () => {
           mode={paymentMode}
           cashAmount={split.cashAmount}
           bankAmount={split.bankAmount}
+          gpayAmount={split.gpayAmount}
           onChange={setSplit}
           expectedTotal={(payMode === 'deposit' ? parseFloat(deposit) : fullAmount) || undefined}
           showError={showProofErr}

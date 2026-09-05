@@ -135,6 +135,12 @@ export const PendingEnrollmentDetailPage = () => {
                     {' · '}Bank <span className="font-bold text-emerald-600">{formatCurrency(p.bank_amount)}</span>
                   </p>
                 )}
+                {p.payment_mode === 'cash_gpay' && (
+                  <p className="text-[10px] font-medium text-navy/50 mt-1">
+                    Cash <span className="font-bold text-amber-600">{formatCurrency(p.cash_amount)}</span>
+                    {' · '}GPay <span className="font-bold text-blue-600">{formatCurrency(p.gpay_amount)}</span>
+                  </p>
+                )}
                 <PhotoProof photoKey={p.proof_key} />
                 <TransactionIdList transactionId={p.transaction_id} />
               </div>
@@ -180,7 +186,7 @@ const AddPartPaymentForm = ({ pendingId, branchId, remaining, onClose, onStarted
   const [form, setForm] = useState({ amount: '', paymentMode: 'cash', paidDate: getTodayISO(), notes: '' });
   const [proofKey, setProofKey] = useState([]);
   const [txnId, setTxnId] = useState([]);
-  const [split, setSplit] = useState({ cashAmount: '', bankAmount: '' });
+  const [split, setSplit] = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showErr, setShowErr] = useState(false);
   const [error, setError] = useState(null);
 
@@ -196,8 +202,12 @@ const AddPartPaymentForm = ({ pendingId, branchId, remaining, onClose, onStarted
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' && (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - amt) > 0.01)) {
       setShowErr(true); setError('Cash + bank amounts must be filled and equal the payment amount.'); return;
+    }
+    if (form.paymentMode === 'cash_gpay' && (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - amt) > 0.01)) {
+      setShowErr(true); setError('Cash + GPay amounts must be filled and equal the payment amount.'); return;
     }
     try {
       const res = await addPayment({
@@ -205,8 +215,9 @@ const AddPartPaymentForm = ({ pendingId, branchId, remaining, onClose, onStarted
         amount: amt, paymentMode: form.paymentMode, paidDate: form.paidDate,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
       }).unwrap();
       if (res?.completion) onStarted(); else onClose();
     } catch (err) {
@@ -235,13 +246,13 @@ const AddPartPaymentForm = ({ pendingId, branchId, remaining, onClose, onStarted
       <FormField label="Payment mode" required>
         <PaymentModeSelect
           value={form.paymentMode}
-          onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowErr(false); }}
+          onChange={(val) => { setForm(f => ({ ...f, paymentMode: val })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowErr(false); }}
           variant="buttons" includeSplit
         />
       </FormField>
 
       <CashBankSplitField mode={form.paymentMode} cashAmount={split.cashAmount} bankAmount={split.bankAmount}
-        onChange={setSplit} expectedTotal={amt || undefined} showError={showErr} />
+        gpayAmount={split.gpayAmount} onChange={setSplit} expectedTotal={amt || undefined} showError={showErr} />
       <ProofUploadField mode={form.paymentMode} proofKey={proofKey} onChange={setProofKey} showError={showErr} />
       <TransactionIdField mode={form.paymentMode} value={txnId} onChange={setTxnId} showError={showErr} />
 

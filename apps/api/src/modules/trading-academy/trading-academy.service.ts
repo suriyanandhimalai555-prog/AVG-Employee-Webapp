@@ -59,8 +59,8 @@ export const TradingAcademyService = {
       const insertResult = await client.query(
         `INSERT INTO trading_academy_members
            (branch_id, project_id, customer_id, amount, enrolled_by,
-            enrollment_date, payment_mode, proof_key, transaction_id, cash_amount, bank_amount, notes, entered_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            enrollment_date, payment_mode, proof_key, transaction_id, cash_amount, bank_amount, gpay_amount, notes, entered_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING *`,
         [
           branchId,
@@ -73,9 +73,11 @@ export const TradingAcademyService = {
           payload.proofKey?.length ? payload.proofKey : null,
           // transactionId is TEXT[] — bind array directly; empty array → NULL
           payload.transactionId?.length ? payload.transactionId : null,
-          // cash_bank split amounts — null unless mode is cash_bank
-          payload.paymentMode === 'cash_bank' ? payload.cashAmount : null,
+          // cash_bank/cash_gpay share the cash portion column
+          (payload.paymentMode === 'cash_bank' || payload.paymentMode === 'cash_gpay') ? payload.cashAmount : null,
           payload.paymentMode === 'cash_bank' ? payload.bankAmount : null,
+          // cash_gpay split: gpay portion — null unless mode is cash_gpay
+          payload.paymentMode === 'cash_gpay' ? payload.gpayAmount : null,
           payload.notes ?? null,
           enteredBy,
         ]
@@ -272,13 +274,20 @@ export const TradingAcademyService = {
       if (payload.proofKey       != null) { fields.push(`proof_key = $${idx++}`);        vals.push(payload.proofKey); }
       // transactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
       if (payload.transactionId !== undefined) { fields.push(`transaction_id = $${idx++}`); vals.push(payload.transactionId?.length ? payload.transactionId : null); }
-      // cash_bank split: set when correcting to cash_bank, clear when switching to another mode
+      // cash_bank / cash_gpay split columns: set when correcting to a split mode,
+      // clear all three when switching to any other mode.
       if (payload.paymentMode === 'cash_bank') {
         if (payload.cashAmount != null) { fields.push(`cash_amount = $${idx++}`); vals.push(payload.cashAmount); }
         if (payload.bankAmount != null) { fields.push(`bank_amount = $${idx++}`); vals.push(payload.bankAmount); }
+        fields.push(`gpay_amount = NULL`);
+      } else if (payload.paymentMode === 'cash_gpay') {
+        if (payload.cashAmount != null) { fields.push(`cash_amount = $${idx++}`); vals.push(payload.cashAmount); }
+        if (payload.gpayAmount != null) { fields.push(`gpay_amount = $${idx++}`); vals.push(payload.gpayAmount); }
+        fields.push(`bank_amount = NULL`);
       } else if (payload.paymentMode != null) {
         fields.push(`cash_amount = NULL`);
         fields.push(`bank_amount = NULL`);
+        fields.push(`gpay_amount = NULL`);
       }
       if (payload.notes !== undefined)    { fields.push(`notes = $${idx++}`);            vals.push(payload.notes); }
       if (fields.length === 0) throw new ValidationError('No fields to update');

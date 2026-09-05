@@ -50,13 +50,15 @@ export interface DailyCollectionBySchemeResult {
   rows:        DailyCollectionSchemeRow[];
 }
 
-// TS: helper to build the CASE expression that splits cash_bank rows into cash/bank columns.
+// TS: helper to build the CASE expression that splits cash_bank / cash_gpay rows into
+// cash/bank/gpay columns. cash_bank routes to cash+bank, cash_gpay routes to cash+gpay.
 // The pattern is the same across all tables so we generate it rather than repeating it.
-function splitCases(amtCol: string, cashCol: string, bankCol: string) {
+function splitCases(amtCol: string, cashCol: string, bankCol: string, gpayCol: string) {
   return `
     CASE payment_mode
       WHEN 'cash'         THEN ${amtCol}
       WHEN 'cash_bank'    THEN COALESCE(${cashCol}, 0)
+      WHEN 'cash_gpay'    THEN COALESCE(${cashCol}, 0)
       ELSE 0
     END AS cash,
     CASE payment_mode
@@ -64,7 +66,11 @@ function splitCases(amtCol: string, cashCol: string, bankCol: string) {
       WHEN 'cash_bank'    THEN COALESCE(${bankCol}, 0)
       ELSE 0
     END AS bank,
-    CASE payment_mode WHEN 'gpay' THEN ${amtCol} ELSE 0 END AS gpay
+    CASE payment_mode
+      WHEN 'gpay'         THEN ${amtCol}
+      WHEN 'cash_gpay'    THEN COALESCE(${gpayCol}, 0)
+      ELSE 0
+    END AS gpay
   `.trim();
 }
 
@@ -87,7 +93,7 @@ export async function getDailyCollection(
 
       -- gold_scheme_payments (installment / full payments on the scheme)
       SELECT gm.branch_id, p.paid_date AS pdate,
-        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount')}
+        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount', 'p.gpay_amount')}
       FROM gold_scheme_payments p
       JOIN gold_scheme_members gm ON gm.id = p.member_id
       WHERE p.paid_date >= $2::date AND p.paid_date <= $1::date
@@ -96,7 +102,7 @@ export async function getDailyCollection(
 
       -- trading_academy_members (single-payment enrolment)
       SELECT branch_id, enrollment_date AS pdate,
-        ${splitCases('amount', 'cash_amount', 'bank_amount')}
+        ${splitCases('amount', 'cash_amount', 'bank_amount', 'gpay_amount')}
       FROM trading_academy_members
       WHERE enrollment_date >= $2::date AND enrollment_date <= $1::date
 
@@ -104,7 +110,7 @@ export async function getDailyCollection(
 
       -- gold_coin_slots (per-slot payment; paid_at is a timestamptz)
       SELECT branch_id, paid_at::date AS pdate,
-        ${splitCases('amount_paid', 'cash_amount', 'bank_amount')}
+        ${splitCases('amount_paid', 'cash_amount', 'bank_amount', 'gpay_amount')}
       FROM gold_coin_slots
       WHERE paid_at IS NOT NULL
         AND paid_at::date >= $2::date AND paid_at::date <= $1::date
@@ -113,7 +119,7 @@ export async function getDailyCollection(
 
       -- lss_slots (per-slot payment; paid_at is a timestamptz)
       SELECT branch_id, paid_at::date AS pdate,
-        ${splitCases('amount_paid', 'cash_amount', 'bank_amount')}
+        ${splitCases('amount_paid', 'cash_amount', 'bank_amount', 'gpay_amount')}
       FROM lss_slots
       WHERE paid_at IS NOT NULL
         AND paid_at::date >= $2::date AND paid_at::date <= $1::date
@@ -122,7 +128,7 @@ export async function getDailyCollection(
 
       -- agila_chit_payments (monthly instalment; branch via member → group)
       SELECT acg.branch_id, p.payment_date AS pdate,
-        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount')}
+        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount', 'p.gpay_amount')}
       FROM agila_chit_payments p
       JOIN agila_chit_members acm ON acm.id = p.member_id
       JOIN agila_chit_groups  acg ON acg.id = acm.group_id
@@ -132,7 +138,7 @@ export async function getDailyCollection(
 
       -- builders_payouts (recurring payout instalments; branch via plan)
       SELECT bp.branch_id, p.payout_date AS pdate,
-        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount')}
+        ${splitCases('p.amount', 'p.cash_amount', 'p.bank_amount', 'p.gpay_amount')}
       FROM builders_payouts p
       JOIN builders_plans bp ON bp.id = p.plan_id
       WHERE p.payout_date >= $2::date AND p.payout_date <= $1::date
@@ -144,6 +150,7 @@ export async function getDailyCollection(
         CASE lump_sum_mode
           WHEN 'cash'         THEN investment_amount
           WHEN 'cash_bank'    THEN COALESCE(lump_sum_cash_amount, 0)
+          WHEN 'cash_gpay'    THEN COALESCE(lump_sum_cash_amount, 0)
           ELSE 0
         END AS cash,
         CASE lump_sum_mode
@@ -151,7 +158,11 @@ export async function getDailyCollection(
           WHEN 'cash_bank'    THEN COALESCE(lump_sum_bank_amount, 0)
           ELSE 0
         END AS bank,
-        CASE lump_sum_mode WHEN 'gpay' THEN investment_amount ELSE 0 END AS gpay
+        CASE lump_sum_mode
+          WHEN 'gpay'         THEN investment_amount
+          WHEN 'cash_gpay'    THEN COALESCE(lump_sum_gpay_amount, 0)
+          ELSE 0
+        END AS gpay
       FROM builders_plans
       WHERE lump_sum_date IS NOT NULL AND lump_sum_mode IS NOT NULL
         AND lump_sum_date >= $2::date AND lump_sum_date <= $1::date

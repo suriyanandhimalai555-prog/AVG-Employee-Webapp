@@ -159,8 +159,8 @@ const SCHEME_FIELDS = {
   ],
 };
 
-const SCHEME_PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt', 'cash_bank'];
-const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt', cash_bank: 'Cash + Bank' };
+const SCHEME_PAYMENT_MODES = ['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay'];
+const MODE_LABEL = { cash: 'Cash', gpay: 'GPay', bank_receipt: 'Bank Receipt', cash_bank: 'Cash + Bank', cash_gpay: 'Cash + GPay' };
 const LAND_PAYMENT_MODES = ['full_payment', 'advance_full_payment'];
 const LAND_MODE_LABEL = { full_payment: 'Full Payment', advance_full_payment: 'Advance + Full Payment' };
 
@@ -297,7 +297,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
   const [error, setError] = useState('');
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
-  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '' });
+  const [split,        setSplit]        = useState({ cashAmount: '', bankAmount: '', gpayAmount: '' });
   const [showProofErr, setShowProofErr] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -310,10 +310,17 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
     setBusy(true); setError('');
@@ -325,8 +332,9 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         paymentMode: form.paymentMode,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: txnId.length ? txnId : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
         notes:       form.notes || undefined,
       }).unwrap();
       onClose();
@@ -376,7 +384,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
           <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
           <select
             value={form.paymentMode}
-            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
             className={`${IC} appearance-none`}
           >
             {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
@@ -387,6 +395,7 @@ const AddPaymentForm = ({ payments, onAdd, onClose, maxMonth }) => {
         mode={form.paymentMode}
         cashAmount={split.cashAmount}
         bankAmount={split.bankAmount}
+        gpayAmount={split.gpayAmount}
         onChange={setSplit}
         expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
         showError={showProofErr}
@@ -740,10 +749,11 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
       ? payment.transaction_id
       : (payment.transaction_id ? [payment.transaction_id] : [])
   );
-  // Pre-fill the cash_bank split from the existing row so an unrelated edit keeps it valid
+  // Pre-fill the cash_bank / cash_gpay split from the existing row so an unrelated edit keeps it valid
   const [split,        setSplit]        = useState({
     cashAmount: payment.cash_amount != null ? String(payment.cash_amount) : '',
     bankAmount: payment.bank_amount != null ? String(payment.bank_amount) : '',
+    gpayAmount: payment.gpay_amount != null ? String(payment.gpay_amount) : '',
   });
   const [showProofErr, setShowProofErr] = useState(false);
 
@@ -756,10 +766,17 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
     }
     const splitCash = parseFloat(split.cashAmount) || 0;
     const splitBank = parseFloat(split.bankAmount) || 0;
+    const splitGpay = parseFloat(split.gpayAmount) || 0;
     if (form.paymentMode === 'cash_bank' &&
         (splitCash <= 0 || splitBank <= 0 || Math.abs(splitCash + splitBank - parseFloat(form.amount)) > 0.01)) {
       setShowProofErr(true);
       setError('Cash + bank amounts must be filled and equal the payment amount.');
+      return;
+    }
+    if (form.paymentMode === 'cash_gpay' &&
+        (splitCash <= 0 || splitGpay <= 0 || Math.abs(splitCash + splitGpay - parseFloat(form.amount)) > 0.01)) {
+      setShowProofErr(true);
+      setError('Cash + GPay amounts must be filled and equal the payment amount.');
       return;
     }
     setBusy(true); setError('');
@@ -770,8 +787,9 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
         paymentMode: form.paymentMode || undefined,
         proofKey: proofKey.length ? proofKey : undefined,
         transactionId: form.paymentMode && form.paymentMode !== 'cash' ? (txnId.length ? txnId : undefined) : undefined,
-        cashAmount: form.paymentMode === 'cash_bank' ? splitCash : undefined,
+        cashAmount: (form.paymentMode === 'cash_bank' || form.paymentMode === 'cash_gpay') ? splitCash : undefined,
         bankAmount: form.paymentMode === 'cash_bank' ? splitBank : undefined,
+        gpayAmount: form.paymentMode === 'cash_gpay' ? splitGpay : undefined,
         notes:       form.notes       ?? undefined,
         branchId,
       }).unwrap();
@@ -828,7 +846,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
           </div>
           <div>
             <label className="text-[8px] font-bold uppercase text-navy/40 block mb-1">Mode</label>
-            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '' }); setShowProofErr(false); }}
+            <select value={form.paymentMode} onChange={(e) => { setForm((f) => ({ ...f, paymentMode: e.target.value })); setProofKey([]); setTxnId([]); setSplit({ cashAmount: '', bankAmount: '', gpayAmount: '' }); setShowProofErr(false); }}
               className={`${IC} appearance-none`}>
               {SCHEME_PAYMENT_MODES.map((m) => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
             </select>
@@ -837,6 +855,7 @@ const PaymentRow = ({ payment, branchId, amountField, dateField, modeField, labe
             mode={form.paymentMode}
             cashAmount={split.cashAmount}
             bankAmount={split.bankAmount}
+            gpayAmount={split.gpayAmount}
             onChange={setSplit}
             expectedTotal={form.amount ? parseFloat(form.amount) : undefined}
             showError={showProofErr}

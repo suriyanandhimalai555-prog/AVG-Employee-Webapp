@@ -8,13 +8,15 @@ export const CreateSlotSchema = z.object({
   customerId:  z.string().uuid(),
   amountPaid:  z.number().positive().max(10_000_000),
   quantity:    z.number().int().min(1).max(20).default(1),
-  paymentMode: z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).default('cash'),
+  paymentMode: z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).default('cash'),
   proofKey:    z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional(),
   // cash_bank split: how the PER-SLOT amountPaid divides between cash and bank
   cashAmount:  z.number().positive().optional(),
   bankAmount:  z.number().positive().optional(),
+  // cash_gpay split: how the PER-SLOT amountPaid divides between cash and gpay
+  gpayAmount:  z.number().positive().optional(),
   referrerId:  z.string().uuid().optional(),
   notes:       z.string().max(500).optional(),
   branchId:    z.string().uuid().optional(),
@@ -50,6 +52,22 @@ export const CreateSlotSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: 'cashAmount + bankAmount must equal amountPaid (per slot)',
         path: ['bankAmount'],
+      });
+    }
+  }
+  // cash_gpay: split is per-slot and must sum to amountPaid (the per-slot price)
+  if (data.paymentMode === 'cash_gpay') {
+    if (!data.cashAmount || !data.gpayAmount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount and gpayAmount are required for cash_gpay payments',
+        path: ['cashAmount'],
+      });
+    } else if (Math.abs(data.cashAmount + data.gpayAmount - data.amountPaid) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cashAmount + gpayAmount must equal amountPaid (per slot)',
+        path: ['gpayAmount'],
       });
     }
   }
@@ -95,13 +113,15 @@ export const CorrectLssSlotSchema = z.object({
   customerId:  z.string().uuid().optional(),
   referrerId:  z.string().uuid().optional().nullable(),
   notes:       z.string().max(500).optional().nullable(),
-  paymentMode: z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank']).optional(),
+  paymentMode: z.enum(['cash', 'gpay', 'bank_receipt', 'cash_bank', 'cash_gpay']).optional(),
   proofKey:    z.array(z.string()).max(5).optional(),
   // transactionId is an array of up to 5 UPI/bank reference strings — one per split transfer
   transactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
   // cash_bank split amounts (nullable so a correction can clear them)
   cashAmount:  z.number().positive().optional().nullable(),
   bankAmount:  z.number().positive().optional().nullable(),
+  // cash_gpay split amount (nullable so a correction can clear it)
+  gpayAmount:  z.number().positive().optional().nullable(),
   branchId:    z.string().uuid().optional(),
   // Move the slot's business date — updates created_at + paid_at and re-points incentives.
   // Rejected by the server when the room already has draws or the slot is won.
@@ -126,6 +146,14 @@ export const CorrectLssSlotSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'cashAmount and bankAmount are required when setting paymentMode to cash_bank',
+      path: ['cashAmount'],
+    });
+  }
+  // cash_gpay: both split amounts required; sum verified server-side against amount_paid
+  if (data.paymentMode === 'cash_gpay' && (!data.cashAmount || !data.gpayAmount)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'cashAmount and gpayAmount are required when setting paymentMode to cash_gpay',
       path: ['cashAmount'],
     });
   }
