@@ -7,6 +7,7 @@ import { selectIsAuthenticated, selectCurrentUser, clearCredentials } from './st
 import { useGetMeQuery } from './store/api/apiSlice';
 
 import { Layout } from './components/layout/Layout';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Login } from './pages/Login';
 import { AttendanceHome } from './pages/AttendanceHome';
 import { ProfilePage } from './pages/ProfilePage';
@@ -101,10 +102,16 @@ function CustomersRoute() {
 function ProtectedLayout() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // ErrorBoundary sits above Suspense: Suspense catches the pending promise
+  // (loading state), the boundary catches the rejection (chunk 404 after
+  // a new deploy).  Auto-reloads once via the shared reloadForStaleChunk
+  // cooldown guard; shows a retry screen if the reload didn't help.
   return (
-    <Suspense fallback={<RouteFallback />}>
-      <Layout />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<RouteFallback />}>
+        <Layout />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
