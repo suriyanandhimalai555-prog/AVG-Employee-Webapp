@@ -623,10 +623,13 @@ export const ChitService = {
         [monthNumber, winnerAmount, newPayingHalf, payload.memberId]
       );
 
+      // Cast $2 to varchar at both usages so Postgres deduces one consistent
+      // type. Without the cast, $2 is inferred as varchar from the SET clause
+      // and as text from the CASE comparison — 42P08 "inconsistent types".
       await client.query(
         `UPDATE agila_chit_groups
-         SET current_month = $1, status = $2,
-             completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END
+         SET current_month = $1, status = $2::varchar,
+             completed_at = CASE WHEN $2::varchar = 'completed' THEN NOW() ELSE completed_at END
          WHERE id = $3`,
         [nextMonth, newGroupStatus, groupId]
       );
