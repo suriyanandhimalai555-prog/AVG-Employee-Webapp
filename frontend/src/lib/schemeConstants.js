@@ -46,6 +46,10 @@ export const GOLD_STATUS_STYLES = {
   active:    'text-emerald-600 bg-emerald-50',
   completed: 'text-indigo bg-indigo/10',
   withdrawn: 'text-red-500 bg-red-50',
+  // cancelled: card cancelled; refund pending until maturity
+  cancelled: 'text-orange-600 bg-orange-50',
+  // voided: admin hard-void with incentive clawback
+  voided:    'text-gray-400 bg-gray-100',
 };
 
 // ─── Role labels ──────────────────────────────────────────────────────────────

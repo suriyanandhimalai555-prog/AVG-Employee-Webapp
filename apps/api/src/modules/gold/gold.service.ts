@@ -3,6 +3,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
+import { getCompanyToday } from '../../shared/date';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
@@ -10,6 +11,7 @@ import type {
   AddGoldPaymentInput,
   CorrectGoldMemberInput,
   CorrectGoldPaymentInput,
+  CancelGoldMemberInput,
 } from './gold.schema';
 
 // Stable project code for gold — set once at creation, never changes even if the
@@ -249,6 +251,8 @@ export const GoldService = {
   },
 
   // ─── UPDATE STATUS ───
+  // 'cancelled' members are excluded from this path — their lifecycle is owned
+  // exclusively by cancelMember / settleRefund to prevent orphaned refund columns.
   async updateStatus(
     db: Pool,
     id: string,
@@ -257,12 +261,124 @@ export const GoldService = {
   ): Promise<any> {
     const result = await db.query(
       `UPDATE gold_scheme_members SET status = $1
-       WHERE id = $2 AND branch_id = $3
+       WHERE id = $2 AND branch_id = $3 AND status <> 'cancelled'
        RETURNING *`,
       [payload.status, id, branchId]
     );
-    if (result.rows.length === 0) throw new NotFoundError('Member not found');
+    if (result.rows.length === 0) {
+      // Distinguish: not found at all, or blocked because it is already cancelled
+      const check = await db.query(
+        `SELECT status FROM gold_scheme_members WHERE id = $1 AND branch_id = $2`,
+        [id, branchId]
+      );
+      if (check.rows.length === 0) throw new NotFoundError('Member not found');
+      if (check.rows[0].status === 'cancelled') {
+        throw new ValidationError('Cannot change the status of a cancelled member');
+      }
+      throw new NotFoundError('Member not found');
+    }
     return result.rows[0];
+  },
+
+  // ─── CANCEL MEMBER ───────────────────────────────────────────────────────────
+  // Marks an active gold member as 'cancelled' with refund_status='pending'.
+  // Commission credited at enrollment/renewal is deliberately kept (not reversed).
+  // The customer's accumulated payments become payable after the scheme matures.
+  async cancelMember(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string,
+    payload: CancelGoldMemberInput
+  ): Promise<any> {
+    const result = await db.query(
+      `UPDATE gold_scheme_members
+       SET status        = 'cancelled',
+           cancelled_at  = NOW(),
+           cancelled_by  = $1,
+           cancel_reason = $2,
+           refund_status = 'pending'
+       WHERE id = $3 AND branch_id = $4 AND status = 'active'
+       RETURNING *`,
+      [actorId, payload.reason ?? null, id, branchId]
+    );
+    if (result.rows.length === 0) {
+      // Provide a specific error: not found vs wrong current status
+      const check = await db.query(
+        `SELECT status FROM gold_scheme_members WHERE id = $1 AND branch_id = $2`,
+        [id, branchId]
+      );
+      if (check.rows.length === 0) throw new NotFoundError('Member not found');
+      throw new ValidationError(
+        `Cannot cancel a member with status '${check.rows[0].status}'`
+      );
+    }
+    return result.rows[0];
+  },
+
+  // ─── SETTLE REFUND ───────────────────────────────────────────────────────────
+  // Marks a cancelled member's refund as settled (refund_status='refunded').
+  // Only permitted once the scheme's maturity date has passed
+  // (start_date + total_months, compared in IST via getCompanyToday()).
+  // refund_amount is computed at settle time from SUM(payments) so it reflects
+  // any payment corrections made after the cancel.
+  async settleRefund(
+    db: Pool,
+    actorId: string,
+    id: string,
+    branchId: string
+  ): Promise<any> {
+    return runInTransaction(db, async (client: PoolClient) => {
+      // Load the member and derive its maturity date in SQL
+      const memberRow = await client.query(
+        `SELECT *,
+                (start_date + (total_months || ' months')::interval)::date AS maturity_date
+         FROM gold_scheme_members
+         WHERE id = $1 AND branch_id = $2`,
+        [id, branchId]
+      );
+      if (memberRow.rows.length === 0) throw new NotFoundError('Member not found');
+      const member = memberRow.rows[0];
+
+      // Guard: must be in pending-refund state
+      if (member.refund_status === 'refunded') {
+        throw new ValidationError('Refund has already been settled');
+      }
+      if (member.refund_status !== 'pending') {
+        throw new ValidationError('Member does not have a pending refund');
+      }
+
+      // Guard: compare IST "today" with the maturity date — the server is the authority.
+      // maturity_date is returned as a 'YYYY-MM-DD' string by pg DATE cast.
+      const today        = getCompanyToday();
+      const maturityDate = String(member.maturity_date).slice(0, 10);
+      if (today < maturityDate) {
+        throw new ValidationError(
+          `Refund is payable once the scheme matures on ${maturityDate}`
+        );
+      }
+
+      // Compute refund amount at settle time (reflects any post-cancel payment corrections)
+      const sumRow = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM gold_scheme_payments WHERE member_id = $1`,
+        [id]
+      );
+      // TS: NUMERIC returns as string from pg; parse before writing back
+      const refundAmount = parseFloat(sumRow.rows[0].total);
+
+      const updated = await client.query(
+        `UPDATE gold_scheme_members
+         SET refund_status = 'refunded',
+             refunded_at   = NOW(),
+             refunded_by   = $1,
+             refund_amount = $2
+         WHERE id = $3
+         RETURNING *`,
+        [actorId, refundAmount, id]
+      );
+
+      return updated.rows[0];
+    });
   },
 
   // ─── GET BRANCH EMPLOYEES (referrer picker) ───

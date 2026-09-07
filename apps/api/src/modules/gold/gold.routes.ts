@@ -14,6 +14,8 @@ import {
   AddGoldPaymentSchema,
   CorrectGoldMemberSchema,
   CorrectGoldPaymentSchema,
+  CancelGoldMemberSchema,
+  RefundGoldMemberSchema,
 } from './gold.schema';
 
 interface AuthenticatedUser { id: string; role: string; branchId: string; }
@@ -258,6 +260,45 @@ export default async function goldRoutes(fastify: FastifyInstance): Promise<void
         const member = await GoldService.getMember(fastify.db, id, req.user.branchId ?? bodyBranchId ?? '');
         const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, member.branch_id, bodyBranchId);
         const data = await GoldService.deleteMember(fastify.db, req.user.id, id, branchId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── POST /gold/:id/cancel — cancel a card (branch_admin or management) ───
+  // Guard chain: role check → resolveWriterBranch (management has no branch on JWT).
+  // Backdate/reconciliation guards are omitted — cancel is not a dated money
+  // collection entry.
+  fastify.post('/:id/cancel', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        if (!WRITER_ROLES.has(req.user.role)) {
+          throw new ForbiddenError('Only Branch Admin or Management can cancel a gold scheme member');
+        }
+        const { id }   = req.params as { id: string };
+        const body     = CancelGoldMemberSchema.parse(req.body);
+        const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+        const data = await GoldService.cancelMember(fastify.db, req.user.id, id, branchId, body);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // ─── POST /gold/:id/refund — settle the refund on a cancelled member ───
+  // The service enforces the maturity gate using IST today (getCompanyToday()).
+  // Guard chain: role check → resolveWriterBranch (same reason as cancel).
+  fastify.post('/:id/refund', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthenticatedRequest;
+        if (!WRITER_ROLES.has(req.user.role)) {
+          throw new ForbiddenError('Only Branch Admin or Management can settle a gold scheme refund');
+        }
+        const { id }   = req.params as { id: string };
+        const body     = RefundGoldMemberSchema.parse(req.body);
+        const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+        const data = await GoldService.settleRefund(fastify.db, req.user.id, id, branchId);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

@@ -4,13 +4,15 @@ import { useSelector } from 'react-redux';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Plus, CheckCircle2, Circle, Loader2,
-  Phone, MapPin, User,
+  Phone, MapPin, User, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetGoldMemberQuery,
   useGetGoldPaymentsQuery,
   useUpdateGoldMemberStatusMutation,
+  useCancelGoldMemberMutation,
+  useRefundGoldMemberMutation,
 } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
 import { getCurrentPeriod } from '../../lib/schemePeriod';
@@ -19,6 +21,7 @@ import { GOLD_STATUS_STYLES, SCHEME_MODE_LABELS, SCHEME_MODE_STYLES } from '../.
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { AddPaymentModal } from './components/AddPaymentModal';
+import { GlassModal } from '../../components/GlassModal';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
 
@@ -33,11 +36,16 @@ export const GoldMemberDetailPage = () => {
   const backTo   = searchParams.get('from') === 'schemes' ? '/schemes/gold_scheme' : '/money/schemes/gold';
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showCancelModal,  setShowCancelModal]  = useState(false);
+  const [showRefundModal,  setShowRefundModal]  = useState(false);
+  const [cancelReason,     setCancelReason]     = useState('');
   const [period, setPeriod]                     = useState(getCurrentPeriod);
 
   const { data: member,   isLoading: isMemberLoading }   = useGetGoldMemberQuery(branchId ? { id, branchId } : id);
   const { data: payments = [], isLoading: isPaymentsLoading } = useGetGoldPaymentsQuery(branchId ? { memberId: id, branchId } : id);
-  const [updateStatus] = useUpdateGoldMemberStatusMutation();
+  const [updateStatus]   = useUpdateGoldMemberStatusMutation();
+  const [cancelMember,   { isLoading: isCancelling }]  = useCancelGoldMemberMutation();
+  const [refundMember,   { isLoading: isRefunding }]   = useRefundGoldMemberMutation();
 
   if (isMemberLoading) {
     return (
@@ -68,19 +76,63 @@ export const GoldMemberDetailPage = () => {
     }
   };
 
+  // Compute the member's maturity date for display (display-only; server is authoritative).
+  // Parse YYYY-MM-DD components to avoid UTC-midnight timezone shift.
+  const computeMaturityDate = (startDate, totalMonths) => {
+    const [y, mo, d] = String(startDate).split('-').map(Number);
+    return new Date(y, mo - 1 + Number(totalMonths), d);
+  };
+  const maturityDateObj = member ? computeMaturityDate(member.start_date, member.total_months) : null;
+  // Today as YYYY-MM-DD for the display-side gate (device local — server re-checks in IST)
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const maturityISO = maturityDateObj
+    ? `${maturityDateObj.getFullYear()}-${String(maturityDateObj.getMonth() + 1).padStart(2, '0')}-${String(maturityDateObj.getDate()).padStart(2, '0')}`
+    : null;
+  const isMatured = maturityISO && todayISO >= maturityISO;
+
+  const handleCancel = async () => {
+    try {
+      const body = cancelReason.trim() ? { reason: cancelReason.trim() } : {};
+      if (branchId) body.branchId = branchId;
+      await cancelMember({ id: member.id, ...body }).unwrap();
+      setShowCancelModal(false);
+      setCancelReason('');
+    } catch {
+      // errors surface via RTK Query; UI remains open for retry
+    }
+  };
+
+  const handleSettleRefund = async () => {
+    try {
+      const body = branchId ? { branchId } : {};
+      await refundMember({ id: member.id, ...body }).unwrap();
+      setShowRefundModal(false);
+    } catch {
+      // server will return a 400 with the maturity date if the guard fails
+    }
+  };
+
   const periodPayments = payments.filter(p => {
     const d = p.paid_date?.slice(0, 10);
     return d >= period.startDate && d <= period.endDate;
   });
 
   const addButton = user?.role === 'branch_admin' && member.status === 'active' ? (
-    <button
-      onClick={() => setShowPaymentModal(true)}
-      disabled={allPaid}
-      className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white text-xs font-bold rounded-2xl shadow-md tactile-press disabled:opacity-40"
-    >
-      <Plus size={14} aria-hidden="true" /> Add Payment
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => setShowPaymentModal(true)}
+        disabled={allPaid}
+        className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 text-white text-xs font-bold rounded-2xl shadow-md tactile-press disabled:opacity-40"
+      >
+        <Plus size={14} aria-hidden="true" /> Add Payment
+      </button>
+      <button
+        onClick={() => setShowCancelModal(true)}
+        className="flex items-center gap-2 px-3 py-2.5 bg-red-50 text-red-600 text-xs font-bold rounded-2xl border border-red-200 tactile-press"
+      >
+        <XCircle size={14} aria-hidden="true" /> Cancel
+      </button>
+    </div>
   ) : null;
 
   return (
@@ -171,6 +223,53 @@ export const GoldMemberDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Refund status banner — only shown for cancelled members */}
+      {member.status === 'cancelled' && (
+        <div className="px-4 mb-5">
+          <div className={`rounded-3xl p-4 border ${member.refund_status === 'refunded' ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={16} className={`mt-0.5 flex-shrink-0 ${member.refund_status === 'refunded' ? 'text-emerald-500' : 'text-orange-500'}`} aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                {member.refund_status === 'refunded' ? (
+                  <>
+                    <p className="text-xs font-bold text-emerald-700">Refund Settled</p>
+                    <p className="text-[11px] text-emerald-600 mt-0.5">
+                      {formatCurrency(member.refund_amount)} settled on {formatDate(member.refunded_at)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-orange-700">Card Cancelled — Refund Pending</p>
+                    <p className="text-[11px] text-orange-600 mt-1">
+                      Cancelled {formatDate(member.cancelled_at)}.
+                      {member.cancel_reason && ` Reason: ${member.cancel_reason}.`}
+                    </p>
+                    <p className="text-[11px] text-orange-600 mt-0.5">
+                      Accumulated <span className="font-bold">{formatCurrency(totalPaid)}</span> is payable
+                      when the scheme matures on <span className="font-bold">{maturityDateObj ? maturityDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</span>.
+                    </p>
+                    {/* Settle Refund button — visible to branch_admin when matured */}
+                    {user?.role === 'branch_admin' && isMatured && (
+                      <button
+                        onClick={() => setShowRefundModal(true)}
+                        className="mt-3 w-full py-2.5 bg-emerald-500 text-white text-xs font-bold rounded-2xl tactile-press shadow-sm"
+                      >
+                        Settle Refund
+                      </button>
+                    )}
+                    {!isMatured && maturityISO && (
+                      <p className="mt-2 text-[10px] font-medium text-orange-400">
+                        Refund button unlocks after {maturityDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Period picker */}
       <div className="px-4 mb-5">
@@ -287,6 +386,96 @@ export const GoldMemberDetailPage = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Cancel Card confirmation — GlassModal manages its own AnimatePresence */}
+      <GlassModal
+        isOpen={showCancelModal}
+        onClose={() => { setShowCancelModal(false); setCancelReason(''); }}
+        title="Cancel Card"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-orange-50 rounded-2xl">
+            <XCircle size={16} className="text-orange-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <p className="text-xs text-orange-700">
+              The accumulated amount will be refunded when the scheme matures on{' '}
+              <span className="font-bold">
+                {maturityDateObj ? maturityDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+              </span>.
+              Commission is not reversed.
+            </p>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-navy/40 block mb-1.5">
+              Reason (optional)
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder="Customer request, duplicate card, etc."
+              className="w-full rounded-2xl border border-border bg-navy/2 px-3 py-2.5 text-xs text-navy placeholder:text-navy/30 resize-none focus:outline-none focus:border-navy/20"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowCancelModal(false); setCancelReason(''); }}
+              disabled={isCancelling}
+              className="flex-1 py-3 rounded-2xl border border-border text-xs font-bold text-navy/60 tactile-press disabled:opacity-40"
+            >
+              Keep Active
+            </button>
+            <button
+              onClick={handleCancel}
+              disabled={isCancelling}
+              className="flex-1 py-3 rounded-2xl bg-red-500 text-white text-xs font-bold tactile-press shadow-md disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {isCancelling && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+              Confirm Cancel
+            </button>
+          </div>
+        </div>
+      </GlassModal>
+
+      {/* Settle Refund confirmation — GlassModal manages its own AnimatePresence */}
+      <GlassModal
+        isOpen={showRefundModal}
+        onClose={() => setShowRefundModal(false)}
+        title="Settle Refund"
+      >
+        <div className="space-y-4">
+          <div className="bg-navy/2 rounded-2xl p-3 space-y-2">
+            <div className="flex justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-navy/30">Customer</p>
+              <p className="text-xs font-bold text-navy">{member.customer_name}</p>
+            </div>
+            <div className="flex justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-navy/30">Amount to Return</p>
+              <p className="text-sm font-bold text-emerald-600">{formatCurrency(totalPaid)}</p>
+            </div>
+          </div>
+          <p className="text-xs text-navy/50">
+            Mark the accumulated amount as returned to the customer. This cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowRefundModal(false)}
+              disabled={isRefunding}
+              className="flex-1 py-3 rounded-2xl border border-border text-xs font-bold text-navy/60 tactile-press disabled:opacity-40"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={handleSettleRefund}
+              disabled={isRefunding}
+              className="flex-1 py-3 rounded-2xl bg-emerald-500 text-white text-xs font-bold tactile-press shadow-md disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {isRefunding && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+              Confirm Settle
+            </button>
+          </div>
+        </div>
+      </GlassModal>
     </SchemePageWrapper>
   );
 };

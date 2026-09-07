@@ -71,7 +71,8 @@ export const AddGoldMemberSchema = z.object({
 
 // Schema for listing members — optional filters
 export const GetGoldMembersQuerySchema = z.object({
-  status:     z.enum(['active', 'completed', 'withdrawn']).optional(),
+  // 'cancelled' included so the list page can filter to cancelled cards
+  status:     z.enum(['active', 'completed', 'withdrawn', 'cancelled']).optional(),
   referrerId: z.string().uuid().optional(),
   // MD / Management only: narrow the org-wide list to one branch (ignored for other roles)
   branchId:   z.string().uuid().optional(),
@@ -241,6 +242,21 @@ export const CorrectGoldPaymentSchema = z.object({
   }
 });
 
+// Schema for cancelling an active gold scheme member.
+// branchId is required for management accounts (which have no branch on their JWT).
+// Commission credited at enrollment/renewal is kept (not reversed) on cancel.
+export const CancelGoldMemberSchema = z.object({
+  reason:   z.string().max(500).optional(),
+  branchId: z.string().uuid().optional(),
+});
+
+// Schema for settling the refund on a cancelled gold scheme member.
+// Only the server gate (start_date + total_months) determines eligibility;
+// no client-side date is trusted.
+export const RefundGoldMemberSchema = z.object({
+  branchId: z.string().uuid().optional(),
+});
+
 export type AddGoldMemberInput      = z.infer<typeof AddGoldMemberSchema>;
 export type GetGoldMembersQuery     = z.infer<typeof GetGoldMembersQuerySchema>;
 export type GetGoldSummaryQuery     = z.infer<typeof GetGoldSummaryQuerySchema>;
@@ -248,3 +264,5 @@ export type UpdateGoldMemberStatus  = z.infer<typeof UpdateGoldMemberStatusSchem
 export type AddGoldPaymentInput     = z.infer<typeof AddGoldPaymentSchema>;
 export type CorrectGoldMemberInput  = z.infer<typeof CorrectGoldMemberSchema>;
 export type CorrectGoldPaymentInput = z.infer<typeof CorrectGoldPaymentSchema>;
+export type CancelGoldMemberInput   = z.infer<typeof CancelGoldMemberSchema>;
+export type RefundGoldMemberInput   = z.infer<typeof RefundGoldMemberSchema>;

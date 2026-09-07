@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Loader2, Users } from 'lucide-react';
+import { Plus, Loader2, Users, AlertTriangle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetGoldMembersQuery, useGetGoldSummaryQuery } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
@@ -18,28 +18,52 @@ const STATUS_FILTERS = [
   ['active',    'Active'],
   ['completed', 'Done'],
   ['withdrawn', 'Left'],
+  // 'cancelled' added after the cancel-card feature (migration 081)
+  ['cancelled', 'Cancelled'],
 ];
 
 export const GoldSchemePage = () => {
   const user          = useSelector(selectCurrentUser);
   const navigate      = useNavigate();
-  const isReferrerView = REFERRER_ROLES.has(user?.role);
+  const isReferrerView  = REFERRER_ROLES.has(user?.role);
+  const isBranchAdmin   = user?.role === 'branch_admin';
 
   const [search,       setSearch]       = useState('');
   const [scope,        setScope]        = useState('all'); // 'all' | 'period'
   const [statusFilter, setStatusFilter] = useState('all');
   const [period,       setPeriod]       = useState(getCurrentPeriod);
 
-  // When searching globally, omit period bounds so results span all periods
+  // When searching globally OR viewing cancelled cards, omit period bounds.
+  // Cancelled cards started months/years ago and fall outside the current period.
   const searchingGlobally = search && scope === 'all';
+  const ignorePeriod      = searchingGlobally || statusFilter === 'cancelled';
 
   // Backend auto-forces referrerId = user.id for referrer roles
   const { data: membersResult, isLoading } = useGetGoldMembersQuery({
     status:    statusFilter === 'all' ? undefined : statusFilter,
     search:    search || undefined,
     limit:     200,
-    startDate: searchingGlobally ? undefined : period.startDate,
-    endDate:   searchingGlobally ? undefined : period.endDate,
+    startDate: ignorePeriod ? undefined : period.startDate,
+    endDate:   ignorePeriod ? undefined : period.endDate,
+  });
+
+  // Separate all-periods query for cancelled cards — used only to compute the
+  // refund-ready banner count. Skipped for non-branch-admin roles.
+  const { data: cancelledResult } = useGetGoldMembersQuery(
+    { status: 'cancelled', limit: 200 },
+    { skip: !isBranchAdmin || isReferrerView }
+  );
+
+  // Compute which cancelled members are matured and have a pending refund.
+  // Parse YYYY-MM-DD parts to avoid UTC-midnight timezone shift (display only;
+  // server re-checks in IST on the settle call).
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const readyToSettle = (cancelledResult?.data || []).filter(m => {
+    if (m.refund_status !== 'pending') return false;
+    const [y, mo, d] = String(m.start_date).split('-').map(Number);
+    const mat = new Date(y, mo - 1 + Number(m.total_months), d);
+    const matISO = `${mat.getFullYear()}-${String(mat.getMonth() + 1).padStart(2, '0')}-${String(mat.getDate()).padStart(2, '0')}`;
+    return todayISO >= matISO;
   });
   const { data: summary } = useGetGoldSummaryQuery({
     startDate: period.startDate,
@@ -69,13 +93,31 @@ export const GoldSchemePage = () => {
 
       <SchemePendingBanner schemeCode="gold_scheme" />
 
-      {/* Period picker — dimmed while a global search is active */}
-      <div className={`px-4 mb-5 transition-opacity ${searchingGlobally ? 'opacity-40 pointer-events-none' : ''}`}>
+      {/* Refund-ready alert — branch_admin only, only when matured cancellations exist */}
+      {isBranchAdmin && readyToSettle.length > 0 && (
+        <div className="px-4 mb-4">
+          <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3">
+            <AlertTriangle size={16} className="text-orange-500 flex-shrink-0" aria-hidden="true" />
+            <p className="flex-1 text-xs font-bold text-orange-700">
+              {readyToSettle.length} cancelled card{readyToSettle.length > 1 ? 's' : ''} — refund{readyToSettle.length > 1 ? 's' : ''} ready to settle
+            </p>
+            <button
+              onClick={() => setStatusFilter('cancelled')}
+              className="text-[10px] font-bold text-orange-600 uppercase tracking-wider border border-orange-300 px-2.5 py-1 rounded-xl tactile-press flex-shrink-0"
+            >
+              View
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Period picker — dimmed while period is being ignored (global search or cancelled filter) */}
+      <div className={`px-4 mb-5 transition-opacity ${ignorePeriod ? 'opacity-40 pointer-events-none' : ''}`}>
         <SchemeCalendar compact onPeriodChange={setPeriod} />
       </div>
 
-      {/* Summary strip — hidden during global search (counts would reflect period, not results) */}
-      {summary && !searchingGlobally && (
+      {/* Summary strip — hidden when period is ignored (counts would reflect period, not results) */}
+      {summary && !ignorePeriod && (
         <div className="px-4 mb-5">
           <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
@@ -116,7 +158,7 @@ export const GoldSchemePage = () => {
             )}
           </div>
         )}
-        <div className="p-1 bg-navy/5 rounded-2xl grid grid-cols-4 gap-1">
+        <div className="p-1 bg-navy/5 rounded-2xl grid grid-cols-5 gap-1">
           {STATUS_FILTERS.map(([key, label]) => (
             <button
               key={key}

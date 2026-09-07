@@ -565,6 +565,23 @@ export const apiSlice = createApi({
       ],
     }),
 
+    // Cancel an active gold member: status → 'cancelled', refund_status → 'pending'.
+    // Commission is kept; the refund becomes payable after the scheme matures.
+    cancelGoldMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/cancel`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldMembers', 'GoldSummary'],
+    }),
+
+    // Settle the refund on a cancelled member once the scheme term has ended.
+    // The server enforces the maturity gate; the frontend shows the button only
+    // when today ≥ maturity (display-only guard — server is authoritative).
+    refundGoldMember: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold/${id}/refund`, method: 'POST', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldMembers', 'GoldSummary'],
+    }),
+
     // ─── Incentive Wallet & Commission Rules ───
 
     getCommissionRules: builder.query({
@@ -2400,6 +2417,8 @@ export const {
   useUpdateLssDrawDateMutation,
   useUpdateLssRoomDatesMutation,
   useUnpayGoldPaymentMutation,
+  useCancelGoldMemberMutation,
+  useRefundGoldMemberMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
