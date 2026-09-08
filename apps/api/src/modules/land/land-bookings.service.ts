@@ -589,12 +589,25 @@ export const LandBookingsService = {
         [userId, booking.plot_id]
       );
 
+      // A cancelled sale did not happen — claw back any spot commission credited
+      // at booking time, exactly as voidBooking/deleteBooking do.
+      // reverseIncentives is a hard DELETE keyed on source_id, so reversing ALL
+      // rows for this booking is correct regardless of which events exist, and it
+      // is idempotent if the booking is later voided/deleted (second call = 0 rows).
+      if (booking.referrer_id) {
+        await IncentiveService.reverseIncentives(client, {
+          schemeCode: 'land_scheme',
+          sourceId:   bookingId,
+        });
+      }
+
       await LandAuditService.log(client, {
         entity:    'booking',
         recordId:  bookingId,
         action:    'cancel',
         changedBy: userId,
-        oldValues: { status: booking.status },
+        // referrer_id included so the incentive reversal is traceable in the audit
+        oldValues: { status: booking.status, referrer_id: booking.referrer_id },
         newValues: { status: 'cancelled', cancellation_reason: payload.reason },
       });
 

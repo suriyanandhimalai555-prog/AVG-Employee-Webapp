@@ -1910,8 +1910,11 @@ export const apiSlice = createApi({
     cancelLandBooking: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/cancel`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
+      // Incentive tags added: cancel now claws back referrer's spot commission on
+      // the backend (mirrors voidBooking/deleteBooking), so wallet views must refresh.
       invalidatesTags: (result, error, { id }) => [
         { type: 'LandBooking', id }, 'LandBookings', 'LandPlots', 'LandDashboard',
+        'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
       ],
     }),
 
@@ -1979,8 +1982,11 @@ export const apiSlice = createApi({
     voidLandBooking: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/land/bookings/${id}/void`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
+      // Incentive tags added: void reverses commissions on the backend but the
+      // old tags omitted 'Incentives'/'IncentiveWallet' — wallet views now refresh.
       invalidatesTags: (result, error, { id }) => [
-        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'LandSites', 'SchemeBranchEntries',
+        { type: 'LandBooking', id }, 'LandBookings', 'LandDashboard', 'LandSites',
+        'Incentives', 'IncentiveWallet', 'SchemeBranchEntries',
       ],
     }),
 

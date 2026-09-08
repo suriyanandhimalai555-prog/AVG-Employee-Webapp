@@ -421,6 +421,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
 
   const startEditLayout = () => {
     setLayoutForm({
+      layoutName:          layout.layout_name ?? '',
       plotPrice:           layout.plot_price ?? '',
       buybackBonusMonthly: layout.buyback_bonus_monthly ?? '',
       buybackMonths:       layout.buyback_months ?? '',
@@ -436,6 +437,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
       await updateLayoutMutation({
         layoutId: layout.id,
         siteId,
+        layoutName: layoutForm.layoutName?.trim(),
         ...(layoutForm.plotPrice !== '' && layoutForm.plotPrice != null
           ? { plotPrice: Number(layoutForm.plotPrice) } : {}),
         buybackBonusMonthly: Number(layoutForm.buybackBonusMonthly || 0),
@@ -505,8 +507,16 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
           schedule generated at full payment; plot-level buyback is display-only legacy. */}
       {editLayout && isSiteAdmin && (
         <div className="border-t border-border px-4 py-3 bg-stone-50 space-y-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Edit Layout Pricing</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Edit Layout</p>
           <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <p className="text-[9px] font-bold text-navy/30 mb-0.5">Layout Name</p>
+              <input type="text" value={layoutForm.layoutName}
+                onChange={e => setLayoutForm(f => ({ ...f, layoutName: e.target.value }))}
+                placeholder="e.g. Phase 1 — North Block"
+                maxLength={200}
+                className={SCHEME_INPUT_CLASS} />
+            </div>
             <div>
               <p className="text-[9px] font-bold text-navy/30 mb-0.5">Plot Price (₹)</p>
               <input type="number" value={layoutForm.plotPrice}

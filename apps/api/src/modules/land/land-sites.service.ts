@@ -410,8 +410,10 @@ export const LandSitesService = {
       );
       if (booking.rows.length > 0) {
         throw new ConflictError(
+          // "Cancel" keeps the booking row (guard stays blocked); the real unblock
+          // is deleting the booking via Scheme Corrections (which removes the row).
           'This plot has booking history and cannot be deleted. ' +
-          'Cancel the booking first, or mark the plot inactive instead.'
+          'Delete the booking from Scheme Corrections first, or mark the plot inactive instead.'
         );
       }
 
@@ -454,8 +456,10 @@ export const LandSitesService = {
       );
       if (booking.rows.length > 0) {
         throw new ConflictError(
+          // Cancelling keeps booking rows — guard stays blocked. Unblock by deleting
+          // bookings via Scheme Corrections (removes the row) or marking inactive.
           'This layout has plots with booking history and cannot be deleted. ' +
-          'Cancel all bookings first, or mark the layout inactive instead.'
+          'Delete the booking(s) from Scheme Corrections first, or mark the layout inactive instead.'
         );
       }
 
@@ -500,8 +504,10 @@ export const LandSitesService = {
       );
       if (booking.rows.length > 0) {
         throw new ConflictError(
+          // Cancelling keeps booking rows — guard stays blocked. Unblock by deleting
+          // bookings via Scheme Corrections (removes the row) or marking inactive.
           'This site has plots with booking history and cannot be deleted. ' +
-          'Cancel all bookings first, or mark the site inactive instead.'
+          'Delete the booking(s) from Scheme Corrections first, or mark the site inactive instead.'
         );
       }
 
