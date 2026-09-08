@@ -207,14 +207,22 @@ export const PendingEnrollmentsService = {
     if (payment.amount > remaining + 0.01) {
       throw new ValidationError(`Payment exceeds the remaining balance (₹${remaining.toFixed(2)})`);
     }
+    // cash_amount is the cash half for both cash_bank and cash_gpay splits.
+    // bank_amount is the bank half (cash_bank only).
+    // gpay_amount is the GPay half (cash_gpay only, added in migration 089).
+    // All three are NULL for non-split modes.
     await client.query(
       `INSERT INTO pending_enrollment_payments
-         (pending_enrollment_id, amount, payment_mode, cash_amount, bank_amount, proof_key, transaction_id, paid_date, entered_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         (pending_enrollment_id, amount, payment_mode, cash_amount, bank_amount, gpay_amount, proof_key, transaction_id, paid_date, entered_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         pendingId, payment.amount, payment.paymentMode,
-        payment.paymentMode === 'cash_bank' ? payment.cashAmount : null,
+        // cash half: present for both cash_bank and cash_gpay
+        (payment.paymentMode === 'cash_bank' || payment.paymentMode === 'cash_gpay') ? payment.cashAmount : null,
+        // bank half: cash_bank only
         payment.paymentMode === 'cash_bank' ? payment.bankAmount : null,
+        // gpay half: cash_gpay only
+        payment.paymentMode === 'cash_gpay' ? payment.gpayAmount : null,
         payment.proofKey?.length ? payment.proofKey : null,
         payment.transactionId?.length ? payment.transactionId : null,
         payment.paidDate, enteredBy,
@@ -257,7 +265,11 @@ export const PendingEnrollmentsService = {
         )).rows;
         const modes = Array.from(new Set(pays.map((r: any) => r.payment_mode)));
         const synth: Synth = {
-          mode: (modes.length === 1 && modes[0] !== 'cash_bank') ? modes[0] : 'cash',
+          // Synth carries no split amounts, so collapse both split modes → 'cash'
+          // to avoid violating the real scheme table's cash_bank/cash_gpay sum-check.
+          // Split fidelity is preserved in the pending_enrollment_payments ledger.
+          // This is intentional parity with the existing cash_bank behaviour.
+          mode: (modes.length === 1 && modes[0] !== 'cash_bank' && modes[0] !== 'cash_gpay') ? modes[0] : 'cash',
           proofKey: pays.flatMap((r: any) => r.proof_key || []),
           transactionId: pays.flatMap((r: any) => r.transaction_id || []),
         };

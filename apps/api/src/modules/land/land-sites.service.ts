@@ -13,6 +13,9 @@
 
 import { Pool } from 'pg';
 import { ConflictError, NotFoundError } from '../../shared/errors';
+// runInTransaction wraps all delete operations so guard + delete + audit are atomic.
+import { runInTransaction } from '../../shared/transaction-helper';
+import { SchemeAudit } from '../../shared/scheme-audit';
 import { LandAuditService } from './land-audit.service';
 import { LandIncentivesService } from './land-incentives.service';
 import type {
@@ -382,5 +385,141 @@ export const LandSitesService = {
       newValues: { land_cost: updated.land_cost, status: updated.status },
     });
     return updated;
+  },
+
+  // ─── DELETE PLOT ─────────────────────────────────────────────────────────────
+  // Hard-delete only when there are zero bookings referencing this plot (including
+  // cancelled bookings — we never destroy financial history).
+  // Returns { id, siteId, layoutId } so the caller can target cache invalidation.
+  async deletePlot(db: Pool, actorId: string, plotId: string): Promise<{ id: string; siteId: string; layoutId: string }> {
+    return runInTransaction(db, async (client) => {
+      // Lock the row so concurrent deletes / bookings race safely.
+      const plotResult = await client.query(
+        `SELECT p.*, ll.site_id FROM land_plots p
+         JOIN land_layouts ll ON ll.id = p.layout_id
+         WHERE p.id = $1 FOR UPDATE`,
+        [plotId]
+      );
+      if (plotResult.rows.length === 0) throw new NotFoundError('Plot not found');
+      const plot = plotResult.rows[0];
+
+      // Block if any booking (any status) references this plot — never delete booking history.
+      const booking = await client.query(
+        `SELECT 1 FROM land_bookings WHERE plot_id = $1 LIMIT 1`,
+        [plotId]
+      );
+      if (booking.rows.length > 0) {
+        throw new ConflictError(
+          'This plot has booking history and cannot be deleted. ' +
+          'Cancel the booking first, or mark the plot inactive instead.'
+        );
+      }
+
+      await client.query(`DELETE FROM land_plots WHERE id = $1`, [plotId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'plot',
+        entityId:   plotId,
+        actorId,
+        action:     'delete',
+        oldValues:  { site_number: plot.site_number, layout_id: plot.layout_id, site_id: plot.site_id, status: plot.status },
+      });
+
+      // TS: cast explicitly so the return type matches the signature.
+      return { id: plotId, siteId: plot.site_id as string, layoutId: plot.layout_id as string };
+    });
+  },
+
+  // ─── DELETE LAYOUT ───────────────────────────────────────────────────────────
+  // Hard-delete only when no booking references any plot under this layout.
+  // Manually deletes child plots first (land_plots.layout_id FK has no cascade).
+  // land_layout_commission_rules cascade from the layout (migration 062).
+  async deleteLayout(db: Pool, actorId: string, layoutId: string): Promise<{ id: string; siteId: string }> {
+    return runInTransaction(db, async (client) => {
+      // Lock the layout row first.
+      const layoutResult = await client.query(
+        `SELECT * FROM land_layouts WHERE id = $1 FOR UPDATE`,
+        [layoutId]
+      );
+      if (layoutResult.rows.length === 0) throw new NotFoundError('Layout not found');
+      const layout = layoutResult.rows[0];
+
+      // Block if any plot under this layout has any booking (any status).
+      const booking = await client.query(
+        `SELECT 1 FROM land_bookings b
+         JOIN land_plots p ON p.id = b.plot_id
+         WHERE p.layout_id = $1 LIMIT 1`,
+        [layoutId]
+      );
+      if (booking.rows.length > 0) {
+        throw new ConflictError(
+          'This layout has plots with booking history and cannot be deleted. ' +
+          'Cancel all bookings first, or mark the layout inactive instead.'
+        );
+      }
+
+      // Delete child plots manually (no cascade on layout_id FK).
+      await client.query(`DELETE FROM land_plots WHERE layout_id = $1`, [layoutId]);
+      // commission rules cascade automatically (migration 062).
+      await client.query(`DELETE FROM land_layouts WHERE id = $1`, [layoutId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'layout',
+        entityId:   layoutId,
+        actorId,
+        action:     'delete',
+        oldValues:  { layout_name: layout.layout_name, site_id: layout.site_id, status: layout.status },
+      });
+
+      return { id: layoutId, siteId: layout.site_id as string };
+    });
+  },
+
+  // ─── DELETE SITE ─────────────────────────────────────────────────────────────
+  // Hard-delete only when no booking references any plot under this site.
+  // Deletes child plots first (land_plots.site_id FK has no cascade); layouts
+  // and their commission rules then cascade automatically (migration 062).
+  async deleteSite(db: Pool, actorId: string, siteId: string): Promise<{ id: string }> {
+    return runInTransaction(db, async (client) => {
+      // Lock the site row first.
+      const siteResult = await client.query(
+        `SELECT * FROM land_sites WHERE id = $1 FOR UPDATE`,
+        [siteId]
+      );
+      if (siteResult.rows.length === 0) throw new NotFoundError('Site not found');
+      const site = siteResult.rows[0];
+
+      // Block if any plot under this site has any booking (any status).
+      const booking = await client.query(
+        `SELECT 1 FROM land_bookings b
+         JOIN land_plots p ON p.id = b.plot_id
+         WHERE p.site_id = $1 LIMIT 1`,
+        [siteId]
+      );
+      if (booking.rows.length > 0) {
+        throw new ConflictError(
+          'This site has plots with booking history and cannot be deleted. ' +
+          'Cancel all bookings first, or mark the site inactive instead.'
+        );
+      }
+
+      // Delete all child plots manually (site_id and layout_id FKs have no cascade).
+      await client.query(`DELETE FROM land_plots WHERE site_id = $1`, [siteId]);
+      // Layouts (and their commission rules) cascade from the site (migration 062).
+      await client.query(`DELETE FROM land_sites WHERE id = $1`, [siteId]);
+
+      await SchemeAudit.log(client, {
+        schemeCode: 'land_scheme',
+        entityType: 'site',
+        entityId:   siteId,
+        actorId,
+        action:     'delete',
+        oldValues:  { name: site.name, status: site.status },
+      });
+
+      return { id: siteId };
+    });
   },
 };

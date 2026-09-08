@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Loader2, Plus, ChevronLeft, ChevronDown, ChevronUp, Edit2, Check, X, IndianRupee } from 'lucide-react';
+import { Loader2, Plus, ChevronLeft, ChevronDown, ChevronUp, Edit2, Check, X, IndianRupee, Trash2 } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetLandSiteQuery,
@@ -11,6 +11,9 @@ import {
   useUpdateLandLayoutMutation,
   useGetLandLayoutCommissionRulesQuery,
   useUpdateLandLayoutCommissionRuleMutation,
+  useDeleteLandPlotMutation,
+  useDeleteLandLayoutMutation,
+  useDeleteLandSiteMutation,
 } from '../../store/api/apiSlice';
 import { formatCurrency } from '../../lib/formatters';
 import { isSchemeAdmin } from '../../lib/schemeAuth';
@@ -25,7 +28,9 @@ const PLOT_STATUS_STYLES = {
   cancelled: 'text-red-500 bg-red-50',
 };
 
-const AddPlotForm = ({ layoutId, onSuccess }) => {
+// siteId is required so createLandLayoutPlotMutation can bust the LandSite and
+// LandLayouts caches — without it the new plot is invisible until a hard refresh.
+const AddPlotForm = ({ layoutId, siteId, onSuccess }) => {
   const [form, setForm] = useState({ siteNumber: '', areaSqft: '', landCost: '' });
   const [error, setError] = useState('');
   const set = createFormSetter(setForm);
@@ -37,6 +42,7 @@ const AddPlotForm = ({ layoutId, onSuccess }) => {
     try {
       await createPlot({
         layoutId,
+        siteId,
         siteNumber: form.siteNumber.trim(),
         areaSqft:   Number(form.areaSqft),
         landCost:   Number(form.landCost),
@@ -203,8 +209,21 @@ export const LandSiteDetailPage = () => {
   const navigate   = useNavigate();
   const isSiteAdmin = isSchemeAdmin(user?.role);
 
-  const [updatePlot] = useUpdateLandPlotMutation();
+  const [updatePlot]  = useUpdateLandPlotMutation();
+  const [deleteSite, { isLoading: deletingSite }] = useDeleteLandSiteMutation();
+  const [siteDeleteConfirm, setSiteDeleteConfirm] = useState(false);
+  const [siteDeleteError,   setSiteDeleteError]   = useState('');
   const { data: site, isLoading } = useGetLandSiteQuery(siteId);
+
+  const handleDeleteSite = async () => {
+    setSiteDeleteError('');
+    try {
+      await deleteSite({ siteId }).unwrap();
+      navigate('/money/schemes/land/sites');
+    } catch (err) {
+      setSiteDeleteError(err?.data?.error?.message || 'Failed to delete site.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -266,6 +285,37 @@ export const LandSiteDetailPage = () => {
         </div>
       </div>
 
+      {/* Delete site (Management only) */}
+      {isSiteAdmin && (
+        <div className="px-4 mb-4">
+          {!siteDeleteConfirm ? (
+            <button type="button" onClick={() => setSiteDeleteConfirm(true)}
+              className="w-full py-2.5 rounded-2xl border border-red-300 text-red-600 text-xs font-semibold tactile-press hover:bg-red-50 bg-red-50/50 flex items-center justify-center gap-1.5">
+              <Trash2 size={12} /> Delete Site Permanently
+            </button>
+          ) : (
+            <div className="bg-red-100 border border-red-400 rounded-2xl px-4 py-4 space-y-3">
+              <p className="text-sm font-bold text-red-800">Permanently delete this site?</p>
+              <p className="text-xs text-red-700">
+                All layouts, plots, and commission rules will be{' '}
+                <span className="font-bold">permanently removed</span>. Sites with any booking history
+                cannot be deleted — cancel bookings first.{' '}
+                <span className="font-bold">This cannot be undone.</span>
+              </p>
+              {siteDeleteError && <p className="text-xs text-red-800 font-semibold">{siteDeleteError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={handleDeleteSite} disabled={deletingSite}
+                  className="flex-1 py-2.5 rounded-xl bg-red-700 text-white text-sm font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1.5">
+                  {deletingSite ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Yes, Delete Permanently
+                </button>
+                <button type="button" onClick={() => { setSiteDeleteConfirm(false); setSiteDeleteError(''); }}
+                  className="px-4 py-2.5 rounded-xl bg-white border border-red-300 text-red-700 text-sm font-bold tactile-press">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Layouts section */}
       <div className="px-4">
         <div className="flex items-center justify-between mb-3">
@@ -315,10 +365,37 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
   const [showCommission, setShowCommission] = useState(false);
   const [updatingPlot, setUpdatingPlot] = useState(false);
   const [updateLayoutMutation] = useUpdateLandLayoutMutation();
+  const [deleteLayoutMutation, { isLoading: deletingLayout }] = useDeleteLandLayoutMutation();
+  const [deletePlotMutation]   = useDeleteLandPlotMutation();
   const [editLayout, setEditLayout] = useState(false);
   const [layoutForm, setLayoutForm] = useState({});
   const [layoutError, setLayoutError] = useState('');
   const [savingLayout, setSavingLayout] = useState(false);
+  const [layoutDeleteConfirm, setLayoutDeleteConfirm] = useState(false);
+  const [layoutDeleteError,   setLayoutDeleteError]   = useState('');
+
+  const handleDeleteLayout = async () => {
+    setLayoutDeleteError('');
+    try {
+      await deleteLayoutMutation({ layoutId: layout.id, siteId }).unwrap();
+      // Card disappears as RTK Query refetches the site — nothing else to do.
+    } catch (err) {
+      setLayoutDeleteError(err?.data?.error?.message || 'Failed to delete layout.');
+    }
+  };
+
+  const handleDeletePlot = async (plot) => {
+    const ok = window.confirm(
+      `Delete plot "${plot.site_number}" permanently?\n\nThis cannot be undone. If this plot has bookings, the delete will be refused.`
+    );
+    if (!ok) return;
+    try {
+      await deletePlotMutation({ plotId: plot.id, siteId, layoutId: layout.id }).unwrap();
+    } catch (err) {
+      // Surface the server message — most likely a 409 conflict about booking history.
+      alert(err?.data?.error?.message || 'Failed to delete plot.');
+    }
+  };
 
   const plots = layout.plots || [];
 
@@ -400,11 +477,18 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
         <div className="flex-shrink-0 flex flex-col items-end gap-1">
           <div className="flex items-center gap-1.5">
             {isSiteAdmin && !editLayout && (
-              <button type="button" onClick={startEditLayout}
-                className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press"
-                aria-label="Edit layout pricing">
-                <Edit2 size={10} />
-              </button>
+              <>
+                <button type="button" onClick={startEditLayout}
+                  className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press"
+                  aria-label="Edit layout pricing">
+                  <Edit2 size={10} />
+                </button>
+                <button type="button" onClick={() => setLayoutDeleteConfirm(v => !v)}
+                  className="w-6 h-6 rounded-lg bg-red-50 flex items-center justify-center text-red-400 tactile-press"
+                  aria-label="Delete layout">
+                  <Trash2 size={10} />
+                </button>
+              </>
             )}
             <span className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase ${layout.status === 'active' ? 'text-emerald-600 bg-emerald-50' : 'text-navy/30 bg-navy/5'}`}>
               {layout.status}
@@ -467,6 +551,27 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
         </div>
       )}
 
+      {/* Delete layout confirm panel */}
+      {isSiteAdmin && layoutDeleteConfirm && (
+        <div className="border-t border-border bg-red-50 px-4 py-3 space-y-2">
+          <p className="text-xs font-bold text-red-800">Delete this layout?</p>
+          <p className="text-[11px] text-red-700">
+            All plots and commission rules under this layout will be permanently removed.
+            Layouts with booked plots cannot be deleted.{' '}
+            <span className="font-bold">This cannot be undone.</span>
+          </p>
+          {layoutDeleteError && <p className="text-[11px] text-red-800 font-semibold">{layoutDeleteError}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={handleDeleteLayout} disabled={deletingLayout}
+              className="flex-1 py-2 rounded-xl bg-red-700 text-white text-xs font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-1">
+              {deletingLayout ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Yes, Delete Permanently
+            </button>
+            <button type="button" onClick={() => { setLayoutDeleteConfirm(false); setLayoutDeleteError(''); }}
+              className="px-4 py-2 rounded-xl bg-white border border-red-300 text-red-700 text-xs font-bold tactile-press">Cancel</button>
+          </div>
+        </div>
+      )}
+
       {/* Plots */}
       {plots.length > 0 && (
         <div className="border-t border-border divide-y divide-border">
@@ -520,10 +625,17 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
                       {plot.status}
                     </span>
                     {isSiteAdmin && (
-                      <button type="button" onClick={() => startEditPlot(plot)}
-                        className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press">
-                        <Edit2 size={10} />
-                      </button>
+                      <>
+                        <button type="button" onClick={() => startEditPlot(plot)}
+                          className="w-6 h-6 rounded-lg bg-navy/5 flex items-center justify-center text-navy/40 tactile-press">
+                          <Edit2 size={10} />
+                        </button>
+                        <button type="button" onClick={() => handleDeletePlot(plot)}
+                          className="w-6 h-6 rounded-lg bg-red-50 flex items-center justify-center text-red-400 tactile-press"
+                          aria-label="Delete plot">
+                          <Trash2 size={10} />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -537,7 +649,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
       {isSiteAdmin && (
         <div className="border-t border-border px-4 py-3">
           {addingPlot ? (
-            <AddPlotForm layoutId={layout.id} onSuccess={() => setAddingPlot(false)} />
+            <AddPlotForm layoutId={layout.id} siteId={siteId} onSuccess={() => setAddingPlot(false)} />
           ) : (
             <button type="button" onClick={() => setAddingPlot(true)}
               className="flex items-center gap-1.5 text-[10px] font-bold text-navy/50 hover:text-stone-700 tactile-press">

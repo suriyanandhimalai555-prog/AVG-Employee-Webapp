@@ -9,7 +9,8 @@ export type AuditAction = 'edit' | 'void' | 'unpay' | 'remove' | 'delete';
 
 export interface SchemeAuditArgs {
   schemeCode:  string;
-  entityType:  'member' | 'payment' | 'plan' | 'payout' | 'slot' | 'booking' | 'room';
+  // Extended to include land-scheme config entities (site/layout/plot) — DB column is free-text so no migration needed.
+  entityType:  'member' | 'payment' | 'plan' | 'payout' | 'slot' | 'booking' | 'room' | 'site' | 'layout' | 'plot';
   entityId:    string;
   actorId:     string;
   action:      AuditAction;

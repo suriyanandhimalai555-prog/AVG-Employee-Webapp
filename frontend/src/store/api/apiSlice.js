@@ -1750,8 +1750,42 @@ export const apiSlice = createApi({
     createLandLayoutPlot: builder.mutation({
       query: ({ layoutId, ...data }) => ({ url: `/land/layouts/${layoutId}/plots`, method: 'POST', body: data }),
       transformResponse: (response) => response.data,
-      invalidatesTags: (result, error, { layoutId }) => [
-        { type: 'LandLayout', id: layoutId }, 'LandPlots', 'LandDashboard',
+      // siteId is required so we can bust LandSite (detail page) and LandLayouts
+      // (MCC LandTab dropdown) — both embed plots via json_agg and were invisible
+      // after add until refresh because only LandLayout was invalidated before.
+      invalidatesTags: (result, error, { layoutId, siteId }) => [
+        { type: 'LandLayout', id: layoutId },
+        ...(siteId ? [{ type: 'LandSite', id: siteId }, { type: 'LandLayouts', id: siteId }] : []),
+        'LandSites', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    deleteLandPlot: builder.mutation({
+      query: ({ plotId }) => ({ url: `/land/plots/${plotId}`, method: 'DELETE' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId, layoutId }) => [
+        ...(layoutId ? [{ type: 'LandLayout', id: layoutId }] : []),
+        ...(siteId ? [{ type: 'LandSite', id: siteId }, { type: 'LandLayouts', id: siteId }] : []),
+        'LandSites', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    deleteLandLayout: builder.mutation({
+      query: ({ layoutId }) => ({ url: `/land/layouts/${layoutId}`, method: 'DELETE' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { layoutId, siteId }) => [
+        { type: 'LandLayout', id: layoutId },
+        ...(siteId ? [{ type: 'LandSite', id: siteId }, { type: 'LandLayouts', id: siteId }] : []),
+        'LandSites', 'LandPlots', 'LandDashboard',
+      ],
+    }),
+
+    deleteLandSite: builder.mutation({
+      query: ({ siteId }) => ({ url: `/land/sites/${siteId}`, method: 'DELETE' }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: (result, error, { siteId }) => [
+        { type: 'LandSite', id: siteId }, { type: 'LandLayouts', id: siteId },
+        'LandSites', 'LandPlots', 'LandDashboard',
       ],
     }),
 
@@ -2419,6 +2453,9 @@ export const {
   useUnpayGoldPaymentMutation,
   useCancelGoldMemberMutation,
   useRefundGoldMemberMutation,
+  useDeleteLandPlotMutation,
+  useDeleteLandLayoutMutation,
+  useDeleteLandSiteMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,

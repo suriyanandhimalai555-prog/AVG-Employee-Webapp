@@ -348,6 +348,48 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
+  // DELETE /land/plots/:plotId — Management only.
+  // Refuses with 409 if any booking (any status) references the plot.
+  fastify.delete('/plots/:plotId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { plotId } = req.params as { plotId: string };
+        const data = await LandSitesService.deletePlot(fastify.db, req.user.id, plotId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // DELETE /land/layouts/:layoutId — Management only.
+  // Refuses with 409 if any plot under the layout has booking history.
+  fastify.delete('/layouts/:layoutId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { layoutId } = req.params as { layoutId: string };
+        const data = await LandSitesService.deleteLayout(fastify.db, req.user.id, layoutId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
+  // DELETE /land/sites/:siteId — Management only.
+  // Refuses with 409 if any plot under the site has booking history.
+  fastify.delete('/sites/:siteId', { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const req = request as AuthRequest;
+        assertConfigRole(req);
+        const { siteId } = req.params as { siteId: string };
+        const data = await LandSitesService.deleteSite(fastify.db, req.user.id, siteId);
+        return reply.send({ success: true, data });
+      } catch (error) { return handleError(error, reply); }
+    }
+  );
+
   // ════════════════════════════════════════════════════
   // BOOKINGS
   // ════════════════════════════════════════════════════
