@@ -62,10 +62,11 @@ export const CreateLandPlotSchema = z.object({
   landCost:             z.number().positive(),
 });
 
+// status omitted — plot status is system-managed by the booking lifecycle
+// (createBooking/cancelBooking/etc.) and must never be set manually.
 export const UpdateLandPlotSchema = z.object({
   areaSqft:             z.number().positive().optional(),
   landCost:             z.number().positive().optional(),
-  status:               z.enum(['available', 'booked', 'cancelled', 'completed']).optional(),
 });
 
 export const ListPlotsQuerySchema = z.object({

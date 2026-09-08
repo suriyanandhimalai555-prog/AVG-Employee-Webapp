@@ -401,7 +401,7 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
 
   const startEditPlot = (plot) => {
     setEditingPlotId(plot.id);
-    setPlotEditForm({ landCost: plot.land_cost, status: plot.status });
+    setPlotEditForm({ landCost: plot.land_cost });
     setPlotEditError('');
   };
 
@@ -412,7 +412,6 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
         plotId,
         siteId,
         landCost: Number(plotEditForm.landCost),
-        status:   plotEditForm.status,
       }).unwrap();
       setEditingPlotId(null);
     } catch (err) { setPlotEditError(err?.data?.error?.message || 'Failed to update plot.'); }
@@ -599,11 +598,6 @@ const LayoutCard = ({ layout, siteId, isSiteAdmin, updatePlot }) => {
                         className={SCHEME_INPUT_CLASS} min="1" />
                     </div>
                   </div>
-                  <select value={plotEditForm.status}
-                    onChange={e => setPlotEditForm(f => ({ ...f, status: e.target.value }))}
-                    className={SCHEME_INPUT_CLASS}>
-                    {['available','booked','cancelled','completed'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
                   {plotEditError && <p className="text-xs text-red-600">{plotEditError}</p>}
                   <div className="flex gap-2">
                     <button onClick={() => saveEditPlot(plot.id)} disabled={updatingPlot}

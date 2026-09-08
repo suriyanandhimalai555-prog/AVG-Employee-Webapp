@@ -108,6 +108,28 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ─── GET /api/users/leadership/directors ───
+  // Returns the director → GM → branch tree used by the /leadership/directors UI.
+  // MD and Management see all directors; a Director sees only their own record.
+  fastify.get('/leadership/directors', {
+    onRequest: [fastify.authenticate],
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const req = request as AuthenticatedRequest;
+
+      const data = await UserService.getDirectorLeadershipTree(
+        fastify.db,
+        fastify.redis,
+        req.user.id,
+        req.user.role
+      );
+
+      return reply.send({ success: true, data });
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
   // ─── GET /api/users/superiors ───
   // Lists all the user's ancestors (upper hierarchy) up to the MD
   fastify.get('/superiors', {

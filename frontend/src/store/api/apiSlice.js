@@ -1180,6 +1180,14 @@ export const apiSlice = createApi({
       providesTags: ['Users'],
     }),
 
+    // Director → GM → branch tree for the /leadership/directors page.
+    // MD/Management see all directors; a Director sees only their own record.
+    getDirectorLeadershipTree: builder.query({
+      query: () => '/users/leadership/directors',
+      transformResponse: (response) => response.data,
+      providesTags: ['Users'],
+    }),
+
     // Replaces oversight assignments for Director/GM. MD only.
     updateUserOversightBranches: builder.mutation({
       query: ({ id, branchIds = [], gmIds = [] }) => ({
@@ -2292,6 +2300,7 @@ export const {
   useGetUserOversightBranchesQuery,
   useLazyGetUserOversightBranchesQuery,
   useUpdateUserOversightBranchesMutation,
+  useGetDirectorLeadershipTreeQuery,
   useChangePasswordMutation,
   useGetMoneyWalletQuery,
   useTransferMoneyMutation,

@@ -825,6 +825,149 @@ export const UserService = {
     });
   },
 
+  // ── getDirectorLeadershipTree ─────────────────────────────────────────────────
+  // Returns all directors (or just the requesting director) with their subordinate
+  // GMs and each GM's explicitly-assigned oversight branches.  Used by the frontend
+  // /leadership/directors page to render the expandable org breakdown.
+  //
+  // Access:
+  //   md / management → all directors
+  //   director        → own record only
+  //   everyone else   → ForbiddenError
+  //
+  // Data shape avoids N+1 with three set-based queries then in-memory assembly.
+  async getDirectorLeadershipTree(
+    // TS: pg connection pool — all queries use this shared pool
+    db: Pool,
+    // TS: ioredis client — needed by populateAvatarUrls for presigned photo URLs
+    redis: Redis,
+    // TS: UUID of the requesting user
+    requesterId: string,
+    // TS: role string from the JWT — gates access to this endpoint
+    requesterRole: string
+  ): Promise<any[]> {
+    // TS: only these roles may call this endpoint
+    const ALLOWED: readonly string[] = [Role.MD, Role.MANAGEMENT, Role.DIRECTOR];
+    if (!ALLOWED.includes(requesterRole)) {
+      throw new ForbiddenError('Only MD, Management, or Directors may view this page');
+    }
+
+    // ── Query 1: directors ───────────────────────────────────────────────────
+    // A director sees only their own record; MD/management see all active directors.
+    // TS: paramIndex controls $N numbering for conditional WHERE clauses
+    let directorsQuery = `
+      SELECT u.id, u.name, u.role, u.branch_id AS "branchId",
+             b.name AS "branchName", u.profile_photo_key
+      FROM users u
+      LEFT JOIN branches b ON b.id = u.branch_id
+      WHERE u.role = 'director'
+        AND u.is_active = true`;
+    // TS: director self-scope — append an extra condition so they can't see peers
+    const directorsParams: any[] = [];
+    if (requesterRole === Role.DIRECTOR) {
+      directorsQuery += ` AND u.id = $1`;
+      directorsParams.push(requesterId);
+    }
+    directorsQuery += ` ORDER BY u.name`;
+
+    const directorsResult = await db.query(directorsQuery, directorsParams);
+    // TS: typed as any[] because the query returns dynamic columns
+    const directors: any[] = directorsResult.rows;
+
+    if (directors.length === 0) {
+      return [];
+    }
+
+    // ── Query 2: GMs under those directors (one query for all directors) ────
+    // TS: director ids extracted as a string array for the ANY($1::uuid[]) param
+    const directorIds: string[] = directors.map((d: any) => d.id);
+    const gmsResult = await db.query(
+      `SELECT u.id, u.name, u.branch_id AS "branchId",
+              b.name AS "branchName", u.manager_id AS "directorId",
+              u.profile_photo_key
+       FROM users u
+       LEFT JOIN branches b ON b.id = u.branch_id
+       WHERE u.role = 'gm'
+         AND u.is_active = true
+         AND u.manager_id = ANY($1::uuid[])
+       ORDER BY u.name`,
+      [directorIds]
+    );
+    // TS: typed as any[] — rows carry directorId so we can bucket them below
+    const gms: any[] = gmsResult.rows;
+
+    // ── Query 3: oversight branches for each GM (one query for all GMs) ────
+    // Uses each GM's own user_oversight_branches rows (what MD assigned) — NOT
+    // the director's flattened union rows, so the per-GM breakdown is preserved.
+    const gmIds: string[] = gms.map((g: any) => g.id);
+    // TS: gmIds may be empty if no GMs exist; guard to avoid sending ANY('{}'::uuid[])
+    const branchRows: any[] = gmIds.length > 0
+      ? (await db.query(
+          `SELECT uob.user_id AS "gmId", b.id AS "branchId", b.name AS "branchName"
+           FROM user_oversight_branches uob
+           JOIN branches b ON b.id = uob.branch_id
+           WHERE uob.user_id = ANY($1::uuid[])
+           ORDER BY b.name`,
+          [gmIds]
+        )).rows
+      : [];
+
+    // ── Populate avatar URLs for directors + GMs in one batch ───────────────
+    // Follows the same pattern as listUsers (user.service.ts:443-444).
+    const allPeople = [...directors, ...gms];
+    // TS: populateAvatarUrls callback receives string | null — assign as-is, downstream renders null as no avatar
+    await populateAvatarUrls(redis, allPeople, (u: any) => u.profile_photo_key, (u: any, url: string | null) => { u.profilePhotoUrl = url; });
+    allPeople.forEach((u: any) => delete u.profile_photo_key);
+
+    // ── In-memory assembly ───────────────────────────────────────────────────
+    // Build lookup: gmId → branches[]
+    const branchesByGm = new Map<string, { id: string; name: string }[]>();
+    for (const row of branchRows) {
+      const existing = branchesByGm.get(row.gmId) ?? [];
+      existing.push({ id: row.branchId, name: row.branchName });
+      branchesByGm.set(row.gmId, existing);
+    }
+
+    // Build lookup: directorId → gms[]
+    const gmsByDirector = new Map<string, any[]>();
+    for (const gm of gms) {
+      const gmWithBranches = {
+        id:             gm.id,
+        name:           gm.name,
+        branchId:       gm.branchId,
+        branchName:     gm.branchName,
+        profilePhotoUrl: gm.profilePhotoUrl ?? null,
+        // TS: fall back to empty array when the GM has no oversight branches assigned
+        branches: branchesByGm.get(gm.id) ?? [],
+      };
+      const existing = gmsByDirector.get(gm.directorId) ?? [];
+      existing.push(gmWithBranches);
+      gmsByDirector.set(gm.directorId, existing);
+    }
+
+    // Assemble the final tree: one entry per director
+    return directors.map((d: any) => {
+      // TS: gmList defaults to [] if director has no active GMs
+      const gmList = gmsByDirector.get(d.id) ?? [];
+      // TS: Set to deduplicate branch ids across all GMs under this director
+      const uniqueBranchIds = new Set<string>(
+        gmList.flatMap((g: any) => g.branches.map((b: any) => b.id))
+      );
+      return {
+        id:              d.id,
+        name:            d.name,
+        role:            d.role,
+        branchId:        d.branchId,
+        branchName:      d.branchName,
+        profilePhotoUrl: d.profilePhotoUrl ?? null,
+        gmCount:         gmList.length,
+        // TS: count of distinct branches across all GMs — shown as a summary chip
+        branchCount:     uniqueBranchIds.size,
+        gms:             gmList,
+      };
+    });
+  },
+
   // ── listRenameHistory ──────────────────────────────────────────────────────────
   // Returns the full rename audit log for Management (newest first, max 100 rows).
   async listRenameHistory(

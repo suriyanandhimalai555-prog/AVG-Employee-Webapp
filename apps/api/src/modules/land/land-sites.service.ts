@@ -368,9 +368,9 @@ export const LandSitesService = {
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
-    if (payload.areaSqft            !== undefined) { fields.push(`area_sqft = $${idx++}`);             values.push(payload.areaSqft); }
-    if (payload.landCost            !== undefined) { fields.push(`land_cost = $${idx++}`);              values.push(payload.landCost); }
-    if (payload.status              !== undefined) { fields.push(`status = $${idx++}`);                 values.push(payload.status); }
+    if (payload.areaSqft !== undefined) { fields.push(`area_sqft = $${idx++}`); values.push(payload.areaSqft); }
+    if (payload.landCost !== undefined) { fields.push(`land_cost = $${idx++}`); values.push(payload.landCost); }
+    // status is intentionally excluded — system-managed by the booking lifecycle only
     if (fields.length === 0) return old;
 
     fields.push(`updated_by = $${idx++}`, `updated_at = now()`);
@@ -381,8 +381,8 @@ export const LandSitesService = {
     const updated = result.rows[0];
     await LandAuditService.log(db, {
       entity: 'plot', recordId: plotId, action: 'update', changedBy: userId,
-      oldValues: { land_cost: old.land_cost, status: old.status },
-      newValues: { land_cost: updated.land_cost, status: updated.status },
+      oldValues: { area_sqft: old.area_sqft, land_cost: old.land_cost },
+      newValues: { area_sqft: updated.area_sqft, land_cost: updated.land_cost },
     });
     return updated;
   },
