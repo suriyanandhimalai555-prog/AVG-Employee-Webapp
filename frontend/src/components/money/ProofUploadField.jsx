@@ -158,7 +158,6 @@ export const ProofUploadField = ({ mode, proofKey, onChange, showError = false }
       <input
         type="file"
         accept="image/*"
-        capture="environment"
         ref={fileRef}
         onChange={handleFile}
         className="hidden"
