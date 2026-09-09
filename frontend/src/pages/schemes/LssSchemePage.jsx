@@ -17,7 +17,10 @@ import {
   useGetLssSummaryQuery,
 } from '../../store/api/apiSlice';
 import EmptyState from '../../components/EmptyState';
-import { formatCurrency } from '../../lib/formatters';
+import SchemeCalendar from '../../components/SchemeCalendar';
+import { formatCurrency, formatDate } from '../../lib/formatters';
+import { getCurrentPeriod } from '../../lib/schemePeriod';
+import { SCHEME_INPUT_CLASS } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
@@ -55,11 +58,32 @@ export const LssSchemePage = () => {
     || HEAD_BRANCH_VIEW_ROLES.has(user?.role);
   const [statusFilter, setStatusFilter] = useState('active');
   const [search, setSearch] = useState('');
+  // Search scope: 'all' = ignore the period filter while searching (default),
+  // 'period' = restrict search to the selected period.
+  const [searchScope, setSearchScope] = useState('all');
+  // Plan (package) filter — populated from the plans list already loaded for the reference table.
+  const [planFilter, setPlanFilter] = useState('');
+  // Period from the SchemeCalendar date picker — defaults to the current 7-to-7 period.
+  const [period, setPeriod] = useState(getCurrentPeriod);
+
+  // When searching in 'all' scope the period is irrelevant — expand results across all time.
+  // Filling / pending rooms have no first_draw_date yet, so the period is also ignored there.
+  const ignorePeriod =
+    statusFilter === 'filling' ||
+    statusFilter === 'pending_combine' ||
+    (search && searchScope === 'all');
 
   const { data: summary } = useGetLssSummaryQuery();
   const { data: plans = [], isLoading: plansLoading } = useGetLssPlansQuery();
   const { data: roomsResult, isLoading: roomsLoading } = useGetLssRoomsQuery(
-    { status: statusFilter === 'all' ? undefined : statusFilter, search: search || undefined, limit: 100 },
+    {
+      status:    statusFilter === 'all' ? undefined : statusFilter,
+      search:    search || undefined,
+      planId:    planFilter || undefined,
+      startDate: ignorePeriod ? undefined : period.startDate,
+      endDate:   ignorePeriod ? undefined : period.endDate,
+      limit:     100,
+    },
     { skip: !canViewRooms },
   );
   const rooms = roomsResult?.data || [];
@@ -131,7 +155,51 @@ export const LssSchemePage = () => {
       {canViewRooms && (
         <div className="px-4 mb-3">
           <SchemeSearchBar onSearch={setSearch} placeholder="Search customer name or phone…" />
+          {/* Scope toggle: visible only while a search term is active */}
+          {search && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] font-bold text-navy/40 uppercase tracking-wider">Scope:</span>
+              {[['all', 'All time'], ['period', 'This period']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSearchScope(key)}
+                  className={`px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap tactile-press ${
+                    searchScope === key
+                      ? 'bg-navy text-white'
+                      : 'bg-white text-navy/60 border border-navy/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Date picker + package dropdown — dimmed when status tab has no start date */}
+      {canViewRooms && (
+        <>
+          <div className={`px-4 mb-3 transition-opacity ${ignorePeriod ? 'opacity-40 pointer-events-none' : ''}`}>
+            <SchemeCalendar compact onPeriodChange={setPeriod} />
+          </div>
+          <div className="px-4 mb-4">
+            <select
+              value={planFilter}
+              onChange={(e) => setPlanFilter(e.target.value)}
+              className={SCHEME_INPUT_CLASS}
+              aria-label="Filter by package"
+            >
+              <option value="">All packages</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {formatCurrency(parseFloat(p.price))}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
       )}
 
       {/* Status filter chips */}
@@ -210,6 +278,19 @@ export const LssSchemePage = () => {
                       {style.label}
                     </div>
                   </div>
+
+                  {/* Full-package owner line — only when one customer owns all 20 held slots */}
+                  {room.full_room_owner_name && (
+                    <p className="text-[11px] text-violet-700 font-semibold mb-1.5 truncate">
+                      Full package · {room.full_room_owner_name}
+                      {room.full_room_owner_referrer && (
+                        <span className="font-normal text-navy/50"> · via {room.full_room_owner_referrer}</span>
+                      )}
+                      {room.first_draw_date && (
+                        <span className="font-normal text-navy/50"> · Started {formatDate(room.first_draw_date)}</span>
+                      )}
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between text-[11px] text-navy/50 font-medium mb-1.5">
                     <span>

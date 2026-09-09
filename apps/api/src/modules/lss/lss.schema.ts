@@ -100,11 +100,14 @@ export const RefundRoomSchema = z.object({
 
 // ─── List queries ─────────────────────────────────────────────────────────
 export const ListRoomsQuerySchema = z.object({
-  status:  z.enum(['filling', 'pending_combine', 'combined_into', 'expired', 'active', 'completed']).optional(),
-  planId:  z.string().uuid().optional(),
-  search:  z.string().max(100).optional(),
-  page:    z.coerce.number().min(1).default(1),
-  limit:   z.coerce.number().min(1).max(200).default(50),
+  status:    z.enum(['filling', 'pending_combine', 'combined_into', 'expired', 'active', 'completed']).optional(),
+  planId:    z.string().uuid().optional(),
+  search:    z.string().max(100).optional(),
+  // Date range for filtering by first_draw_date — passed from the SchemeCalendar period picker.
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  page:      z.coerce.number().min(1).default(1),
+  limit:     z.coerce.number().min(1).max(200).default(50),
 });
 
 // Correction schema — MD / Management only (PATCH /lss/slots/:id/correct)
@@ -188,4 +191,5 @@ export type ActivateRoomInput = z.infer<typeof ActivateRoomSchema>;
 export type RunDrawInput       = z.infer<typeof RunDrawSchema>;
 export type CombineRoomsInput  = z.infer<typeof CombineRoomsSchema>;
 export type RefundRoomInput    = z.infer<typeof RefundRoomSchema>;
+// ListRoomsQuery is re-exported for use in rooms.service.ts list() signature
 export type ListRoomsQuery     = z.infer<typeof ListRoomsQuerySchema>;

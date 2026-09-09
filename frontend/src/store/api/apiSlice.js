@@ -769,6 +769,9 @@ export const apiSlice = createApi({
         if (params.status)    qs.set('status', params.status);
         if (params.packageId) qs.set('packageId', params.packageId);
         if (params.search)    qs.set('search', params.search);
+        // Date range from the SchemeCalendar period picker — filters rooms by first_draw_date.
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
         // branchId is intentionally omitted — server derives scope from JWT identity
         if (params.page)      qs.set('page', String(params.page));
         if (params.limit)     qs.set('limit', String(params.limit));
@@ -890,11 +893,14 @@ export const apiSlice = createApi({
     getLssRooms: builder.query({
       query: (params = {}) => {
         const qs = new URLSearchParams();
-        if (params.status)  qs.set('status', params.status);
-        if (params.planId)  qs.set('planId', params.planId);
-        if (params.search)  qs.set('search', params.search);
-        if (params.page)    qs.set('page', String(params.page));
-        if (params.limit)   qs.set('limit', String(params.limit));
+        if (params.status)    qs.set('status', params.status);
+        if (params.planId)    qs.set('planId', params.planId);
+        if (params.search)    qs.set('search', params.search);
+        // Date range from the SchemeCalendar period picker — filters rooms by first_draw_date.
+        if (params.startDate) qs.set('startDate', params.startDate);
+        if (params.endDate)   qs.set('endDate', params.endDate);
+        if (params.page)      qs.set('page', String(params.page));
+        if (params.limit)     qs.set('limit', String(params.limit));
         const q = qs.toString();
         return `/lss/rooms${q ? `?${q}` : ''}`;
       },

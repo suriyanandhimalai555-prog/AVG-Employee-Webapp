@@ -229,7 +229,8 @@ export const RoomsService = {
 
   async list(
     db: Pool,
-    filters: { status?: RoomStatus; planId?: string; branchIds: string[] | null; search?: string; page: number; limit: number }
+    // startDate/endDate filter on first_draw_date — set by the SchemeCalendar period picker.
+    filters: { status?: RoomStatus; planId?: string; startDate?: string; endDate?: string; branchIds: string[] | null; search?: string; page: number; limit: number }
   ): Promise<{ data: any[]; total: number }> {
     await db.query(
       `UPDATE lss_rooms SET status='pending_combine'
@@ -245,6 +246,10 @@ export const RoomsService = {
       where += ` AND r.branch_id = ANY($${idx++}::uuid[])`;
       params.push(filters.branchIds);
     }
+    // Date range: filter on first_draw_date (when the plan starts after activation).
+    // Rooms not yet activated (first_draw_date IS NULL) naturally drop out when a range is applied.
+    if (filters.startDate) { where += ` AND r.first_draw_date >= $${idx++}::date`; params.push(filters.startDate); }
+    if (filters.endDate)   { where += ` AND r.first_draw_date <= $${idx++}::date`; params.push(filters.endDate); }
 
     // Search: room matches when any of its slots' customers match — same param index reused across OR
     let searchIdx: number | null = null;
@@ -283,7 +288,17 @@ export const RoomsService = {
          p.price       AS plan_price,
          b.name        AS branch_name,
          (SELECT COUNT(*)::int FROM lss_slots s WHERE s.room_id = r.id AND s.status = 'held') AS slots_filled,
-         (SELECT COUNT(*)::int FROM lss_draws d WHERE d.room_id = r.id)                       AS draws_done${matchedSlotsSelect}
+         (SELECT COUNT(*)::int FROM lss_draws d WHERE d.room_id = r.id)                       AS draws_done,
+         (SELECT c.name FROM customers c WHERE c.id = (
+            SELECT s.customer_id FROM lss_slots s
+            WHERE s.room_id = r.id AND s.status IN ('held','won')
+            GROUP BY s.customer_id HAVING COUNT(*) = 20 LIMIT 1
+         )) AS full_room_owner_name,
+         (SELECT u.name FROM users u WHERE u.id = (
+            SELECT s.referrer_id FROM lss_slots s
+            WHERE s.room_id = r.id AND s.status IN ('held','won')
+            GROUP BY s.customer_id, s.referrer_id HAVING COUNT(*) = 20 LIMIT 1
+         )) AS full_room_owner_referrer${matchedSlotsSelect}
        FROM lss_rooms r
        JOIN lss_plans p  ON r.plan_id   = p.id
        JOIN branches b   ON r.branch_id = b.id

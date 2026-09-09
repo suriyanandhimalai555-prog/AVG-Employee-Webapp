@@ -190,6 +190,9 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
           status:    raw.status,
           planId:    raw.planId,
           search:    raw.search,
+          // Pass date-range from the frontend SchemeCalendar period picker — filters by first_draw_date.
+          startDate: raw.startDate,
+          endDate:   raw.endDate,
           branchIds,
           page:      raw.page,
           limit:     raw.limit,

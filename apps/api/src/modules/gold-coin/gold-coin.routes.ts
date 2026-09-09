@@ -189,13 +189,16 @@ export default async function goldCoinRoutes(fastify: FastifyInstance): Promise<
           throw new ForbiddenError('Access denied');
         }
         const { branchIds } = await resolveViewScope(fastify, req);
-        // Accept status/packageId filters from query; branchId from query is ignored
+        // Accept status/packageId/date filters from query; branchId from query is ignored
         // (server always derives scope from JWT identity).
         const raw = ListRoomsQuerySchema.parse(request.query);
         const result = await RoomsService.list(fastify.db, {
           status:    raw.status,
           packageId: raw.packageId,
           search:    raw.search,
+          // Pass date-range from the frontend SchemeCalendar period picker — filters by first_draw_date.
+          startDate: raw.startDate,
+          endDate:   raw.endDate,
           branchIds,
           page:      raw.page,
           limit:     raw.limit,
