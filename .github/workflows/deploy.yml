@@ -495,8 +495,6 @@ jobs:
 
           to: |
             Sanjayvanan03@gmail.com,
-            muthukdm45@gmail.com,
-            deepakavgprimetech@gmail.com,
             devops@avgprimetech.com
 
           html_body: |
@@ -590,8 +588,7 @@ jobs:
 
           to: |
             Sanjayvanan03@gmail.com,
-            muthukdm45@gmail.com,
-            deepakavgprimetech@gmail.com
+            devops@avgprimetech.com
 
           html_body: |
             <h2>EMS Deployment Failed</h2>
