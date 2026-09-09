@@ -26,7 +26,19 @@ class ErrorBoundary extends Component {
     // hasError — whether a render error was caught.
     // reloading — whether we triggered window.location.reload() and are
     //             waiting for it; render nothing in this transient state.
-    this.state = { hasError: false, reloading: false };
+    // resetKey  — mirrors the resetKey prop; change detection clears the error on navigation.
+    this.state = { hasError: false, reloading: false, resetKey: props.resetKey };
+  }
+
+  static getDerivedStateFromProps(props, state) {
+    // Clear the error when the user navigates to a different route (resetKey changes).
+    if (state.hasError && props.resetKey !== state.resetKey) {
+      return { hasError: false, reloading: false, resetKey: props.resetKey };
+    }
+    if (props.resetKey !== state.resetKey) {
+      return { resetKey: props.resetKey };
+    }
+    return null;
   }
 
   static getDerivedStateFromError() {

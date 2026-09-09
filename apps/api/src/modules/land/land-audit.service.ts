@@ -9,9 +9,11 @@
 import { Pool, PoolClient } from 'pg';
 import type { ListAuditQuery } from './land.schema';
 
-export type LandEntity = 'site' | 'plot' | 'customer' | 'booking' | 'payout';
+// 'layout' added to support hard-delete audit logging for land layouts.
+export type LandEntity = 'site' | 'layout' | 'plot' | 'customer' | 'booking' | 'payout';
+// 'delete' added to support hard-delete audit logging (site/layout/plot).
 export type LandAction =
-  | 'create' | 'update' | 'cancel'
+  | 'create' | 'update' | 'cancel' | 'delete'
   | 'advance_payment' | 'full_payment'
   | 'deadline_extended' | 'payout_paid';
 

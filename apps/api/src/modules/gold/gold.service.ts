@@ -329,12 +329,13 @@ export const GoldService = {
     branchId: string
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
-      // Load the member and derive its maturity date in SQL
+      // Lock the row so concurrent settle calls queue up rather than both proceeding.
       const memberRow = await client.query(
         `SELECT *,
                 (start_date + (total_months || ' months')::interval)::date AS maturity_date
          FROM gold_scheme_members
-         WHERE id = $1 AND branch_id = $2`,
+         WHERE id = $1 AND branch_id = $2
+         FOR UPDATE`,
         [id, branchId]
       );
       if (memberRow.rows.length === 0) throw new NotFoundError('Member not found');
@@ -366,16 +367,19 @@ export const GoldService = {
       // TS: NUMERIC returns as string from pg; parse before writing back
       const refundAmount = parseFloat(sumRow.rows[0].total);
 
+      // Guard in WHERE ensures a second concurrent request that queued behind FOR UPDATE
+      // finds the row already settled and produces 0 rows instead of double-settling.
       const updated = await client.query(
         `UPDATE gold_scheme_members
          SET refund_status = 'refunded',
              refunded_at   = NOW(),
              refunded_by   = $1,
              refund_amount = $2
-         WHERE id = $3
+         WHERE id = $3 AND refund_status = 'pending'
          RETURNING *`,
         [actorId, refundAmount, id]
       );
+      if (updated.rows.length === 0) throw new ValidationError('Refund was already settled');
 
       return updated.rows[0];
     });
@@ -410,15 +414,15 @@ export const GoldService = {
     enteredBy: string,
     payload: AddGoldPaymentInput
   ): Promise<any> {
-    // Verify the member belongs to this branch and fetch referrer info for incentive
+    // Verify the member belongs to this branch, is active, and fetch referrer info for incentive
     const memberCheck = await db.query(
       `SELECT g.id, g.customer_id, g.total_months, g.referrer_id, g.chit_number, c.name AS customer_name
        FROM gold_scheme_members g
        JOIN customers c ON g.customer_id = c.id
-       WHERE g.id = $1 AND g.branch_id = $2`,
+       WHERE g.id = $1 AND g.branch_id = $2 AND g.status = 'active'`,
       [memberId, branchId]
     );
-    if (memberCheck.rows.length === 0) throw new NotFoundError('Member not found');
+    if (memberCheck.rows.length === 0) throw new NotFoundError('Member not found or not active');
 
     const memberRow = memberCheck.rows[0];
     if (payload.monthNumber > memberRow.total_months) {
@@ -900,6 +904,8 @@ export const GoldService = {
       if (before.rows.length === 0) throw new NotFoundError('Gold member not found');
       const old = before.rows[0];
       if (old.status === 'voided') throw new ValidationError('Member is already voided');
+      // Voiding a cancelled member would orphan refund_status='pending' with no settlement path.
+      if (old.status === 'cancelled') throw new ValidationError('Cannot void a cancelled member — settle or administratively clear the refund first');
 
       await client.query(
         `UPDATE gold_scheme_members SET status = 'voided' WHERE id = $1`,

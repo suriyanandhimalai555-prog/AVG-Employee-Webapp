@@ -16,6 +16,7 @@ import {
 } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
 import { getCurrentPeriod } from '../../lib/schemePeriod';
+import { getISTToday } from '../../lib/date';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { GOLD_STATUS_STYLES, SCHEME_MODE_LABELS, SCHEME_MODE_STYLES } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -39,6 +40,9 @@ export const GoldMemberDetailPage = () => {
   const [showCancelModal,  setShowCancelModal]  = useState(false);
   const [showRefundModal,  setShowRefundModal]  = useState(false);
   const [cancelReason,     setCancelReason]     = useState('');
+  const [cancelError,      setCancelError]      = useState(null);
+  const [refundError,      setRefundError]      = useState(null);
+  const [completeError,    setCompleteError]    = useState(null);
   const [period, setPeriod]                     = useState(getCurrentPeriod);
 
   const { data: member,   isLoading: isMemberLoading }   = useGetGoldMemberQuery(branchId ? { id, branchId } : id);
@@ -69,10 +73,11 @@ export const GoldMemberDetailPage = () => {
 
   const handleMarkComplete = async () => {
     if (!allPaid) return;
+    setCompleteError(null);
     try {
       await updateStatus({ id: member.id, status: 'completed' }).unwrap();
-    } catch {
-      // status update errors surface via RTK Query — swallowing UI-only
+    } catch (err) {
+      setCompleteError(err?.data?.error?.message || 'Could not mark as completed. Please try again.');
     }
   };
 
@@ -83,32 +88,34 @@ export const GoldMemberDetailPage = () => {
     return new Date(y, mo - 1 + Number(totalMonths), d);
   };
   const maturityDateObj = member ? computeMaturityDate(member.start_date, member.total_months) : null;
-  // Today as YYYY-MM-DD for the display-side gate (device local — server re-checks in IST)
-  const todayISO = new Date().toISOString().slice(0, 10);
+  // Today as YYYY-MM-DD in IST (server is also IST, so the gate aligns).
+  const todayISO = getISTToday();
   const maturityISO = maturityDateObj
     ? `${maturityDateObj.getFullYear()}-${String(maturityDateObj.getMonth() + 1).padStart(2, '0')}-${String(maturityDateObj.getDate()).padStart(2, '0')}`
     : null;
   const isMatured = maturityISO && todayISO >= maturityISO;
 
   const handleCancel = async () => {
+    setCancelError(null);
     try {
       const body = cancelReason.trim() ? { reason: cancelReason.trim() } : {};
       if (branchId) body.branchId = branchId;
       await cancelMember({ id: member.id, ...body }).unwrap();
       setShowCancelModal(false);
       setCancelReason('');
-    } catch {
-      // errors surface via RTK Query; UI remains open for retry
+    } catch (err) {
+      setCancelError(err?.data?.error?.message || 'Cancel failed. Please try again.');
     }
   };
 
   const handleSettleRefund = async () => {
+    setRefundError(null);
     try {
       const body = branchId ? { branchId } : {};
       await refundMember({ id: member.id, ...body }).unwrap();
       setShowRefundModal(false);
-    } catch {
-      // server will return a 400 with the maturity date if the guard fails
+    } catch (err) {
+      setRefundError(err?.data?.error?.message || 'Could not settle refund. Please try again.');
     }
   };
 
@@ -366,7 +373,10 @@ export const GoldMemberDetailPage = () => {
 
       {/* Mark complete */}
       {user?.role === 'branch_admin' && member.status === 'active' && allPaid && (
-        <div className="px-4 mt-5">
+        <div className="px-4 mt-5 space-y-2">
+          {completeError && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 rounded-2xl px-3 py-2">{completeError}</p>
+          )}
           <button
             onClick={handleMarkComplete}
             className="w-full py-4 bg-indigo text-white text-sm font-bold rounded-2xl flex items-center justify-center gap-2 tactile-press shadow-lg shadow-indigo/20"
@@ -390,7 +400,7 @@ export const GoldMemberDetailPage = () => {
       {/* Cancel Card confirmation — GlassModal manages its own AnimatePresence */}
       <GlassModal
         isOpen={showCancelModal}
-        onClose={() => { setShowCancelModal(false); setCancelReason(''); }}
+        onClose={() => { setShowCancelModal(false); setCancelReason(''); setCancelError(null); }}
         title="Cancel Card"
       >
         <div className="space-y-4">
@@ -417,9 +427,12 @@ export const GoldMemberDetailPage = () => {
               className="w-full rounded-2xl border border-border bg-navy/2 px-3 py-2.5 text-xs text-navy placeholder:text-navy/30 resize-none focus:outline-none focus:border-navy/20"
             />
           </div>
+          {cancelError && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 rounded-2xl px-3 py-2">{cancelError}</p>
+          )}
           <div className="flex gap-3">
             <button
-              onClick={() => { setShowCancelModal(false); setCancelReason(''); }}
+              onClick={() => { setShowCancelModal(false); setCancelReason(''); setCancelError(null); }}
               disabled={isCancelling}
               className="flex-1 py-3 rounded-2xl border border-border text-xs font-bold text-navy/60 tactile-press disabled:opacity-40"
             >
@@ -440,7 +453,7 @@ export const GoldMemberDetailPage = () => {
       {/* Settle Refund confirmation — GlassModal manages its own AnimatePresence */}
       <GlassModal
         isOpen={showRefundModal}
-        onClose={() => setShowRefundModal(false)}
+        onClose={() => { setShowRefundModal(false); setRefundError(null); }}
         title="Settle Refund"
       >
         <div className="space-y-4">
@@ -457,9 +470,12 @@ export const GoldMemberDetailPage = () => {
           <p className="text-xs text-navy/50">
             Mark the accumulated amount as returned to the customer. This cannot be undone.
           </p>
+          {refundError && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 rounded-2xl px-3 py-2">{refundError}</p>
+          )}
           <div className="flex gap-3">
             <button
-              onClick={() => setShowRefundModal(false)}
+              onClick={() => { setShowRefundModal(false); setRefundError(null); }}
               disabled={isRefunding}
               className="flex-1 py-3 rounded-2xl border border-border text-xs font-bold text-navy/60 tactile-press disabled:opacity-40"
             >

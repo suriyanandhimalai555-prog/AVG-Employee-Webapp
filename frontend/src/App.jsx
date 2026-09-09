@@ -1,6 +1,6 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 import { selectIsAuthenticated, selectCurrentUser, clearCredentials } from './store/slices/authSlice';
@@ -101,13 +101,15 @@ function CustomersRoute() {
 
 function ProtectedLayout() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
+  const { pathname } = useLocation();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   // ErrorBoundary sits above Suspense: Suspense catches the pending promise
   // (loading state), the boundary catches the rejection (chunk 404 after
   // a new deploy).  Auto-reloads once via the shared reloadForStaleChunk
   // cooldown guard; shows a retry screen if the reload didn't help.
+  // resetKey clears the error state when the user navigates to a different route.
   return (
-    <ErrorBoundary>
+    <ErrorBoundary resetKey={pathname}>
       <Suspense fallback={<RouteFallback />}>
         <Layout />
       </Suspense>

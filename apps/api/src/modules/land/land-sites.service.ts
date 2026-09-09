@@ -15,7 +15,6 @@ import { Pool } from 'pg';
 import { ConflictError, NotFoundError } from '../../shared/errors';
 // runInTransaction wraps all delete operations so guard + delete + audit are atomic.
 import { runInTransaction } from '../../shared/transaction-helper';
-import { SchemeAudit } from '../../shared/scheme-audit';
 import { LandAuditService } from './land-audit.service';
 import { LandIncentivesService } from './land-incentives.service';
 import type {
@@ -419,13 +418,12 @@ export const LandSitesService = {
 
       await client.query(`DELETE FROM land_plots WHERE id = $1`, [plotId]);
 
-      await SchemeAudit.log(client, {
-        schemeCode: 'land_scheme',
-        entityType: 'plot',
-        entityId:   plotId,
-        actorId,
-        action:     'delete',
-        oldValues:  { site_number: plot.site_number, layout_id: plot.layout_id, site_id: plot.site_id, status: plot.status },
+      await LandAuditService.log(client, {
+        entity:    'plot',
+        recordId:  plotId,
+        action:    'delete',
+        changedBy: actorId,
+        oldValues: { site_number: plot.site_number, layout_id: plot.layout_id, site_id: plot.site_id, status: plot.status },
       });
 
       // TS: cast explicitly so the return type matches the signature.
@@ -468,13 +466,12 @@ export const LandSitesService = {
       // commission rules cascade automatically (migration 062).
       await client.query(`DELETE FROM land_layouts WHERE id = $1`, [layoutId]);
 
-      await SchemeAudit.log(client, {
-        schemeCode: 'land_scheme',
-        entityType: 'layout',
-        entityId:   layoutId,
-        actorId,
-        action:     'delete',
-        oldValues:  { layout_name: layout.layout_name, site_id: layout.site_id, status: layout.status },
+      await LandAuditService.log(client, {
+        entity:    'layout',
+        recordId:  layoutId,
+        action:    'delete',
+        changedBy: actorId,
+        oldValues: { layout_name: layout.layout_name, site_id: layout.site_id, status: layout.status },
       });
 
       return { id: layoutId, siteId: layout.site_id as string };
@@ -516,13 +513,12 @@ export const LandSitesService = {
       // Layouts (and their commission rules) cascade from the site (migration 062).
       await client.query(`DELETE FROM land_sites WHERE id = $1`, [siteId]);
 
-      await SchemeAudit.log(client, {
-        schemeCode: 'land_scheme',
-        entityType: 'site',
-        entityId:   siteId,
-        actorId,
-        action:     'delete',
-        oldValues:  { name: site.name, status: site.status },
+      await LandAuditService.log(client, {
+        entity:    'site',
+        recordId:  siteId,
+        action:    'delete',
+        changedBy: actorId,
+        oldValues: { name: site.name, status: site.status },
       });
 
       return { id: siteId };

@@ -6,6 +6,7 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import { useGetGoldMembersQuery, useGetGoldSummaryQuery } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
 import { getCurrentPeriod, getPeriodForDate } from '../../lib/schemePeriod';
+import { getISTToday } from '../../lib/date';
 import { formatCurrency } from '../../lib/formatters';
 import { REFERRER_ROLES, GOLD_STATUS_STYLES } from '../../lib/schemeConstants';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -48,17 +49,21 @@ export const GoldSchemePage = () => {
   });
 
   // Separate all-periods query for cancelled cards — used only to compute the
-  // refund-ready banner count. Skipped for non-branch-admin roles.
+  // refund-ready banner count. Skipped when the main query already fetches
+  // all cancelled members (statusFilter === 'cancelled' sets ignorePeriod=true).
   const { data: cancelledResult } = useGetGoldMembersQuery(
     { status: 'cancelled', limit: 200 },
-    { skip: !isBranchAdmin || isReferrerView }
+    { skip: !isBranchAdmin || isReferrerView || statusFilter === 'cancelled' }
   );
 
-  // Compute which cancelled members are matured and have a pending refund.
+  // When on the cancelled tab the main query already has all cancelled data; reuse it.
+  const cancelledData = statusFilter === 'cancelled' ? membersResult?.data : cancelledResult?.data;
+
+  // Compute which cancelled members are matured and have a pending refund (IST date).
   // Parse YYYY-MM-DD parts to avoid UTC-midnight timezone shift (display only;
   // server re-checks in IST on the settle call).
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const readyToSettle = (cancelledResult?.data || []).filter(m => {
+  const todayISO = getISTToday();
+  const readyToSettle = (cancelledData || []).filter(m => {
     if (m.refund_status !== 'pending') return false;
     const [y, mo, d] = String(m.start_date).split('-').map(Number);
     const mat = new Date(y, mo - 1 + Number(m.total_months), d);

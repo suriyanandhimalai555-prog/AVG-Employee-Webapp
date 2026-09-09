@@ -19,19 +19,23 @@ const rawBaseQuery = fetchBaseQuery({
 // authSlice.js already imports apiSlice (circular dep) — dispatch by string
 // type instead.
 //
-// Retry-once strategy: a single 401 may be a transient blip (backend
-// restarting after a deploy).  We wait 500 ms and retry the same request
-// before concluding the token is actually invalid.  Only a *second* consecutive
-// 401 clears credentials and forces re-login.  This prevents a backend restart
-// from silently logging every user out.
+// Retry-once strategy: a single 401 on a GET may be a transient blip (backend
+// restarting after a deploy).  We wait 500 ms and retry before concluding the
+// token is invalid.  Only a *second* consecutive 401 clears credentials.
+// Retry is intentionally skipped for non-GET methods (POST/PATCH/DELETE) to
+// prevent non-idempotent mutations from being sent twice.
 const baseQueryWithReauth = async (args, api, extraOptions) => {
   let result = await rawBaseQuery(args, api, extraOptions);
   if (result.error?.status === 401) {
-    // Brief pause to ride out a backend restart window before retrying.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    result = await rawBaseQuery(args, api, extraOptions);
+    // Only retry safe (read-only) requests — POST/PATCH/DELETE must not be duplicated.
+    const method = typeof args === 'string' ? 'GET' : (args.method ?? 'GET');
+    if (method === 'GET' || method === 'HEAD') {
+      // Brief pause to ride out a backend restart window before retrying.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      result = await rawBaseQuery(args, api, extraOptions);
+    }
     if (result.error?.status === 401) {
-      // Still 401 after the retry — token is genuinely invalid.  Log out.
+      // Still 401 — token is genuinely invalid.  Log out.
       api.dispatch({ type: 'auth/clearCredentials' });
     }
   }
