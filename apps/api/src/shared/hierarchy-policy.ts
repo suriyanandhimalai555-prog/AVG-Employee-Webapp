@@ -35,6 +35,21 @@ function getAllowedManagerRoles(role: string): string[] {
   return ALLOWED_MANAGER_ROLES[role] ?? [];
 }
 
+// Validates that replacementRole can manage every role in reportRoles per ALLOWED_MANAGER_ROLES.
+// Called before reparenting a team to a replacement manager during a transfer.
+// Throws ValidationError naming the first incompatible report role found.
+export function assertReplacementManagerRole(replacementRole: string, reportRoles: string[]): void {
+  for (const reportRole of reportRoles) {
+    const allowed = getAllowedManagerRoles(reportRole);
+    if (allowed.length > 0 && !allowed.includes(replacementRole)) {
+      throw new ValidationError(
+        `Replacement manager (role: "${replacementRole}") cannot manage "${reportRole}" — ` +
+        `allowed manager roles for "${reportRole}": ${allowed.join(', ')}`
+      );
+    }
+  }
+}
+
 export async function resolveAndValidateManagerId(
   db: Pool,
   requester: RequesterContext,

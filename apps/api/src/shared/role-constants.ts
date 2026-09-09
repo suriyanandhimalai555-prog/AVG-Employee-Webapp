@@ -85,6 +85,21 @@ export const TRANSFER_MANAGE_ROLES: readonly RoleValue[] = [
   Role.MANAGEMENT,
 ];
 
+// Roles that are valid DESTINATIONS for a transfer/promotion.
+// md: excluded — there can only ever be one MD (singleton rule from CLAUDE.md).
+// management: excluded — back-office role assigned outside the reporting chain;
+//             no branch_id, not part of the hierarchy pyramid.
+// client: excluded — client accounts are not employees in the chain.
+export const TRANSFER_TARGET_ROLES: readonly RoleValue[] = [
+  Role.DIRECTOR,
+  Role.GM,
+  Role.BRANCH_MANAGER,
+  Role.ABM,
+  Role.SALES_OFFICER,
+  Role.BRANCH_ADMIN,
+  Role.OA,
+];
+
 // Roles allowed to rename any employee (management back-office name-correction tool).
 // Management-only: mirrors TRANSFER_MANAGE_ROLES; MD is excluded (view-only access).
 export const USER_RENAME_ROLES: readonly RoleValue[] = [

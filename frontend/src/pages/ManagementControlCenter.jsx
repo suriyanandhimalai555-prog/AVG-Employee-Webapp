@@ -522,7 +522,11 @@ const TransfersTab = () => {
     { search: empSearch || undefined, limit: 50 },
     { skip: !empSearch }
   );
-  const empCandidates = empResult.data ?? [];
+  // Roles that cannot be a transfer subject: md (singleton), management (back-office),
+  // client (not in the employee hierarchy). Mirrors TRANSFER_TARGET_ROLES in role-constants.ts.
+  const NON_TRANSFERABLE_ROLES = new Set(['md', 'management', 'client']);
+  // Filter out non-transferable roles so the picker only shows movable employees.
+  const empCandidates = (empResult.data ?? []).filter(u => !NON_TRANSFERABLE_ROLES.has(u.role));
 
   const { data: branches = [] } = useGetBranchesQuery();
 
@@ -538,12 +542,14 @@ const TransfersTab = () => {
   // Roles that REQUIRE a manager — backend throws a ValidationError if manager is null.
   const MANAGER_REQUIRED = new Set(['director', 'gm', 'branch_manager', 'abm', 'sales_officer']);
 
-  // New Manager candidates: fetched cross-branch by role via getManagerOptions so that
-  // GM, Director, and MD (who have branch_id = NULL) actually appear. A branch-filtered
-  // getUsers call returns nothing for them and blocks transfers into high-hierarchy roles.
+  // New Manager candidates: branch-scoped via getManagerOptions so the backend pre-filters
+  // to managers that will actually pass the resolveAndValidateManagerId branch check,
+  // eliminating the "does not oversee this branch" error at submit time.
   const managerRoles = MANAGER_ROLE_MAP[form.newRole] ?? [];
+  // Effective branch = chosen target branch (transfer) or the employee's current branch (promotion).
+  const effectiveManagerBranchId = form.newBranchId || selectedUser?.branchId || undefined;
   const { data: newManagerCandidates = [] } = useGetManagerOptionsQuery(
-    managerRoles.join(','),
+    { roles: managerRoles, branchId: effectiveManagerBranchId },
     { skip: !form.newRole || managerRoles.length === 0 }
   );
 

@@ -9,7 +9,7 @@ import {
   useGetBuildersSummaryQuery,
   useGetBuildersPackagesQuery,
 } from '../../store/api/apiSlice';
-import { formatCurrency, formatDate } from '../../lib/formatters';
+import { formatCurrency, formatCurrencyCompact, formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
@@ -117,14 +117,14 @@ export const BuildersSchemePage = () => {
         <div className="px-4 mb-5">
           <div className="bg-white rounded-3xl p-4 card-shadow border border-border grid grid-cols-4 divide-x divide-border">
             {[
-              { label: 'Invested',   val: formatCurrency(summary.totalInvested || 0),  cls: 'text-sky-600' },
-              { label: 'Paid Out',   val: formatCurrency(summary.totalPaidOut   || 0),  cls: 'text-emerald-600' },
+              { label: 'Invested',   val: formatCurrencyCompact(summary.totalInvested || 0),  cls: 'text-sky-600' },
+              { label: 'Paid Out',   val: formatCurrencyCompact(summary.totalPaidOut   || 0),  cls: 'text-emerald-600' },
               { label: 'Active',     val: (summary.activePlans || 0) + (summary.coolingPlans || 0), cls: 'text-amber-600' },
               { label: 'Decision',   val: summary.decisionPendingPlans || 0,             cls: 'text-rose-600' },
             ].map(({ label, val, cls }) => (
-              <div key={label} className="text-center px-2">
+              <div key={label} className="text-center px-2 min-w-0">
                 <p className="text-[8px] font-bold uppercase tracking-widest text-navy/30">{label}</p>
-                <p className={`text-base font-bold mt-0.5 ${cls}`}>{val}</p>
+                <p className={`text-sm font-bold mt-0.5 truncate ${cls}`}>{val}</p>
               </div>
             ))}
           </div>

@@ -1168,7 +1168,15 @@ export const apiSlice = createApi({
     }),
 
     getManagerOptions: builder.query({
-      query: (roles) => `/users/manager-options?roles=${Array.isArray(roles) ? roles.join(',') : roles}`,
+      // Accepts either a plain roles string/array (legacy callers) or { roles, branchId }
+      // object. When branchId is supplied the backend filters to branch-valid managers only.
+      query: (arg) => {
+        const roles = Array.isArray(arg?.roles) ? arg.roles.join(',') : (arg?.roles ?? arg);
+        const branchId = arg?.branchId;
+        return branchId
+          ? `/users/manager-options?roles=${roles}&branchId=${branchId}`
+          : `/users/manager-options?roles=${roles}`;
+      },
       transformResponse: (response) => response.data,
       providesTags: ['Users'],
     }),

@@ -84,14 +84,17 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // ─── GET /api/users/manager-options?roles=director,gm ───
-  // Returns all active users of the given role(s) — used to populate manager dropdowns.
+  // ─── GET /api/users/manager-options?roles=director,gm[&branchId=<uuid>] ───
+  // Returns active users of the given role(s). When branchId is supplied, only
+  // managers that would pass the hierarchy branch-scope check are returned:
+  // same-branch users, MD (branchless), and GM/Director overseeing that branch.
   fastify.get('/manager-options', {
     onRequest: [fastify.authenticate],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const req = request as AuthenticatedRequest;
-      const { roles } = req.query as { roles?: string };
+      // TS: extract optional branchId alongside the required roles param
+      const { roles, branchId } = req.query as { roles?: string; branchId?: string };
       if (!roles) {
         throw new AppError('roles query param required', 400, 'MISSING_PARAMS');
       }
@@ -100,7 +103,8 @@ export default async function userRoutes(fastify: FastifyInstance) {
         fastify.db,
         req.user.id,
         req.user.role,
-        roleList
+        roleList,
+        branchId || null
       );
       return reply.send({ success: true, data });
     } catch (error) {

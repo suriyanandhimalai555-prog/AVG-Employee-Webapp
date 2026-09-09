@@ -22,6 +22,17 @@ export const formatCurrency = (value, { decimals = false } = {}) => {
   return decimals ? INR_DECIMAL.format(n) : INR.format(n);
 };
 
+// Format a rupee value in compact Indian short-scale for narrow stat cells.
+// >= 1 crore → "₹2.05 Cr"; >= 1 lakh → "₹9.50 L"; else falls back to formatCurrency.
+export const formatCurrencyCompact = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '₹0';
+  const abs = Math.abs(n);
+  if (abs >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
+  if (abs >= 1_00_000)    return `₹${(n / 1_00_000).toFixed(2)} L`;
+  return formatCurrency(n);
+};
+
 // Format a plain integer (counts, days) with Indian grouping.
 const INT = new Intl.NumberFormat('en-IN');
 export const formatNumber = (value) => {

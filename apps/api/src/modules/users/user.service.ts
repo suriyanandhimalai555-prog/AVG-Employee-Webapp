@@ -8,9 +8,9 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
-import { resolveAndValidateManagerId } from '../../shared/hierarchy-policy';
+import { resolveAndValidateManagerId, assertReplacementManagerRole } from '../../shared/hierarchy-policy';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
-import { Role, TRANSFER_MANAGE_ROLES, USER_RENAME_ROLES } from '../../shared/role-constants';
+import { Role, TRANSFER_MANAGE_ROLES, TRANSFER_TARGET_ROLES, USER_RENAME_ROLES } from '../../shared/role-constants';
 import { runInTransaction } from '../../shared/transaction-helper';
 
 export interface UserDocument {
@@ -459,31 +459,36 @@ export const UserService = {
   async getManagerOptions(
     db: Pool,
     _requesterId: string,
-    requesterRole: string,
-    roles: string[]
+    _requesterRole: string,
+    roles: string[],
+    // TS: optional branch filter — when set, only managers valid for that branch are returned
+    branchId: string | null = null
   ): Promise<{ id: string; name: string; role: string; branchId: string | null; branchName: string | null }[]> {
-    if (requesterRole !== 'md') {
-      // Non-MD callers: return users visible to them of the requested roles (already capped by hierarchy)
-      const result = await db.query(
-        `SELECT u.id, u.name, u.role, u.branch_id AS "branchId", b.name AS "branchName"
-         FROM users u
-         LEFT JOIN branches b ON u.branch_id = b.id
-         WHERE u.role = ANY($1::text[])
-           AND u.is_active = true
-         ORDER BY u.name ASC`,
-        [roles]
-      );
-      return result.rows;
-    }
-
+    // When branchId is provided, mirror the branch-scope rules in resolveAndValidateManagerId:
+    //   • same-branch users always qualify
+    //   • MD has no branch_id but is always valid (e.g. as manager for Director)
+    //   • GM / Director qualify when they have an oversight row for the target branch
+    // When branchId is null, return all active users of the requested roles (original behaviour).
     const result = await db.query(
       `SELECT u.id, u.name, u.role, u.branch_id AS "branchId", b.name AS "branchName"
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
        WHERE u.role = ANY($1::text[])
          AND u.is_active = true
+         AND (
+           $2::uuid IS NULL
+           OR u.branch_id = $2::uuid
+           OR u.role = 'md'
+           OR (
+             u.role IN ('gm', 'director')
+             AND EXISTS (
+               SELECT 1 FROM user_oversight_branches uob
+               WHERE uob.user_id = u.id AND uob.branch_id = $2::uuid
+             )
+           )
+         )
        ORDER BY u.name ASC`,
-      [roles]
+      [roles, branchId]
     );
     return result.rows;
   },
@@ -614,6 +619,16 @@ export const UserService = {
       throw new ForbiddenError('Only Management may execute transfers');
     }
 
+    // TS: md and management cannot be transfer destinations:
+    //     md is a singleton (CLAUDE.md "MD = 1 person only");
+    //     management is a back-office role outside the reporting chain with no branch_id.
+    if (!(TRANSFER_TARGET_ROLES as readonly string[]).includes(payload.newRole)) {
+      throw new ValidationError(
+        `Role "${payload.newRole}" is not a valid transfer destination. ` +
+        `Allowed roles: ${[...TRANSFER_TARGET_ROLES].join(', ')}`
+      );
+    }
+
     return runInTransaction(db, async (client: PoolClient) => {
       // Lock + re-read target user (is_active guard ensures we don't move a deactivated account)
       const targetRes = await client.query(
@@ -630,9 +645,37 @@ export const UserService = {
         managerId: payload.newManagerId ?? null,
       });
 
+      // TS: cycle guard — reject if newManagerId is the target itself, or is a descendant
+      // of the target. Without this, manager_id loops would corrupt UNION ALL recursive CTEs.
+      if (payload.newManagerId) {
+        if (payload.newManagerId === target.id) {
+          throw new ValidationError('A user cannot be their own manager');
+        }
+        // Walk the proposed manager's ancestor chain upward (UNION deduplicates to handle any
+        // pre-existing data anomalies). If the target appears anywhere in that chain it means
+        // newManagerId currently reports (directly or indirectly) to the target — setting
+        // target.manager_id = newManagerId would create a cycle.
+        const cycleRes = await client.query(
+          `WITH RECURSIVE ancestors AS (
+             SELECT id, manager_id FROM users WHERE id = $1
+             UNION
+             SELECT u.id, u.manager_id FROM users u
+             JOIN ancestors a ON u.id = a.manager_id
+             WHERE a.manager_id IS NOT NULL
+           )
+           SELECT 1 FROM ancestors WHERE id = $2 LIMIT 1`,
+          [payload.newManagerId, target.id]
+        );
+        if (cycleRes.rows.length > 0) {
+          throw new ValidationError(
+            'Cannot set a manager that reports to this user — this would create a cycle in the hierarchy'
+          );
+        }
+      }
+
       // If the target has active direct reports, a replacement manager is required
       const reportsRes = await client.query(
-        `SELECT id FROM users WHERE manager_id = $1 AND is_active = true LIMIT 1`,
+        `SELECT id, role FROM users WHERE manager_id = $1 AND is_active = true`,
         [target.id]
       );
       if (reportsRes.rows.length > 0) {
@@ -641,7 +684,7 @@ export const UserService = {
         }
         // TS: validate the replacement is active and in the target's current branch
         const replRes = await client.query(
-          `SELECT id, branch_id, is_active FROM users WHERE id = $1`,
+          `SELECT id, role, branch_id, is_active FROM users WHERE id = $1`,
           [payload.replacementManagerId]
         );
         if (replRes.rows.length === 0 || !replRes.rows[0].is_active) {
@@ -650,6 +693,9 @@ export const UserService = {
         if (replRes.rows[0].branch_id !== target.branch_id) {
           throw new ValidationError('Replacement manager must belong to the same branch as the person being moved');
         }
+        // TS: validate the replacement's role is compatible with every report role it inherits
+        const reportRoles = [...new Set(reportsRes.rows.map((r: { role: string }) => r.role as string))];
+        assertReplacementManagerRole(replRes.rows[0].role, reportRoles);
       }
 
       // TS: collect IDs of re-parented reports for cache busting below
