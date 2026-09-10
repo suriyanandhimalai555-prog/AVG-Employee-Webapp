@@ -392,7 +392,7 @@ export const PendingEnrollmentsService = {
     db: Pool, dateFilter?: { startDate?: string; endDate?: string },
   ): Promise<Array<{ branchId: string; branchName: string; count: number; collected: number }>> {
     const params: any[] = [];
-    let where = `pe.status = 'collecting'`;
+    let where = `pe.status = 'collecting' AND b.is_active = true`;
     if (dateFilter?.startDate) { params.push(dateFilter.startDate); where += ` AND pep.paid_date >= $${params.length}`; }
     if (dateFilter?.endDate)   { params.push(dateFilter.endDate);   where += ` AND pep.paid_date <= $${params.length}`; }
     const res = await db.query(

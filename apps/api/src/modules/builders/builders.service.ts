@@ -643,7 +643,7 @@ export const BuildersService = {
     dateFilter?: { startDate?: string; endDate?: string }
   ): Promise<Array<{ branchId: string; branchName: string; count: number; collected: number; commission: number }>> {
     const memParams: any[] = [];
-    let memWhere = '1=1';
+    let memWhere = 'b.is_active = true';
     let memIdx = 1;
     // Filter by business date (lump_sum_date) so backdated plans count in their real period
     if (dateFilter?.startDate) { memWhere += ` AND p.lump_sum_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }

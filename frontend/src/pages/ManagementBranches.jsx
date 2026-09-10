@@ -4,13 +4,14 @@
 // Route: /branches (when role === 'management')
 import { useState } from 'react';
 import { Building2, Plus, Loader2, Settings2 } from 'lucide-react';
-import { useGetBranchesQuery } from '../store/api/apiSlice';
+import { useGetAllBranchesQuery } from '../store/api/apiSlice';
 import { BranchCard }          from '../components/branches/BranchCard';
 import { BranchFormModal }     from '../components/branches/BranchFormModal';
 import { BranchLocationModal } from '../components/branches/BranchLocationModal';
 
 export const ManagementBranches = () => {
-  const { data: branches = [], isLoading } = useGetBranchesQuery();
+  // Use getAllBranches to show inactive (soft-deleted) branches with a reactivate option
+  const { data: branches = [], isLoading } = useGetAllBranchesQuery();
 
   // formModal: null = closed, or a branch object for editing, or {} for creating
   const [formModal,     setFormModal]     = useState(null);
@@ -61,24 +62,29 @@ export const ManagementBranches = () => {
 
       {/* ── Summary strip ───────────────────────────────────── */}
       {!isLoading && branches.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
-          {/* Total branches */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          {/* Active branches */}
           <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Branches</p>
-            <p className="text-2xl font-bold text-navy">{branches.length}</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Active</p>
+            <p className="text-2xl font-bold text-navy">{branches.filter(b => b.is_active).length}</p>
           </div>
-          {/* Branches with geofence */}
+          {/* Inactive branches */}
+          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Inactive</p>
+            <p className="text-2xl font-bold text-red-400">{branches.filter(b => !b.is_active).length}</p>
+          </div>
+          {/* Branches with geofence (active only — inactive don't take check-ins) */}
           <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Geofenced</p>
             <p className="text-2xl font-bold text-emerald-600">
-              {branches.filter(b => b.latitude != null).length}
+              {branches.filter(b => b.is_active && b.latitude != null).length}
             </p>
           </div>
           {/* Branches without geofence */}
-          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border col-span-2 sm:col-span-1">
+          <div className="bg-white rounded-2xl px-5 py-4 card-shadow border border-border">
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30 mb-1">Unrestricted</p>
             <p className="text-2xl font-bold text-navy/40">
-              {branches.filter(b => b.latitude == null).length}
+              {branches.filter(b => b.is_active && b.latitude == null).length}
             </p>
           </div>
         </div>

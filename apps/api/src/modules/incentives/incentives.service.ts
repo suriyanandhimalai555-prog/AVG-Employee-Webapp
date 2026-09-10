@@ -514,6 +514,8 @@ export const IncentiveService = {
       LEFT JOIN users u  ON u.branch_id = b.id AND u.role != 'client'
       LEFT JOIN employee_incentives i
              ON i.user_id = u.id ${periodWhere}
+      -- Only include active branches so deactivated branches stop counting in the rollup
+      WHERE b.is_active = true
       GROUP BY b.id, b.name
       ORDER BY total DESC, b.name
     `, params);

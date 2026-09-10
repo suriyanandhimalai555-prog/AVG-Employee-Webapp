@@ -179,7 +179,7 @@ export async function getDailyCollection(
       COALESCE(SUM(p.cash + p.bank + p.gpay) FILTER (WHERE p.pdate = $1::date),  0)         AS today,
       COALESCE(SUM(p.cash + p.bank + p.gpay), 0)                                            AS total
     FROM payments p
-    JOIN branches b ON b.id = p.branch_id
+    JOIN branches b ON b.id = p.branch_id AND b.is_active = true
     ${branchFilter}
     GROUP BY p.branch_id, b.name
     ORDER BY b.name ASC

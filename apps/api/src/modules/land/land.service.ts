@@ -85,7 +85,7 @@ export const LandService: SchemeService = {
     dateFilter?: SchemeDateFilter
   ): Promise<SchemeBranchTotals[]> {
     const params: any[] = [];
-    let where = '1=1';
+    let where = 'b.is_active = true';
     let idx = 1;
     if (dateFilter?.startDate) { where += ` AND bk.booking_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND bk.booking_date <= $${idx++}::date`; params.push(dateFilter.endDate); }

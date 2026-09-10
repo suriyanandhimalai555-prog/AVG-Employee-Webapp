@@ -11,16 +11,29 @@ import type { UpdateBranchLocationInput } from './branch.schema';
 // setting the new one never leave the DB with zero or two head branches.
 import { runInTransaction } from '../../shared/transaction-helper';
 
-const BRANCHES_CACHE_KEY = 'cache:branches:all';
-const BRANCHES_CACHE_TTL = 600; // 10 minutes — branches change rarely
+const BRANCHES_CACHE_KEY          = 'cache:branches:all';
+const BRANCHES_ALL_CACHE_KEY      = 'cache:branches:all:withInactive'; // includes inactive — MD/Management only
+const BRANCHES_CACHE_TTL          = 600; // 10 minutes — branches change rarely
+
+// TS: bust both list-cache variants atomically so any mutation is immediately visible
+// to both the shared active-only query and the MD/Management all-branches query.
+async function bustBranchListCaches(redis: Redis, branchId?: string): Promise<void> {
+  const keys = [BRANCHES_CACHE_KEY, BRANCHES_ALL_CACHE_KEY];
+  if (branchId) keys.push(`cache:branch:${branchId}`);
+  await Promise.all(keys.map(k => redis.del(k)));
+}
 
 export const BranchService = {
 
   // ─── LIST ALL BRANCHES ───
   // Cached aggressively: 1500 users hitting this on login would destroy DB without cache.
-  async listBranches(db: Pool, redis: Redis): Promise<any[]> {
-    // Check Redis cache first
-    const cached = await redis.get(BRANCHES_CACHE_KEY);
+  // includeInactive=true is for MD/Management branch management pages only — all other
+  // callers (BranchPicker, dropdowns) use the default active-only path.
+  async listBranches(db: Pool, redis: Redis, includeInactive = false): Promise<any[]> {
+    // TS: use a separate cache key for the all-branches variant so the active-only
+    // cache (used by 9 other consumers) stays untouched.
+    const cacheKey = includeInactive ? BRANCHES_ALL_CACHE_KEY : BRANCHES_CACHE_KEY;
+    const cached = await redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
     }
@@ -34,14 +47,14 @@ export const BranchService = {
        FROM branches b
        LEFT JOIN users u_gm    ON b.gm_id    = u_gm.id
        LEFT JOIN users u_admin ON b.admin_id = u_admin.id
-       WHERE b.is_active = true
-       ORDER BY b.name ASC`
+       ${includeInactive ? '' : 'WHERE b.is_active = true'}
+       ORDER BY b.is_active DESC, b.name ASC`
     );
 
     const branches = result.rows;
 
-    // Cache result
-    await redis.setex(BRANCHES_CACHE_KEY, BRANCHES_CACHE_TTL, JSON.stringify(branches));
+    // Cache result under the appropriate key
+    await redis.setex(cacheKey, BRANCHES_CACHE_TTL, JSON.stringify(branches));
 
     return branches;
   },
@@ -118,8 +131,8 @@ export const BranchService = {
 
     const branch = result.rows[0];
 
-    // Bust both the list cache and the individual cache
-    await redis.del(BRANCHES_CACHE_KEY);
+    // Bust both list caches so both MD/Mgmt page and dropdowns refresh
+    await bustBranchListCaches(redis);
 
     return branch;
   },
@@ -143,10 +156,8 @@ export const BranchService = {
 
     if (result.rows.length === 0) throw new NotFoundError('Branch not found');
 
-    await Promise.all([
-      redis.del(BRANCHES_CACHE_KEY),
-      redis.del(`cache:branch:${branchId}`),
-    ]);
+    // Bust both list caches + the individual branch cache
+    await bustBranchListCaches(redis, branchId);
   },
 
   // ─── UPDATE BRANCH (MD only) ───
@@ -186,11 +197,8 @@ export const BranchService = {
 
     if (result.rows.length === 0) throw new NotFoundError('Branch not found');
 
-    // Bust caches
-    await Promise.all([
-      redis.del(BRANCHES_CACHE_KEY),
-      redis.del(`cache:branch:${branchId}`),
-    ]);
+    // Bust both list caches + the individual branch cache
+    await bustBranchListCaches(redis, branchId);
 
     return result.rows[0];
   },
@@ -223,11 +231,9 @@ export const BranchService = {
 
     if (result.rows.length === 0) throw new NotFoundError('Branch not found');
 
-    // Bust branch list/detail caches AND the attendance geofence cache so the next
-    // office check-in picks up the new coordinates without waiting for the 10-min TTL.
+    // Bust both list caches, the individual branch detail cache, and the geofence cache
     await Promise.all([
-      redis.del(BRANCHES_CACHE_KEY),
-      redis.del(`cache:branch:${branchId}`),
+      bustBranchListCaches(redis, branchId),
       redis.del(`geo:${branchId}`),
     ]);
 
@@ -259,8 +265,8 @@ export const BranchService = {
       return result.rows[0];
     });
 
-    // Bust the branches list cache so the next GET /branches reflects the change
-    await redis.del(BRANCHES_CACHE_KEY);
+    // Bust both list caches so the next GET /branches reflects the change
+    await bustBranchListCaches(redis);
     return branch;
   },
 };

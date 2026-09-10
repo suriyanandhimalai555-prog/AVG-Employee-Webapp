@@ -611,6 +611,7 @@ export const GoldService = {
        FROM gold_scheme_members m
        JOIN branches b ON m.branch_id = b.id
        LEFT JOIN gold_scheme_payments p ON p.member_id = m.id
+       WHERE b.is_active = true
        GROUP BY m.branch_id, b.name
        ORDER BY b.name ASC`,
       memParams

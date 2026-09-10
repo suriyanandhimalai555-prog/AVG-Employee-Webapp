@@ -425,7 +425,7 @@ export const TradingAcademyService = {
     const projectId = await TradingAcademyService.getProjectId(db);
 
     const memParams: any[] = [projectId];
-    let memWhere = 't.project_id = $1';
+    let memWhere = 't.project_id = $1 AND b.is_active = true';
     let memIdx = 2;
     if (dateFilter?.startDate) { memWhere += ` AND t.enrollment_date >= $${memIdx++}::date`; memParams.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { memWhere += ` AND t.enrollment_date <= $${memIdx++}::date`; memParams.push(dateFilter.endDate); }

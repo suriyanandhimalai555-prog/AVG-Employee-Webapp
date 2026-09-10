@@ -116,7 +116,7 @@ export const LSSService = {
          COALESCE(SUM(s.amount_paid) FILTER (WHERE s.status <> 'refunded'), 0) AS collected
        FROM lss_slots s
        JOIN branches b ON s.branch_id = b.id
-       WHERE 1=1${slotDate}
+       WHERE b.is_active = true${slotDate}
        GROUP BY s.branch_id, b.name
        ORDER BY b.name ASC`,
       slotParams

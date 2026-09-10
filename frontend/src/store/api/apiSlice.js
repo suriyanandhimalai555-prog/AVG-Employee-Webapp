@@ -282,6 +282,15 @@ export const apiSlice = createApi({
       keepUnusedDataFor: 600,
     }),
 
+    // MD/Management branch-management pages only: includes inactive (soft-deleted) branches
+    // so they are visible and can be reactivated. All other consumers use getBranches.
+    getAllBranches: builder.query({
+      query: () => '/branches?includeInactive=true',
+      transformResponse: (response) => response.data,
+      providesTags: ['Branches'],
+      keepUnusedDataFor: 600,
+    }),
+
     createBranch: builder.mutation({
       query: (data) => ({ url: '/branches', method: 'POST', body: data }),
       transformResponse: (response) => response.data,
@@ -2296,6 +2305,7 @@ export const {
   useGetUploadUrlMutation,
   useGetPhotoUrlQuery,
   useGetBranchesQuery,
+  useGetAllBranchesQuery,
   useCreateBranchMutation,
   useUpdateBranchMutation,
   useDeleteBranchMutation,

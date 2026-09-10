@@ -256,6 +256,14 @@ export const MoneyService = {
       whereClause += ` AND (m.user_id = $${paramIndex} OR m.assigned_verifier_id = $${paramIndex})`;
       params.push(requesterId);
       paramIndex++;
+    } else {
+      // MD sees all, but only collections attributed to active branches.
+      // COALESCE resolves the effective branch — MD direct entries carry override_branch_id.
+      whereClause += ` AND EXISTS (
+        SELECT 1 FROM branches b
+        WHERE b.id = COALESCE(m.override_branch_id, u.branch_id)
+          AND b.is_active = true
+      )`;
     }
 
     if (query.projectId) {
@@ -492,9 +500,11 @@ export const MoneyService = {
     // Null means all branches (MD); array means scoped branches
     const scopedBranchIds = await this._resolveScopedBranchIds(db, userId, role, branchId);
 
-    // Build a reusable WHERE clause fragment for scoping by submitter's branch
+    // Build a reusable WHERE clause fragment — scope by effective branch so MD direct
+    // entries (u.branch_id = NULL, override_branch_id set) are never dropped.
+    // Inactive branches are excluded via the JOIN condition on branches below.
     const branchFilter = scopedBranchIds !== null
-      ? `AND u.branch_id = ANY($1::uuid[])`
+      ? `AND b.id = ANY($1::uuid[])`
       : '';
     const branchParams: any[] = scopedBranchIds !== null ? [scopedBranchIds] : [];
 
@@ -502,6 +512,10 @@ export const MoneyService = {
     //    Exclude cash_transfer — it is internal movement of money already counted
     //    when the original cash entry was submitted. Counting it again would double
     //    the same funds every time someone passes cash up the chain.
+    //    Use the effective-branch subquery (COALESCE of override_branch_id / u.branch_id)
+    //    and INNER JOIN branches so deactivated branches are excluded. This also makes
+    //    totals.collected equal SUM(byBranch[].collected) — previously there was a latent
+    //    inconsistency because byBranch already used effective-branch attribution.
     const totalsResult = await db.query(`
       SELECT
         COALESCE(SUM(CASE WHEN mc.status != 'rejected' AND mc.mode != 'cash_transfer' THEN mc.amount ELSE 0 END), 0) AS collected,
@@ -511,8 +525,12 @@ export const MoneyService = {
         COALESCE(SUM(CASE WHEN mc.mode = 'gpay'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS gpay,
         COALESCE(SUM(CASE WHEN mc.mode = 'bank_receipt' AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS bank_receipt,
         COALESCE(SUM(CASE WHEN mc.mode = 'cash'         AND mc.status != 'rejected'   THEN mc.amount ELSE 0 END), 0) AS cash
-      FROM money_collections mc
-      JOIN users u ON mc.user_id = u.id
+      FROM (
+        SELECT COALESCE(mc.override_branch_id, u.branch_id) AS effective_branch_id, mc.*
+        FROM money_collections mc
+        JOIN users u ON mc.user_id = u.id
+      ) mc
+      JOIN branches b ON b.id = mc.effective_branch_id AND b.is_active = true
       WHERE 1=1 ${branchFilter}
     `, branchParams);
 
@@ -528,20 +546,27 @@ export const MoneyService = {
       },
     };
 
-    // 2. Cash on hand total (MD-only)
+    // 2. Cash on hand total (MD-only).
+    //    Key on the *holder's* branch (assigned_verifier_id) — cash held by someone
+    //    in a deactivated branch is excluded (LEFT JOIN + is_active IS NOT FALSE keeps
+    //    NULL-branch holders such as the MD account itself).
     let cashOnHand: number | undefined;
     if (isMd) {
       const cohResult = await db.query(`
-        SELECT COALESCE(SUM(amount), 0) AS cash_on_hand
-        FROM money_collections
-        WHERE status = 'approved'
-          AND is_forwarded = false
-          AND mode IN ('cash', 'cash_transfer')
+        SELECT COALESCE(SUM(mc.amount), 0) AS cash_on_hand
+        FROM money_collections mc
+        JOIN users holder ON mc.assigned_verifier_id = holder.id
+        LEFT JOIN branches b ON b.id = holder.branch_id
+        WHERE mc.status = 'approved'
+          AND mc.is_forwarded = false
+          AND mc.mode IN ('cash', 'cash_transfer')
+          AND b.is_active IS NOT FALSE
       `);
       cashOnHand = parseFloat(cohResult.rows[0].cash_on_hand);
     }
 
-    // 3. Stuck cash list (MD-only) — approved cash held longer than stuckDays
+    // 3. Stuck cash list (MD-only) — approved cash held longer than stuckDays.
+    //    Exclude holders in deactivated branches; keep NULL-branch (MD) holders.
     let stuckCash: any[] | undefined;
     if (isMd) {
       const stuckResult = await db.query(`
@@ -558,6 +583,7 @@ export const MoneyService = {
           AND mc.is_forwarded = false
           AND mc.mode IN ('cash', 'cash_transfer')
           AND mc.verified_at < NOW() - ($1 || ' days')::interval
+          AND b.is_active IS NOT FALSE
         ORDER BY mc.verified_at ASC
         LIMIT 20
       `, [stuckDays]);
@@ -584,7 +610,8 @@ export const MoneyService = {
         FROM money_collections mc
         JOIN users u ON mc.user_id = u.id
       ) mc ON mc.effective_branch_id = b.id
-      WHERE 1=1 ${scopedBranchIds !== null ? 'AND b.id = ANY($1::uuid[])' : ''}
+      -- Exclude deactivated branches so they no longer count in the per-branch list
+      WHERE b.is_active = true ${scopedBranchIds !== null ? 'AND b.id = ANY($1::uuid[])' : ''}
       GROUP BY b.id, b.name
       ORDER BY verified DESC NULLS LAST
     `, branchParams);
@@ -605,13 +632,16 @@ export const MoneyService = {
 
     // 5. Cash on hand per branch (MD-only) — keyed by holder's branch
     if (isMd) {
+      // Exclude holders in deactivated branches; NULL-branch (MD) holders kept via IS NOT FALSE
       const cohBranchResult = await db.query(`
         SELECT holder.branch_id, COALESCE(SUM(mc.amount), 0) AS cash_on_hand
         FROM money_collections mc
         JOIN users holder ON mc.assigned_verifier_id = holder.id
+        LEFT JOIN branches b ON b.id = holder.branch_id
         WHERE mc.status = 'approved'
           AND mc.is_forwarded = false
           AND mc.mode IN ('cash', 'cash_transfer')
+          AND b.is_active IS NOT FALSE
         GROUP BY holder.branch_id
       `);
       const cohMap: Record<string, number> = {};
@@ -621,7 +651,8 @@ export const MoneyService = {
       byBranch = byBranch.map(b => ({ ...b, cashOnHand: cohMap[b.branchId] ?? 0 }));
     }
 
-    // 6. Org-wide cash holders list (MD-only) — everyone currently holding cash
+    // 6. Org-wide cash holders list (MD-only) — everyone currently holding cash.
+    //    Exclude holders in deactivated branches; NULL-branch (MD) holders kept via IS NOT FALSE.
     let holders: any[] | undefined;
     if (isMd) {
       const holdersResult = await db.query(`
@@ -635,6 +666,7 @@ export const MoneyService = {
         WHERE mc.status = 'approved'
           AND mc.is_forwarded = false
           AND mc.mode IN ('cash', 'cash_transfer')
+          AND b.is_active IS NOT FALSE
         GROUP BY u.id, u.name, u.role, b.name
         ORDER BY amount_held DESC
       `);
@@ -821,6 +853,8 @@ export const MoneyService = {
         JOIN users u ON mc.user_id = u.id
         WHERE 1=1 ${dateFilter}
       ) mc ON mc.effective_branch_id = b.id
+      -- Deactivated branches are excluded from rankings
+      WHERE b.is_active = true
       GROUP BY b.id, b.name
       ORDER BY total_collection DESC
     `, params);

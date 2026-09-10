@@ -12,14 +12,22 @@ type AuthenticatedRequest = FastifyRequest & {
 
 export default async function branchRoutes(fastify: FastifyInstance) {
 
-  // ─── GET /api/branches ───
-  // Open to all authenticated users — needed for dropdowns
-  // Aggressively cached in Redis to handle 1500 concurrent users on login
+  // ─── GET /api/branches[?includeInactive=true] ───
+  // Open to all authenticated users — needed for dropdowns (active-only by default).
+  // ?includeInactive=true is honoured only for MD and Management so they can see and
+  // restore soft-deleted branches on the branch-management page. All other callers
+  // (BranchPicker, dropdowns, etc.) always get the active-only list.
+  // Aggressively cached in Redis (separate keys per variant) to handle 1500 concurrent users.
   fastify.get('/', {
     onRequest: [fastify.authenticate],
-  }, async (_request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const branches = await BranchService.listBranches(fastify.db, fastify.redis);
+      const req = request as AuthenticatedRequest;
+      // TS: only MD/Management may request the include-inactive variant
+      const canSeeInactive = req.user.role === Role.MD || req.user.role === Role.MANAGEMENT;
+      const { includeInactive } = req.query as { includeInactive?: string };
+      const withInactive = canSeeInactive && includeInactive === 'true';
+      const branches = await BranchService.listBranches(fastify.db, fastify.redis, withInactive);
       return reply.send({ success: true, data: branches });
     } catch (error) {
       return handleError(error, reply);
