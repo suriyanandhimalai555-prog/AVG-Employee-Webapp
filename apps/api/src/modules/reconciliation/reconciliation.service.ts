@@ -256,9 +256,9 @@ export const ReconciliationService = {
     db: Pool,
     businessDate: string
   ): Promise<BranchOverview[]> {
-    // Load all branches.
+    // Load all active branches (deactivated branches excluded, matching MD totals pattern).
     const branchRes = await db.query<{ id: string; name: string }>(
-      `SELECT id, name FROM branches ORDER BY name ASC`
+      `SELECT id, name FROM branches WHERE is_active = true ORDER BY name ASC`
     );
 
     // Load all summaries submitted for this date.

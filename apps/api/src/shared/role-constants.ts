@@ -79,6 +79,10 @@ export const USER_DIRECTORY_ROLES: readonly RoleValue[] = [
   Role.MD, Role.MANAGEMENT, Role.DIRECTOR, Role.GM, Role.BRANCH_ADMIN,
 ];
 
+// Roles that never carry a branch_id — their branch access comes entirely from
+// user_oversight_branches. Used to carve out branch-scoping in manager validation.
+export const BRANCHLESS_ROLES: readonly RoleValue[] = [Role.DIRECTOR, Role.GM];
+
 // Roles that may EXECUTE a transfer/promotion directly (single-step, no approval flow).
 // Management-only: they own org-structure changes. MD is view-only and is excluded.
 export const TRANSFER_MANAGE_ROLES: readonly RoleValue[] = [

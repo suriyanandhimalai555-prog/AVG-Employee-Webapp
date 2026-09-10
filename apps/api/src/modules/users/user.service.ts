@@ -10,7 +10,7 @@ import { bustHierarchyCache } from '../../shared/hierarchy';
 import { getHierarchyVisibleUserIds } from '../../shared/hierarchy-visibility';
 import { resolveAndValidateManagerId, assertReplacementManagerRole } from '../../shared/hierarchy-policy';
 import { generateUploadUrl, generateDownloadUrl } from '../../config/s3';
-import { Role, TRANSFER_MANAGE_ROLES, TRANSFER_TARGET_ROLES, USER_RENAME_ROLES } from '../../shared/role-constants';
+import { Role, TRANSFER_MANAGE_ROLES, TRANSFER_TARGET_ROLES, USER_RENAME_ROLES, BRANCHLESS_ROLES } from '../../shared/role-constants';
 import { runInTransaction } from '../../shared/transaction-helper';
 
 export interface UserDocument {
@@ -82,8 +82,9 @@ export const UserService = {
     const passwordHash = await bcrypt.hash(payload.password, saltRounds);
 
     // Director and GM never have a branch_id — their branch access comes entirely from
-    // user_oversight_branches. Nullify here regardless of what the caller sent.
-    if (payload.role === 'director' || payload.role === 'gm') {
+    // user_oversight_branches. Use the shared BRANCHLESS_ROLES set and nullify regardless
+    // of what the caller sent.
+    if ((BRANCHLESS_ROLES as readonly string[]).includes(payload.role)) {
       payload.branchId = null;
     }
 
@@ -638,10 +639,16 @@ export const UserService = {
       if (targetRes.rows.length === 0) throw new NotFoundError('Target user not found or inactive');
       const target = targetRes.rows[0];
 
+      // Director and GM are branchless — force branch to null so resolveAndValidateManagerId
+      // does not apply branch-scoping when looking up their manager (mirrors createUser:84-88).
+      const isBranchless = (BRANCHLESS_ROLES as readonly string[]).includes(payload.newRole);
+      // TS: computed once and reused for validation, the UPDATE, and the audit row
+      const effectiveNewBranchId = isBranchless ? null : (payload.newBranchId ?? target.branch_id);
+
       // Validate the proposed destination (role + branch + manager hierarchy rules)
       await resolveAndValidateManagerId(db, { id: actorId, role: actorRole }, {
         role:      payload.newRole,
-        branchId:  payload.newBranchId ?? target.branch_id,
+        branchId:  effectiveNewBranchId,
         managerId: payload.newManagerId ?? null,
       });
 
@@ -712,11 +719,10 @@ export const UserService = {
         reparentedIds.push(...reparentRes.rows.map((r: { id: string }) => r.id));
       }
 
-      // Apply the position change to the target user
-      const newBranchId = payload.newBranchId ?? target.branch_id;
+      // Apply the position change to the target user; branchless roles always get NULL branch_id
       await client.query(
         `UPDATE users SET role = $1, branch_id = $2, manager_id = $3 WHERE id = $4`,
-        [payload.newRole, newBranchId, payload.newManagerId ?? null, target.id]
+        [payload.newRole, effectiveNewBranchId, payload.newManagerId ?? null, target.id]
       );
 
       // If the target was a GM/Director, clear their oversight branch assignments
@@ -742,7 +748,7 @@ export const UserService = {
           target.id,
           payload.kind,
           payload.newRole,
-          payload.newBranchId ?? null,
+          effectiveNewBranchId,
           payload.newManagerId ?? null,
           payload.replacementManagerId ?? null,
           payload.reason ?? null,
@@ -769,7 +775,7 @@ export const UserService = {
         previousRole: target.role,
         previousBranchId: target.branch_id,
         newRole: payload.newRole,
-        newBranchId,
+        newBranchId: effectiveNewBranchId,
         reparentedReports: reparentedIds.length,
         oversightCleared: [Role.GM, Role.DIRECTOR].includes(target.role as typeof Role.GM),
       };

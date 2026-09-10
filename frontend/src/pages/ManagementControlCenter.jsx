@@ -546,8 +546,13 @@ const TransfersTab = () => {
   // to managers that will actually pass the resolveAndValidateManagerId branch check,
   // eliminating the "does not oversee this branch" error at submit time.
   const managerRoles = MANAGER_ROLE_MAP[form.newRole] ?? [];
-  // Effective branch = chosen target branch (transfer) or the employee's current branch (promotion).
-  const effectiveManagerBranchId = form.newBranchId || selectedUser?.branchId || undefined;
+  // Director and GM are branchless — their managers (MD / Director) also have no branch_id
+  // and are never found by branch-scoping. Pass undefined so the query returns all candidates
+  // of the required role. Other roles keep branch-scoping to enforce oversight validation.
+  const BRANCHLESS_TARGET_ROLES = new Set(['gm', 'director']);
+  const effectiveManagerBranchId = BRANCHLESS_TARGET_ROLES.has(form.newRole)
+    ? undefined
+    : (form.newBranchId || selectedUser?.branchId || undefined);
   const { data: newManagerCandidates = [] } = useGetManagerOptionsQuery(
     { roles: managerRoles, branchId: effectiveManagerBranchId },
     { skip: !form.newRole || managerRoles.length === 0 }
