@@ -406,6 +406,14 @@ export const UserService = {
       paramIndex++;
     }
 
+    // Explicit branch filter — callers (e.g. the transfer replacement-manager picker)
+    // pass ?branchId to scope the list to one branch. Applied on top of requester
+    // scoping below so it also narrows what MD/management see.
+    if (queryParams.branchId) {
+      conditions.push(`u.branch_id = $${paramIndex++}`);
+      params.push(queryParams.branchId);
+    }
+
     if (requesterRole === Role.MD || requesterRole === Role.MANAGEMENT) {
       // MD and management see everyone — management sits outside the manager_id
       // tree, so hierarchy scoping would return nothing for it.

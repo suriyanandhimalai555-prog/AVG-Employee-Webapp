@@ -26,12 +26,15 @@ BEGIN
   END IF;
 END $$;
 
+-- NOTE: Postgres does NOT support `ADD CONSTRAINT IF NOT EXISTS` (syntax error 42601).
+-- The DO block above already dropped these constraints IF EXISTS, so a plain ADD is safe
+-- and re-runnable.
 ALTER TABLE land_audit_log
-  ADD CONSTRAINT IF NOT EXISTS land_audit_log_entity_check
+  ADD CONSTRAINT land_audit_log_entity_check
   CHECK (entity IN ('site', 'layout', 'plot', 'customer', 'booking', 'payout'));
 
 ALTER TABLE land_audit_log
-  ADD CONSTRAINT IF NOT EXISTS land_audit_log_action_check
+  ADD CONSTRAINT land_audit_log_action_check
   CHECK (action IN (
     'create', 'update', 'cancel', 'delete',
     'advance_payment', 'full_payment',

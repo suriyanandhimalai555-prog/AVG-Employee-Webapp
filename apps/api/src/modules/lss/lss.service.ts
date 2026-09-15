@@ -73,7 +73,12 @@ export const LSSService = {
     );
 
     const commParams: any[] = [SCHEME_CODE, ...branchParams];
-    let commWhere = `ei.source_type='scheme' AND ei.scheme_code=$1 AND ${branchFilter.replace('s.branch_id', 's2.branch_id')}`;
+    // SCHEME_CODE occupies $1, so shift branchFilter's own placeholders up by one
+    // (mirrors gold-coin.service.ts:91-96). Without this, s2.branch_id = $1 compares uuid = text.
+    const commBranchFilter = branchFilter
+      .replace('s.branch_id', 's2.branch_id')
+      .replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`);
+    let commWhere = `ei.source_type='scheme' AND ei.scheme_code=$1 AND ${commBranchFilter}`;
     let cIdx = branchParams.length + 2;
     if (scopedToUserId) { commWhere += ` AND ei.user_id=$${cIdx++}`; commParams.push(scopedToUserId); }
     if (dateFilter?.startDate) { commWhere += ` AND ei.created_at >= $${cIdx++}::date`; commParams.push(dateFilter.startDate); }

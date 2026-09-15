@@ -70,11 +70,17 @@ export const COMMISSION_ROLE_ORDER = [
   'branch_admin', 'referrer_new', 'referrer_renewal',
 ];
 
-// Abbreviated labels used in Trading Academy member cards
+// Abbreviated labels used in Trading Academy member cards and enrolled-by dropdown
 export const TRADING_ROLE_LABELS = {
   sales_officer:  'SO',
   abm:            'ABM',
   branch_manager: 'BM',
+  branch_admin:   'Admin',
+  oa:             'OA',
+  gm:             'GM',
+  director:       'Director',
+  md:             'MD',
+  management:     'Mgmt',
 };
 
 // ─── Referrer roles ───────────────────────────────────────────────────────────

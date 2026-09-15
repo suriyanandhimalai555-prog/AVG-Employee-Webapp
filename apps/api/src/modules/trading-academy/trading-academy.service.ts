@@ -229,7 +229,7 @@ export const TradingAcademyService = {
       `SELECT DISTINCT u.id, u.name, u.role FROM users u
        WHERE u.is_active = true
          AND (
-           (u.branch_id = $1 AND u.role IN ('sales_officer', 'abm', 'branch_manager'))
+           (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
            OR (u.role IN ('gm', 'director')
                AND EXISTS (SELECT 1 FROM user_oversight_branches uob
                            WHERE uob.user_id = u.id AND uob.branch_id = $1))
