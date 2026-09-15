@@ -48,21 +48,25 @@ export const MdDailyCollectionPage = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
 
+  // Branch admins always see their own branch; elevated roles start with all branches.
+  const isBranchAdmin = user?.role === 'branch_admin';
+
   const [date, setDate]           = useState(getIstToday);
-  const [branchFilter, setBranch] = useState('');   // '' = all branches
+  // Initialise to own branch for branch_admin so the per-scheme view is shown immediately.
+  const [branchFilter, setBranch] = useState(() => isBranchAdmin ? (user?.branchId ?? '') : '');
 
-  // All-branch summary (always fetched for the summary view).
+  // All-branch summary — skip for branch_admin (endpoint is gated to elevated roles only).
   const { data: summaryData, isLoading: isSummaryLoading, isFetching: isSummaryFetching } =
-    useGetSchemeDailyCollectionQuery({ date });
+    useGetSchemeDailyCollectionQuery({ date }, { skip: isBranchAdmin });
 
-  // Per-scheme breakdown — only fetched when a branch is selected.
+  // Per-scheme breakdown — only fetched when a branch is selected (always true for branch_admin).
   const { data: schemeData, isLoading: isSchemeLoading, isFetching: isSchemeFetching } =
     useGetSchemeDailyCollectionBySchemeQuery(
       { date, branchId: branchFilter },
       { skip: !branchFilter },
     );
 
-  // Branch list for the filter dropdown.
+  // Branch list for the filter dropdown — only needed for elevated roles.
   const { data: allBranches = [] } = useGetBranchesQuery();
 
   const summaryRows    = summaryData?.rows ?? [];
@@ -104,8 +108,8 @@ export const MdDailyCollectionPage = () => {
   const isLoading        = isBranchSelected ? isSchemeLoading : isSummaryLoading;
   const isFetching       = isBranchSelected ? isSchemeFetching : isSummaryFetching;
 
-  // Only MD / director / management can reach this page.
-  if (!['md', 'director', 'management'].includes(user?.role)) {
+  // MD, director, management, and branch_admin can reach this page.
+  if (!['md', 'director', 'management', 'branch_admin'].includes(user?.role)) {
     return <div className="p-8 text-center text-navy/40 text-sm">Access denied.</div>;
   }
 
@@ -159,20 +163,29 @@ export const MdDailyCollectionPage = () => {
             />
           </div>
 
-          {/* Branch */}
-          <div className="flex items-center gap-2 bg-navy/5 rounded-xl px-3 py-2">
-            <Building2 size={14} className="text-navy/40 shrink-0" />
-            <select
-              value={branchFilter}
-              onChange={e => setBranch(e.target.value)}
-              className="bg-transparent text-[13px] font-semibold text-navy outline-none cursor-pointer pr-2"
-            >
-              <option value="">All Branches</option>
-              {allBranches.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          </div>
+          {/* Branch — branch_admin sees their own branch label; elevated roles get the picker */}
+          {isBranchAdmin ? (
+            branchName && (
+              <div className="flex items-center gap-2 bg-navy/5 rounded-xl px-3 py-2">
+                <Building2 size={14} className="text-navy/40 shrink-0" />
+                <span className="text-[13px] font-semibold text-navy">{branchName}</span>
+              </div>
+            )
+          ) : (
+            <div className="flex items-center gap-2 bg-navy/5 rounded-xl px-3 py-2">
+              <Building2 size={14} className="text-navy/40 shrink-0" />
+              <select
+                value={branchFilter}
+                onChange={e => setBranch(e.target.value)}
+                className="bg-transparent text-[13px] font-semibold text-navy outline-none cursor-pointer pr-2"
+              >
+                <option value="">All Branches</option>
+                {allBranches.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Export */}
           <button

@@ -199,21 +199,27 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
   // ─── GET /daily-collection-by-scheme ───────────────────────────────────────
   // Per-scheme breakdown for a single branch — gold/chit split new vs renewal.
   // Query params: date (YYYY-MM-DD, default IST today), branchId (UUID, required).
+  // Branch admins are allowed but their branchId is always forced to their own
+  // branch so they cannot read another branch's data by spoofing the param.
   fastify.get('/daily-collection-by-scheme', { onRequest: [fastify.authenticate] },
     async (request, reply) => {
       try {
         const req = request as AuthenticatedRequest;
-        if (!VIEWER_ROLES.has(req.user.role)) {
+        // Branch admins see their own branch's data; elevated roles can request any branch.
+        const isBranchAdmin = req.user.role === 'branch_admin';
+        if (!VIEWER_ROLES.has(req.user.role) && !isBranchAdmin) {
           throw new ForbiddenError('Access denied');
         }
         const q = DailyCollectionQuerySchema.parse(request.query ?? {});
-        if (!q.branchId) {
+        // Branch admins are locked to their own branch; elevated roles pass branchId through.
+        const branchId = isBranchAdmin ? req.user.branchId : q.branchId;
+        if (!branchId) {
           return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'branchId is required' } });
         }
         const result = await getDailyCollectionByScheme(
           fastify.db,
           q.date,
-          q.branchId,
+          branchId,
         );
         return reply.send({ success: true, data: result });
       } catch (error) { return handleError(error, reply); }

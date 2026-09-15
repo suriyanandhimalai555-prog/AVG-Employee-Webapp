@@ -1,7 +1,7 @@
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Loader2, Clock, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, ChevronRight, BarChart3 } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetMoneyProjectsQuery,
@@ -40,10 +40,31 @@ export const SchemesPage = () => {
     );
   }
 
-  // Gate: branch_admin + toggle on + no summary yet → show mandatory declaration form
+  // Gate: branch_admin + toggle on + no summary yet → show mandatory declaration form.
+  // The Daily Collections button is rendered above the form so it remains accessible.
   // summaryData is null (no summary) or { id, businessDate, lines } (submitted) after transformResponse
   if (isBranchAdmin && enabled && !summaryData) {
-    return <DailyCollectionSummaryForm branchId={user.branchId} />;
+    return (
+      <>
+        <div className="px-6 pt-4 pb-2">
+          <button
+            type="button"
+            onClick={() => navigate('/money/daily-collection')}
+            className="w-full flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl p-4 tactile-press"
+          >
+            <span className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <BarChart3 size={18} className="text-blue-600" aria-hidden="true" />
+            </span>
+            <span className="flex-1 text-left">
+              <span className="block text-sm font-bold text-navy">Daily Collections</span>
+              <span className="block text-[11px] font-medium text-navy/40">Scheme-wise collection for your branch</span>
+            </span>
+            <ChevronRight size={18} className="text-navy/30" aria-hidden="true" />
+          </button>
+        </div>
+        <DailyCollectionSummaryForm branchId={user.branchId} />
+      </>
+    );
   }
 
   // Show the live reconciliation panel only when branch_admin has submitted today's summary
@@ -75,6 +96,26 @@ export const SchemesPage = () => {
         {/* Live reconciliation panel — visible to branch admin once they file today's summary */}
         {showLivePanel && (
           <LiveReconciliationPanel branchId={user.branchId} businessDate={undefined} />
+        )}
+
+        {/* Daily Collections shortcut — branch admin only */}
+        {isBranchAdmin && (
+          <div className="px-6 mb-4">
+            <button
+              type="button"
+              onClick={() => navigate('/money/daily-collection')}
+              className="w-full flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl p-4 tactile-press"
+            >
+              <span className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <BarChart3 size={18} className="text-blue-600" aria-hidden="true" />
+              </span>
+              <span className="flex-1 text-left">
+                <span className="block text-sm font-bold text-navy">Daily Collections</span>
+                <span className="block text-[11px] font-medium text-navy/40">Scheme-wise collection for your branch</span>
+              </span>
+              <ChevronRight size={18} className="text-navy/30" aria-hidden="true" />
+            </button>
+          </div>
         )}
 
         {/* Pending enrollments (deposits awaiting their balance) */}
