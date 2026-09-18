@@ -20,7 +20,7 @@ import {
   ShieldCheck, ChevronRight, ToggleLeft, ToggleRight, ShieldAlert,
   MessageCircle, Smartphone, UserX, RotateCcw, CalendarX, MapPin,
   ArrowUpRight, CheckCircle2, XCircle, AlertCircle,
-  UserPen, ArrowRight, History,
+  UserPen, ArrowRight, History, Calendar, ChevronLeft,
 } from 'lucide-react';
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
@@ -64,7 +64,11 @@ import {
   useGetUsersQuery,
   useRenameUserMutation,
   useGetRenameHistoryQuery,
+  useGetPeriodOverridesQuery,
+  useSetPeriodConfigMutation,
+  useResetPeriodConfigMutation,
 } from '../store/api/apiSlice';
+import { buildPeriod, getNextPeriod, getPrevPeriod, getCurrentPeriod } from '../lib/schemePeriod';
 import { formatCurrency } from '../lib/formatters';
 import { SCHEME_INPUT_CLASS } from '../lib/schemeConstants';
 import { CommissionPanel } from './schemes/components/CommissionPanel';
@@ -83,6 +87,7 @@ const TABS = [
   { key: 'corrections', label: 'Corrections',   Icon: ShieldAlert,  roles: null },
   { key: 'transfers',   label: 'Transfers',      Icon: ArrowUpRight, roles: new Set(['management']) },
   { key: 'rename',      label: 'Rename',         Icon: UserPen,      roles: new Set(['management']) },
+  { key: 'calendar',    label: 'Calendar',       Icon: Calendar,     roles: new Set(['management']) },
   // Branches tab removed — branch management + geofence lives at /branches (ManagementBranches page)
 ];
 
@@ -2237,6 +2242,219 @@ const DeactivatedAccountsSection = () => {
   );
 };
 
+// ─── Business Calendar tab (Management only) ──────────────────────────────────
+// Management can shift a month's start or end by a few days to account for
+// holidays.  The default is the 7-to-6 period; any override is stored in
+// period_overrides and propagated to all period helpers via the bootstrap map.
+const BusinessCalendarTab = () => {
+  const [viewPeriod, setViewPeriod] = useState(getCurrentPeriod);
+  const [startDate, setStartDate]   = useState('');
+  const [endDate,   setEndDate]     = useState('');
+  const [formErr,   setFormErr]     = useState('');
+  const [formOk,    setFormOk]      = useState('');
+
+  const { data: allOverrides = [], isLoading: loadingOverrides } = useGetPeriodOverridesQuery();
+  const [setPeriodConfig,   { isLoading: saving  }] = useSetPeriodConfigMutation();
+  const [resetPeriodConfig, { isLoading: resetting }] = useResetPeriodConfigMutation();
+
+  // Pre-fill the form with the current period's dates.  Runs on navigation AND when
+  // allOverrides changes (e.g. after a save/reset RTK refetch) so the form always
+  // reflects the latest override map via buildPeriod.
+  useEffect(() => {
+    const p = buildPeriod(viewPeriod.periodMonth, viewPeriod.periodYear);
+    setStartDate(p.startDate);
+    setEndDate(p.endDate);
+    setFormErr('');
+    setFormOk('');
+  }, [viewPeriod.periodYear, viewPeriod.periodMonth, allOverrides]);
+
+  // Auto-shifted rows (written as a side-effect of a setPeriod on the previous month)
+  // are not considered "explicitly overridden" — only management-set rows count.
+  const isOverridden = allOverrides.some(
+    (r) => r.periodYear === viewPeriod.periodYear &&
+            r.periodMonth === viewPeriod.periodMonth &&
+            !r.isAutoShifted
+  );
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setFormErr('');
+    setFormOk('');
+    if (!startDate || !endDate) { setFormErr('Both dates are required'); return; }
+    if (startDate > endDate)    { setFormErr('Start must be on or before end'); return; }
+    try {
+      await setPeriodConfig({
+        periodYear:  viewPeriod.periodYear,
+        periodMonth: viewPeriod.periodMonth,
+        startDate,
+        endDate,
+      }).unwrap();
+      setFormOk('Saved — calendar updated.');
+    } catch (err) {
+      setFormErr(err?.data?.error?.message || 'Save failed. Try again.');
+    }
+  };
+
+  const handleReset = async () => {
+    setFormErr('');
+    setFormOk('');
+    try {
+      await resetPeriodConfig({
+        periodYear:  viewPeriod.periodYear,
+        periodMonth: viewPeriod.periodMonth,
+      }).unwrap();
+      setFormOk('Reset to default 7-to-6 dates.');
+      // Form dates update automatically: RTK invalidation → refetch → allOverrides
+      // changes → useEffect above re-runs with the updated schemePeriod override map.
+    } catch (err) {
+      setFormErr(err?.data?.error?.message || 'Reset failed. Try again.');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+
+      {/* Period navigator */}
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-9 h-9 rounded-xl bg-indigo/10 flex items-center justify-center flex-shrink-0">
+            <Calendar size={16} className="text-indigo" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-navy">Business Calendar</p>
+            <p className="text-xs text-navy/40 mt-0.5">
+              Adjust a month's start and end dates. Changing a boundary auto-shifts the neighbouring month.
+            </p>
+          </div>
+        </div>
+
+        {/* Month navigator */}
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setViewPeriod(p => getPrevPeriod(p.periodMonth, p.periodYear))}
+            className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center tactile-press"
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={14} className="text-navy/50" />
+          </button>
+          <div className="text-center">
+            <p className="text-sm font-bold text-navy">{viewPeriod.label}</p>
+            {isOverridden && (
+              <span className="inline-block mt-0.5 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                Custom
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewPeriod(p => getNextPeriod(p.periodMonth, p.periodYear))}
+            className="w-8 h-8 rounded-xl bg-navy/5 flex items-center justify-center tactile-press"
+            aria-label="Next month"
+          >
+            <ChevronRight size={14} className="text-navy/50" />
+          </button>
+        </div>
+
+        {/* Date form */}
+        <form onSubmit={handleSave} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+                Start date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={e => { setStartDate(e.target.value); setFormErr(''); setFormOk(''); }}
+                className="w-full px-3 py-2.5 bg-navy/[0.02] rounded-xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-navy/50 uppercase tracking-widest mb-1">
+                End date
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => { setEndDate(e.target.value); setFormErr(''); setFormOk(''); }}
+                className="w-full px-3 py-2.5 bg-navy/[0.02] rounded-xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
+              />
+            </div>
+          </div>
+
+          {formErr && <p className="text-[11px] font-bold text-red-500">{formErr}</p>}
+          {formOk  && <p className="text-[11px] font-bold text-emerald-600">{formOk}</p>}
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-stone-800 text-white rounded-xl text-xs font-bold tactile-press disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              Save
+            </button>
+            {isOverridden && (
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={resetting}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-navy/5 text-navy/60 rounded-xl text-xs font-bold tactile-press disabled:opacity-50"
+              >
+                {resetting ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                Reset to default
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      {/* List of all current overrides */}
+      <div className="bg-white rounded-2xl p-4 border border-border card-shadow">
+        <p className="text-xs font-bold text-navy/50 uppercase tracking-widest mb-3">
+          Active overrides
+        </p>
+        {loadingOverrides ? (
+          <div className="flex justify-center py-4">
+            <Loader2 size={18} className="animate-spin text-navy/30" />
+          </div>
+        ) : allOverrides.length === 0 ? (
+          <p className="text-xs text-navy/40 text-center py-3">
+            No custom months set — all periods use the default 7-to-6 dates.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {allOverrides.filter(r => !r.isAutoShifted).map((r) => {
+              const p = buildPeriod(r.periodMonth, r.periodYear);
+              return (
+                <div
+                  key={`${r.periodYear}-${r.periodMonth}`}
+                  className="flex items-center justify-between gap-2 px-3 py-2.5 bg-amber-50 rounded-xl border border-amber-100"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-navy truncate">{p.label}</p>
+                    <p className="text-[10px] text-navy/40 mt-0.5">
+                      {p.startDate} → {p.endDate}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setViewPeriod(p)}
+                    className="shrink-0 text-[10px] font-bold text-indigo underline-offset-2 hover:underline"
+                  >
+                    Edit
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ManagementControlCenter = () => {
   const user     = useSelector(selectCurrentUser);
   const navigate = useNavigate();
@@ -2332,6 +2550,7 @@ export const ManagementControlCenter = () => {
         {activeTab === 'land'        && <LandTab navigate={navigate} />}
         {activeTab === 'transfers'   && <TransfersTab />}
         {activeTab === 'rename'      && <RenameTab />}
+        {activeTab === 'calendar'    && <BusinessCalendarTab />}
         {activeTab === 'corrections' && (
           <div className="py-4">
             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3 mb-4">

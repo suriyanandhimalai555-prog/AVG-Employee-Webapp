@@ -10,7 +10,7 @@ import {
   useGetSchemeDailyCollectionBySchemeQuery,
   useGetBranchesQuery,
 } from '../store/api/apiSlice';
-import { formatCurrency } from '../lib/formatters';
+import { formatCurrency, formatDate } from '../lib/formatters';
 import { getISTToday as getIstToday } from '../lib/date';
 
 // Export the multi-branch summary view as CSV.
@@ -142,8 +142,8 @@ export const MdDailyCollectionPage = () => {
             {periodStart && (
               <p className="text-[10px] font-medium text-navy/40 mt-0.5">
                 {isBranchSelected && branchName
-                  ? `Scheme-wise cycle-to-date breakdown for ${branchName}`
-                  : `Per-branch scheme collection — cash / bank / GPay for selected day; total from the ${periodStart.slice(8)}th`}
+                  ? `Scheme-wise cycle-to-date breakdown for ${branchName} · cycle from ${formatDate(periodStart)}`
+                  : `Per-branch scheme collection — cash / bank / GPay for selected day; cycle total from ${formatDate(periodStart)}`}
               </p>
             )}
           </div>
@@ -222,7 +222,9 @@ export const MdDailyCollectionPage = () => {
               <span className="text-sm font-black text-white uppercase tracking-wider">
                 {branchName} Branch
               </span>
-              <span className="text-sm font-bold text-white/80">{date.split('-').reverse().join('/')}</span>
+              <span className="text-sm font-bold text-white/80">
+                {periodStart ? `${formatDate(periodStart)} → ${formatDate(date)}` : formatDate(date)}
+              </span>
             </div>
 
             {schemeRows.length === 0 ? (

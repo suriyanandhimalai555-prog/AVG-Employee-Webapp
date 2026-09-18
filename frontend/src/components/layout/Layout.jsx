@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { motion } from 'framer-motion';
@@ -7,6 +8,8 @@ import { BottomNav } from '../attendance/BottomNav';
 import { PageHeader } from '../attendance/PageHeader';
 import { Sidebar } from './Sidebar';
 import { ScrollManager } from './ScrollManager';
+import { useGetPeriodOverridesQuery } from '../../store/api/apiSlice';
+import { setPeriodOverrides } from '../../lib/schemePeriod';
 
 /**
  * Global authenticated shell.
@@ -20,6 +23,14 @@ import { ScrollManager } from './ScrollManager';
 export const Layout = () => {
   const user = useSelector(selectCurrentUser);
   const location = useLocation();
+
+  // Seed the schemePeriod override map once the authenticated user's session starts.
+  // All scheme/money/salary pages are lazy and mount after this, so the map is ready
+  // before they render.  Default 7-to-6 math is the fallback during the brief fetch.
+  const { data: periodOverrides } = useGetPeriodOverridesQuery();
+  useEffect(() => {
+    if (periodOverrides) setPeriodOverrides(periodOverrides);
+  }, [periodOverrides]);
 
   return (
     <div className="min-h-screen bg-surface md:flex">

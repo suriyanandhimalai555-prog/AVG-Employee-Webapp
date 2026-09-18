@@ -45,7 +45,7 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection', 'BranchIncentives', 'UserRenames'],
+  tagTypes: ['Attendance', 'Summary', 'Employees', 'Branches', 'Transactions', 'Users', 'MoneyProjects', 'MoneyCollections', 'MoneyWallet', 'UserDocuments', 'GoldMembers', 'GoldSummary', 'GoldEmployees', 'GoldPayments', 'Incentives', 'IncentiveWallet', 'CommissionRules', 'Salaries', 'TradingMembers', 'TradingSummary', 'Customers', 'GoldCoinPackages', 'GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'GoldCoinAwaitingCombine', 'LssPlans', 'LssRooms', 'LssRoom', 'LssSummary', 'LssAwaitingCombine', 'SchemesOverview', 'SchemeBranchEntries', 'ChitGroups', 'ChitGroup', 'ChitSummary', 'ChitPayments', 'ChitEligible', 'ChitAwaitingCombine', 'BuildersPlans', 'BuildersPlan', 'BuildersSummary', 'BuildersPackages', 'BuildersPayouts', 'BuildersIncentiveRules', 'ChitPackages', 'LandSites', 'LandSite', 'LandPlots', 'LandCustomers', 'LandBookings', 'LandBooking', 'LandBuyback', 'LandDashboard', 'LandLayouts', 'LandLayout', 'LandCommissionRules', 'LandEmployees', 'LandBookingRefs', 'AppSettings', 'PendingEnrollments', 'DailyReconciliation', 'MobileAppVersion', 'TransferRequests', 'SchemeDailyCollection', 'BranchIncentives', 'UserRenames', 'PeriodOverrides'],
   endpoints: (builder) => ({
 
     // ─── Auth ───
@@ -2282,6 +2282,33 @@ export const apiSlice = createApi({
       transformResponse: (response) => response.data,
       providesTags: ['UserRenames'],
     }),
+
+    // ─── Period config (business-month boundary overrides) ───────────────────
+
+    // GET /period-config — all active override rows; any authenticated user.
+    // Used at bootstrap to seed the schemePeriod.js override map so all period
+    // helpers stay synchronous while reflecting management's custom dates.
+    getPeriodOverrides: builder.query({
+      query: () => '/period-config',
+      transformResponse: (response) => response.data,
+      providesTags: ['PeriodOverrides'],
+    }),
+
+    // PUT /period-config — management sets a custom start/end for one month.
+    // Body: { periodYear, periodMonth (0-indexed), startDate, endDate }
+    setPeriodConfig: builder.mutation({
+      query: (data) => ({ url: '/period-config', method: 'PUT', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['PeriodOverrides'],
+    }),
+
+    // DELETE /period-config — management resets one month to the default 7-to-6 math.
+    // Body: { periodYear, periodMonth (0-indexed) }
+    resetPeriodConfig: builder.mutation({
+      query: (data) => ({ url: '/period-config', method: 'DELETE', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['PeriodOverrides'],
+    }),
   }),
 });
 
@@ -2541,4 +2568,7 @@ export const {
   useGetEmployeeIncentiveDetailQuery,
   useRenameUserMutation,
   useGetRenameHistoryQuery,
+  useGetPeriodOverridesQuery,
+  useSetPeriodConfigMutation,
+  useResetPeriodConfigMutation,
 } = apiSlice;

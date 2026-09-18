@@ -14,7 +14,7 @@
 
 import type { Pool } from 'pg';
 import { getCompanyToday } from '../../shared/date';
-import { getPeriodStartForDate } from '../../shared/scheme-period';
+import { resolvePeriodStart } from '../../shared/scheme-period';
 import { ValidationError } from '../../shared/errors';
 
 export interface DailyCollectionRow {
@@ -79,9 +79,10 @@ export async function getDailyCollection(
   date?:    string,
   branchId?: string,
 ): Promise<DailyCollectionResult> {
-  // TS: selectedDate defaults to IST today; periodStart drives the "from the 7th" window.
+  // TS: selectedDate defaults to IST today; periodStart honours any management override
+  // before falling back to the default 7th-of-month boundary.
   const selectedDate = date ?? getCompanyToday();
-  const periodStart  = getPeriodStartForDate(selectedDate);
+  const periodStart  = await resolvePeriodStart(db, selectedDate);
 
   // TS: parameterise branchId filter only when provided to avoid runtime uuid cast errors.
   const branchFilter = branchId ? 'AND p.branch_id = $3::uuid' : '';
@@ -216,7 +217,8 @@ export async function getDailyCollectionByScheme(
   if (!branchId) throw new ValidationError('branchId is required for per-scheme breakdown');
 
   const selectedDate = date ?? getCompanyToday();
-  const periodStart  = getPeriodStartForDate(selectedDate);
+  // TS: resolve the period start honouring any management override for this month.
+  const periodStart  = await resolvePeriodStart(db, selectedDate);
   const params: string[] = [selectedDate, periodStart, branchId];
 
   // TS: fetch branch name in a separate cheap query to keep the main SQL readable.

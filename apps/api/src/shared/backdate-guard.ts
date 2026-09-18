@@ -13,9 +13,9 @@
 import { Pool, PoolClient } from 'pg';
 import { ForbiddenError } from './errors';
 import { Role } from './role-constants';
-// TS: period helper keeps the 7-to-6 boundary in one place (shared/scheme-period.ts
-// mirrors frontend/src/lib/schemePeriod.js — update both if the cutoff changes).
-import { getPeriodStartForDate } from './scheme-period';
+// TS: period helpers — pure default math for the fast path, DB-aware resolver
+// for the boundary zone where an override could shift the period start.
+import { getPeriodStartForDate, resolvePeriodStart } from './scheme-period';
 // TS: IST-aware date — never use new Date().toLocaleDateString() here; on UTC servers
 // that returns the wrong date for 5.5 hours every day.
 import { getCompanyToday } from './date';
@@ -48,9 +48,23 @@ export async function assertBackdateAllowed(
   // TS: management is always exempt — it exists for historical data entry.
   if (userRole === Role.MANAGEMENT) return;
 
-  // Compute the start of the period containing today (e.g. '2026-06-07').
-  // Dates on or after this are same-period entries and never require the flag.
-  const periodStart = getPeriodStartForDate(getCompanyToday());
+  const today = getCompanyToday();
+  const defaultStart = getPeriodStartForDate(today);
+
+  // Fast path: skip the DB round-trip when every date is unambiguously in-period.
+  // An override can shift the boundary by at most ±15 days; any date that is at
+  // least 15 days after the default period start cannot be reclassified as
+  // prior-period by any override — return immediately without hitting the DB.
+  const defaultStartMs = Date.parse(`${defaultStart}T00:00:00Z`);
+  const allUnambiguouslyInPeriod = dates.every(d => {
+    if (!d) return true;
+    if (d < defaultStart) return false;
+    return (Date.parse(`${d}T00:00:00Z`) - defaultStartMs) >= 15 * 86_400_000;
+  });
+  if (allUnambiguouslyInPeriod) return;
+
+  // Boundary zone or pre-period: resolve with override-aware DB check.
+  const periodStart = await resolvePeriodStart(db, today);
   const hasPriorPeriodDate = dates.some(d => !!d && d < periodStart);
   if (!hasPriorPeriodDate) return;
 

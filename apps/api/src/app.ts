@@ -38,6 +38,7 @@ import settingsRoutes from './modules/settings/settings.routes';
 import reconciliationRoutes from './modules/reconciliation/reconciliation.routes';
 import notificationWebhookRoutes from './modules/notifications/notifications.routes';
 import appVersionRoutes from './modules/app-version/app-version.routes';
+import periodConfigRoutes from './modules/period-config/period-config.routes';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP FACTORY IMPLEMENTATION
@@ -218,6 +219,9 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Mobile app version gate — GET is public (native app checks on launch before login).
   // PATCH is management-only to update version strings and the force-update flag.
   await app.register(appVersionRoutes, { prefix: '/api/app-version' });
+
+  // Business-month boundary configuration — management overrides the default 7-to-6 period.
+  await app.register(periodConfigRoutes, { prefix: '/api/period-config' });
 
   return app;
 };
