@@ -51,7 +51,7 @@ export const ChitAddMemberPage = () => {
   const commissionAmt   = referrerId ? fullAmount * 0.2 : 0;
   const referrerName    = employees.find(e => e.id === referrerId)?.name || '';
   const memberCount     = group?.members?.length || 0;
-  const spotsLeft       = 20 - memberCount;
+  const spotsLeft       = 19 - memberCount;
 
   const resetForm = () => {
     setCustomer(null);
@@ -232,7 +232,7 @@ export const ChitAddMemberPage = () => {
           </div>
           <div>
             <p className="text-[9px] font-bold uppercase tracking-widest text-navy/30">Members</p>
-            <p className="text-sm font-bold text-navy mt-0.5">{memberCount}/20</p>
+            <p className="text-sm font-bold text-navy mt-0.5">{memberCount}/19</p>
           </div>
         </div>
 

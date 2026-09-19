@@ -464,7 +464,7 @@ export const ChitGroupDetailPage = () => {
 
   // Gate checks
   const canSelectWinner = isAdmin && isActive && currentMonth <= 20 && group.eligibleForWin > 0;
-  const canAddMember    = isAdmin && (isForming || isActive) && memberCount < 20;
+  const canAddMember    = isAdmin && (isForming || isActive) && memberCount < 19;
   const canSendToHead   = isAdmin && isForming && !isHeadBranch;
 
   return (
@@ -480,9 +480,9 @@ export const ChitGroupDetailPage = () => {
         <div className={`rounded-3xl p-4 card-shadow border ${isForming ? 'border-blue-100 bg-blue-50/30' : isPending ? 'border-amber-100 bg-amber-50/30' : 'border-border bg-white'}`}>
           <div className="grid grid-cols-4 divide-x divide-navy/10 mb-3">
             {[
-              { label: 'Members', val: `${memberCount}/20` },
+              { label: 'Members', val: `${memberCount}/19` },
               { label: 'Status',  val: STATUS_LABELS[group.status] || group.status, cls: STATUS_STYLES[group.status] ? STATUS_STYLES[group.status].split(' ')[0] : '' },
-              { label: isActive || isCompleted ? 'Month' : 'Spots Left', val: isActive || isCompleted ? `${isCompleted ? 20 : Math.max(currentMonth - 1, 1)}/20` : `${20 - memberCount}` },
+              { label: isActive || isCompleted ? 'Month' : 'Spots Left', val: isActive || isCompleted ? `${isCompleted ? 20 : Math.max(currentMonth - 1, 1)}/20` : `${19 - memberCount}` },
               { label: 'Winners', val: monthsProgress, cls: 'text-amber-600' },
             ].map(({ label, val, cls }) => (
               <div key={label} className="text-center px-2">
@@ -496,11 +496,11 @@ export const ChitGroupDetailPage = () => {
           {isForming && (
             <>
               <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(memberCount / 20) * 100}%` }} />
+                <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(memberCount / 19) * 100}%` }} />
               </div>
               <div className="flex items-center justify-between mt-1">
                 <p className="text-[9px] font-medium text-navy/40">
-                  {memberCount}/20 members · winner selection begins at 20
+                  {memberCount}/19 members · winner selection begins at 19
                 </p>
                 {daysLeft !== null && (
                   <p className={`text-[9px] font-bold flex items-center gap-1 ${daysLeft <= 3 ? 'text-red-500' : 'text-blue-600'}`}>
@@ -568,15 +568,15 @@ export const ChitGroupDetailPage = () => {
       )}
 
       {/* Forming instruction banner */}
-      {isForming && memberCount < 20 && (
+      {isForming && memberCount < 19 && (
         <div className="px-4 mb-4">
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 flex items-start gap-2">
             <Users size={14} className="text-blue-600 shrink-0 mt-0.5" aria-hidden="true" />
             <div>
-              <p className="text-xs font-bold text-blue-800">Filling group — {memberCount}/20 members enrolled</p>
+              <p className="text-xs font-bold text-blue-800">Filling group — {memberCount}/19 members enrolled</p>
               <p className="text-[10px] font-medium text-blue-600 mt-0.5">
-                Winner selection starts automatically when the 20th member is added.
-                {canSendToHead && ' Use "Send to Head Branch" if you can\'t fill all 20.'}
+                Winner selection starts automatically when the 19th member is added.
+                {canSendToHead && ' Use "Send to Head Branch" if you can\'t fill all 19.'}
               </p>
             </div>
           </div>

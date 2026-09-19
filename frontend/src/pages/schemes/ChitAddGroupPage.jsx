@@ -134,7 +134,7 @@ export const ChitAddGroupPage = () => {
               </div>
             </div>
             <p className="text-[10px] text-navy/40 pt-1 text-center">
-              20 members · 20 months · winner selected on 21st each month
+              19 members · 20 months · winner selected on 21st each month
             </p>
           </div>
         )}

@@ -17,7 +17,9 @@ import type {
 import { CHIT_PACKAGES } from './chit.schema';
 
 const SCHEME_CODE     = 'agila_chit_scheme';
-const MAX_MEMBERS     = 20;
+// One slot in every group is reserved for the company (takes month 1 payout);
+// the remaining 19 slots are real customers who each win once in months 2–20.
+const MAX_MEMBERS     = 19;
 const FILL_WINDOW_DAYS = 30;
 
 // ─── Prize formula ─────────────────────────────────────────────────────────────
@@ -380,7 +382,7 @@ export const ChitService = {
       }
 
       // Lock the group row first — serialises concurrent addMember calls so the
-      // 20-member cap and the forming→active transition are race-free.
+      // 19-member cap and the forming→active transition are race-free.
       const groupResult = await client.query(
         `SELECT id, full_amount, start_date, group_name, status
          FROM agila_chit_groups
@@ -569,7 +571,7 @@ export const ChitService = {
       [groupId, branchId]
     );
     if (groupResult.rows.length === 0) {
-      throw new NotFoundError('Group not found, not active, or already completed. The group must have 20 members to start winner selection.');
+      throw new NotFoundError('Group not found, not active, or already completed. The group must have 19 members to start winner selection.');
     }
     const group = groupResult.rows[0];
 
@@ -1050,7 +1052,7 @@ export const ChitService = {
   },
 
   // ─── SEND TO HEAD BRANCH ───────────────────────────────────────────────────
-  // Branch admin manually forwards a forming group when they can't fill 20 members.
+  // Branch admin manually forwards a forming group when they can't fill 19 members.
   async sendToHeadBranch(db: Pool, groupId: string, branchId: string): Promise<any> {
     const groupResult = await db.query(
       `SELECT * FROM agila_chit_groups WHERE id = $1 AND branch_id = $2`,

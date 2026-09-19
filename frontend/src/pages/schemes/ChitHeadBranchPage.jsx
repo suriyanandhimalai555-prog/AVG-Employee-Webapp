@@ -2,7 +2,7 @@
 // Mirrors GoldCoinHeadBranchPage exactly in structure and UX.
 //
 // Two actions:
-//   Combine: pick 2+ pending_combine groups from the same package (total ≤ 20
+//   Combine: pick 2+ pending_combine groups from the same package (total ≤ 19
 //            members) and merge them into a new head-branch group.
 //   Expire:  dissolve a pending_combine group — all active members get their
 //            refund_credited_at set automatically.
@@ -27,7 +27,7 @@ import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormError } from './components/FormError';
 
-const MAX_MEMBERS = 20;
+const MAX_MEMBERS = 19;
 const VIEWER_ROLES = new Set(['md', 'director', 'branch_admin']);
 const isHeadBranchAdmin = (user) => user?.role === 'branch_admin' && user?.isHeadBranch === true;
 

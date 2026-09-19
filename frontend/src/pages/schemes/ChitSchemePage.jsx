@@ -108,7 +108,7 @@ export const ChitSchemePage = () => {
       <SchemePageHeader
         backTo="/money/schemes"
         title={isReferrerView ? 'My Referrals' : 'Agila Chit Fund'}
-        subtitle={isReferrerView ? 'Chit groups you referred into' : '20 members · 20 months · monthly winner'}
+        subtitle={isReferrerView ? 'Chit groups you referred into' : '19 members · 20 months · monthly winner'}
         action={rightAction}
       />
 
@@ -194,7 +194,7 @@ export const ChitSchemePage = () => {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-medium text-navy/50 flex-wrap">
-                      <span>{group.member_count}/20 members</span>
+                      <span>{group.member_count}/19 members</span>
                       {!isForming && !isTerminal && (
                         <>
                           <span>·</span>
@@ -243,11 +243,11 @@ export const ChitSchemePage = () => {
                     <div className="h-1.5 bg-navy/5 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-blue-400 rounded-full"
-                        style={{ width: `${(group.member_count / 20) * 100}%` }}
+                        style={{ width: `${(group.member_count / 19) * 100}%` }}
                       />
                     </div>
                     <p className="text-[9px] font-medium text-navy/30 mt-1">
-                      {group.member_count}/20 members enrolled · winner selection starts at 20
+                      {group.member_count}/19 members enrolled · winner selection starts at 19
                     </p>
                   </div>
                 )}
