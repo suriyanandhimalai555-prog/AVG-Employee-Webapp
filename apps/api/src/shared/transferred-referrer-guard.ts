@@ -54,7 +54,8 @@ export async function assertReferrerAllowedOnDates(
   // TS: single round-trip: fetch the referrer's current branch and their
   // latest transfer-out timestamp for this specific branch in one query.
   // The subquery returns NULL when no qualifying transfer row exists.
-  const res = await (db as Pool).query<{ current_branch_id: string | null; transferred_at: Date | null }>(
+  // Both Pool and PoolClient expose a compatible .query() — no cast needed.
+  const res = await db.query<{ current_branch_id: string | null; transferred_at: Date | null }>(
     `SELECT u.branch_id AS current_branch_id,
             (SELECT MAX(t.decided_at)
                FROM user_transfer_requests t
@@ -73,8 +74,9 @@ export async function assertReferrerAllowedOnDates(
 
   const { current_branch_id, transferred_at } = res.rows[0];
 
-  // Still a resident of this branch — no date restriction applies
-  if (current_branch_id === branchId) return;
+  // Still a resident of this branch, or management (null branch_id) — no date restriction applies.
+  // Null check uses strict equality (not `!current_branch_id`) to avoid treating empty-string as null.
+  if (current_branch_id === null || current_branch_id === branchId) return;
 
   // No transfer-out record for this branch — oversight/MD referrer, unrestricted
   if (!transferred_at) return;
