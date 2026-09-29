@@ -222,11 +222,15 @@ export const TradingAcademyService = {
   },
 
   // ─── GET BRANCH EMPLOYEES (for the "enrolled by" picker) ───
-  // Branch-resident field staff PLUS the GMs/Directors overseeing this branch
-  // (via user_oversight_branches) PLUS the MD (no branch link of their own).
+  // Part 1: Branch-resident field staff + GMs/Directors overseeing this branch + MD.
+  // Part 2: Users transferred OUT of this branch who are not currently resident
+  //         (u.branch_id IS DISTINCT FROM $1 excludes transfer-backs), not oversight
+  //         GMs/Directors (already in Part 1), and not MD.
+  // UNION ALL keeps the two sets disjoint; ORDER BY name applies to the combined result.
   async getBranchEmployees(db: Pool, branchId: string): Promise<any[]> {
     const res = await db.query(
-      `SELECT DISTINCT u.id, u.name, u.role FROM users u
+      `SELECT id, name, role, false AS transferred, NULL::timestamptz AS transferred_at
+       FROM users u
        WHERE u.is_active = true
          AND (
            (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
@@ -235,7 +239,22 @@ export const TradingAcademyService = {
                            WHERE uob.user_id = u.id AND uob.branch_id = $1))
            OR u.role = 'md'
          )
-       ORDER BY u.name ASC`,
+       UNION ALL
+       SELECT u.id, u.name, u.role, true AS transferred, t.transferred_at
+       FROM users u
+       JOIN (
+         SELECT user_id, MAX(decided_at) AS transferred_at
+         FROM user_transfer_requests
+         WHERE previous_branch_id = $1 AND kind = 'transfer' AND status = 'approved'
+         GROUP BY user_id
+       ) t ON t.user_id = u.id
+       WHERE u.is_active = true
+         AND u.branch_id IS DISTINCT FROM $1
+         AND u.role NOT IN ('md', 'client')
+         AND NOT (u.role IN ('gm', 'director')
+                  AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                              WHERE uob.user_id = u.id AND uob.branch_id = $1))
+       ORDER BY name ASC`,
       [branchId]
     );
     return res.rows;

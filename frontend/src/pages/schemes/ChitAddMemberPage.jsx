@@ -14,6 +14,7 @@ import { CustomerPicker } from '../../components/CustomerPicker';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, getTodayISO } from '../../lib/schemeConstants';
+import { getTransferredReferrerInfo, referrerOptionLabel, checkTransferredReferrerDate } from '../../lib/transferredReferrer';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -50,6 +51,7 @@ export const ChitAddMemberPage = () => {
   const fullAmount      = group ? parseFloat(group.full_amount) : 0;
   const commissionAmt   = referrerId ? fullAmount * 0.2 : 0;
   const referrerName    = employees.find(e => e.id === referrerId)?.name || '';
+  const transferInfo    = getTransferredReferrerInfo(employees, referrerId);
   const memberCount     = group?.members?.length || 0;
   const spotsLeft       = 19 - memberCount;
 
@@ -68,6 +70,8 @@ export const ChitAddMemberPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, paymentDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer) { setError('Please select or create a customer.'); return; }
     const payAmount = payMode === 'deposit' ? (parseFloat(deposit) || 0) : fullAmount;
     if (payMode === 'deposit' && !(payAmount > 0)) { setError('Enter the deposit amount.'); return; }
@@ -249,13 +253,22 @@ export const ChitAddMemberPage = () => {
             >
               <option value="">— None (no commission) —</option>
               {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.role.replace(/_/g, ' ').toUpperCase()})
-                </option>
+                <option key={emp.id} value={emp.id}>{referrerOptionLabel(emp)}</option>
               ))}
             </select>
           </div>
         </FormField>
+
+        {/* Transferred-referrer warning — entry date must be before their transfer date */}
+        {transferInfo.transferred && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+            <span className="text-amber-600 text-sm mt-0.5">⚠</span>
+            <p className="text-xs font-medium text-amber-800">
+              This referrer was transferred out on <strong>{transferInfo.transferredAt}</strong>.
+              Only entries dated before that day are allowed.
+            </p>
+          </div>
+        )}
 
         {/* Live commission preview — appears when a referrer is selected */}
         {referrerId && (
@@ -273,6 +286,7 @@ export const ChitAddMemberPage = () => {
             <BackdateDateInput
               value={paymentDate}
               onChange={e => setPaymentDate(e.target.value)}
+              max={transferInfo.transferred && transferInfo.maxEntryDate ? transferInfo.maxEntryDate : undefined}
               className={SCHEME_INPUT_CLASS}
             />
           </FormField>

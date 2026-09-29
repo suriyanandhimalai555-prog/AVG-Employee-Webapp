@@ -8,6 +8,7 @@ import { useAddTradingMemberMutation, useCreatePendingEnrollmentMutation } from 
 import { CustomerPicker } from '../../../components/CustomerPicker';
 import { PeriodDateInput } from '../../../components/PeriodDateInput';
 import { TRADING_ROLE_LABELS, SCHEME_MODE_LABELS, createFormSetter, getTodayISO } from '../../../lib/schemeConstants';
+import { getTransferredReferrerInfo, checkTransferredReferrerDate } from '../../../lib/transferredReferrer';
 import { FormError } from './FormError';
 import { FormField } from './FormField';
 import { DepositToggle } from './DepositToggle';
@@ -45,9 +46,14 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
 
   const set = createFormSetter(setForm);
 
+  // Compute transfer status for the selected "enrolled by" employee
+  const transferInfo = getTransferredReferrerInfo(employees, form.enrolledBy);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, form.enrollmentDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer) { setError('Please select or create a customer'); return; }
     if (!form.amount || !form.enrolledBy) { setError('Amount and enrolled-by are required'); return; }
     const fullAmt   = parseFloat(form.amount);
@@ -192,12 +198,17 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
             <option value="">— Select employee —</option>
             {employees.map(emp => (
               <option key={emp.id} value={emp.id}>
-                {emp.name} ({TRADING_ROLE_LABELS[emp.role] || emp.role})
+                {emp.name}{emp.transferred ? ' (Transferred)' : ''} ({TRADING_ROLE_LABELS[emp.role] || emp.role})
               </option>
             ))}
           </select>
           <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-navy/40 pointer-events-none" aria-hidden="true" />
         </div>
+        {transferInfo.transferred && (
+          <p className="text-xs font-medium text-amber-700 mt-1.5">
+            ⚠ Transferred out on <strong>{transferInfo.transferredAt}</strong> — only entries before that date allowed.
+          </p>
+        )}
       </div>
 
       {/* Date + Payment Mode */}
@@ -206,11 +217,13 @@ export const AddMemberSheet = ({ onClose, employees, branchId }) => {
           <label className="block text-[10px] font-bold uppercase tracking-widest text-navy/40 mb-1.5">
             Date *
           </label>
+          {/* Restrict max to day before transfer when a transferred-out employee is selected */}
           <PeriodDateInput
             required
             value={form.enrollmentDate}
             onChange={set('enrollmentDate')}
             className={SHEET_INPUT_CLASS}
+            {...(transferInfo.transferred && transferInfo.maxEntryDate ? { max: transferInfo.maxEntryDate } : {})}
           />
         </div>
         <div>

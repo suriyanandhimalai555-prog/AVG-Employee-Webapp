@@ -9,6 +9,8 @@ import {
 } from '../../shared/role-constants';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
+// Guard: referrers transferred out of a branch can only be used on pre-transfer dates
+import { assertReferrerAllowedOnDates } from '../../shared/transferred-referrer-guard';
 import { PendingEnrollmentsService } from './pending-enrollments.service';
 import {
   CreatePendingEnrollmentSchema,
@@ -33,6 +35,8 @@ export default async function pendingEnrollmentRoutes(fastify: FastifyInstance):
       // The deposit's date obeys the management backdate flag (same as every scheme write path)
       await assertBackdateAllowed(fastify.db, req.user.role, [body.firstPayment.paidDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, body.branchId);
+      // Transferred-out referrers can only be used on entries dated before their transfer date
+      await assertReferrerAllowedOnDates(fastify.db, branchId, body.referrerId, [body.firstPayment.paidDate]);
       // Daily collection summary must be submitted before any scheme entry (management exempt)
       await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
       const data = await PendingEnrollmentsService.createPending(fastify.db, req.user.id, branchId, body);

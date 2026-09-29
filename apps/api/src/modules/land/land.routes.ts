@@ -4,6 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST, resolveReadBranch, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReferrerAllowedOnDates } from '../../shared/transferred-referrer-guard';
 import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import {
   LandSitesService,
@@ -294,17 +295,46 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const branchId = resolveReadBranch(req.user.role, req.user.branchId, (req.query as any)?.branchId);
         // Branch-resident staff PLUS GMs/Directors overseeing this branch (via
         // user_oversight_branches) PLUS the MD (no branch link of their own).
+        // Also includes active staff who were transferred OUT of this branch
+        // (transferred=true) so the branch admin can backfill pre-transfer entries,
+        // subject to the transferred-referrer-guard on every create route.
         const result = await fastify.db.query(
-          `SELECT DISTINCT u.id, u.name, u.role FROM users u
-           WHERE u.is_active = true
-             AND (
-               (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
-               OR (u.role IN ('gm', 'director')
-                   AND EXISTS (SELECT 1 FROM user_oversight_branches uob
-                               WHERE uob.user_id = u.id AND uob.branch_id = $1))
-               OR u.role = 'md'
-             )
-           ORDER BY u.name ASC`,
+          // Part 1: currently-visible staff (residents + oversight + MD)
+          `SELECT DISTINCT u.id, u.name, u.role,
+                  false             AS transferred,
+                  NULL::timestamptz AS transferred_at
+             FROM users u
+            WHERE u.is_active = true
+              AND (
+                (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
+                OR (u.role IN ('gm', 'director')
+                    AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                                WHERE uob.user_id = u.id AND uob.branch_id = $1))
+                OR u.role = 'md'
+              )
+           UNION ALL
+           -- Part 2: staff transferred out; exclude any who would appear in Part 1
+           SELECT u.id, u.name, u.role,
+                  true             AS transferred,
+                  t.transferred_at
+             FROM users u
+             JOIN (
+                   SELECT user_id, MAX(decided_at) AS transferred_at
+                     FROM user_transfer_requests
+                    WHERE previous_branch_id = $1
+                      AND kind   = 'transfer'
+                      AND status = 'approved'
+                    GROUP BY user_id
+                  ) t ON t.user_id = u.id
+            WHERE u.is_active = true
+              AND u.branch_id IS DISTINCT FROM $1
+              AND u.role != 'md'
+              AND NOT (
+                u.role IN ('gm', 'director')
+                AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                            WHERE uob.user_id = u.id AND uob.branch_id = $1)
+              )
+           ORDER BY name ASC`,
           [branchId]
         );
         return reply.send({ success: true, data: result.rows });
@@ -422,6 +452,8 @@ export default async function landRoutes(fastify: FastifyInstance): Promise<void
         const body     = CreateLandBookingSchema.parse(req.body);
         // Past booking dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.bookingDate]);
+        // Transferred-out referrers are only valid for entries before their transfer date
+        await assertReferrerAllowedOnDates(fastify.db, branchId, body.referrerId, [body.bookingDate]);
         // Daily collection summary must be submitted before any scheme entry (management exempt)
         await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const data     = await LandBookingsService.createBooking(fastify.db, req.user.id, branchId, body);

@@ -1037,7 +1037,7 @@ const EntryEditForm = ({ entry, schemeCode, branchId, fields, actions, onClose }
               className={`${IC} appearance-none`}>
               <option value="">— No referrer —</option>
               {empOptions.map((emp) => (
-                <option key={emp.id} value={emp.id}>{emp.name}{emp.role ? ` (${emp.role})` : ''}</option>
+                <option key={emp.id} value={emp.id}>{emp.name}{emp.transferred ? ' (Transferred)' : ''}{emp.role ? ` (${emp.role})` : ''}</option>
               ))}
             </select>
           )}

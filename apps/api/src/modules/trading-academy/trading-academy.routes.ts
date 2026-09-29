@@ -5,6 +5,8 @@ import { Role, READER_ROLES as READER_LIST, REFERRER_ONLY_ROLES as REFERRER_LIST
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
 import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
+// Guard: referrers transferred out of a branch can only be used on pre-transfer dates
+import { assertReferrerAllowedOnDates } from '../../shared/transferred-referrer-guard';
 import { TradingAcademyService } from './trading-academy.service';
 import { AddTradingMemberSchema, GetTradingMembersQuerySchema, GetTradingSummaryQuerySchema, CorrectTradingMemberSchema } from './trading-academy.schema';
 
@@ -74,6 +76,8 @@ export default async function tradingAcademyRoutes(fastify: FastifyInstance): Pr
       // Past enrollment dates require the backdated-entry flag (management exempt)
       await assertBackdateAllowed(fastify.db, req.user.role, [body.enrollmentDate]);
       const branchId = resolveWriterBranch(req.user.role, req.user.branchId, (body as any).branchId);
+      // Transferred-out enrolledBy can only be used on entries dated before their transfer date
+      await assertReferrerAllowedOnDates(fastify.db, branchId, body.enrolledBy, [body.enrollmentDate]);
       // Daily collection summary must be submitted before any scheme entry (management exempt)
       await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
       const result = await TradingAcademyService.addMember(

@@ -22,6 +22,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { Role, GOLD_COIN_VIEWER_ROLES, REFERRER_ONLY_ROLES, hasRole, resolveWriterBranch, resolveCorrectionBranch } from '../../shared/role-constants';
 import { assertCanManageSchemeData } from '../../shared/permissions';
 import { assertBackdateAllowed } from '../../shared/backdate-guard';
+import { assertReferrerAllowedOnDates } from '../../shared/transferred-referrer-guard';
 import { assertReconciliationSubmitted } from '../../shared/reconciliation-guard';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
 import { getOversightBranchIds } from '../../shared/hierarchy';
@@ -143,6 +144,8 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
         // Past sale dates require the backdated-entry flag (management exempt)
         await assertBackdateAllowed(fastify.db, req.user.role, [body.saleDate]);
         const branchId = await resolveSingleBranch(fastify, req, (body as any).branchId);
+        // Transferred-out referrers are only valid for entries before their transfer date
+        await assertReferrerAllowedOnDates(fastify.db, branchId, body.referrerId, [body.saleDate]);
         // Daily collection summary must be submitted before any scheme entry (management exempt)
         await assertReconciliationSubmitted(fastify.db, req.user.role, branchId);
         const result = await SlotsService.createSlot(fastify.db, branchId, req.user.id, body);

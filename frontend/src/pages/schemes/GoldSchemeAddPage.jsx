@@ -10,6 +10,7 @@ import { BranchPicker } from '../../components/BranchPicker';
 import { PeriodDateInput } from '../../components/PeriodDateInput';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
+import { getTransferredReferrerInfo, referrerOptionLabel, checkTransferredReferrerDate } from '../../lib/transferredReferrer';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -50,10 +51,13 @@ export const GoldSchemeAddPage = () => {
   const [result, setResult] = useState(null);
 
   const set = createFormSetter(setForm);
+  const transferInfo = getTransferredReferrerInfo(employees, form.referrerId);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, form.startDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer)       { setError('Please select or create a customer.'); return; }
     if (!form.referrerId){ setError('Referrer is required.'); return; }
     if (!form.chitNumber || !form.monthlyAmount || !form.startDate) {
@@ -214,7 +218,8 @@ export const GoldSchemeAddPage = () => {
             />
           </FormField>
           <FormField label="Start Date" required>
-            <PeriodDateInput value={form.startDate} onChange={set('startDate')} className={SCHEME_INPUT_CLASS} required />
+            <PeriodDateInput value={form.startDate} onChange={set('startDate')} className={SCHEME_INPUT_CLASS} required
+              {...(transferInfo.transferred && transferInfo.maxEntryDate ? { max: transferInfo.maxEntryDate } : {})} />
           </FormField>
         </div>
 
@@ -227,12 +232,15 @@ export const GoldSchemeAddPage = () => {
             >
               <option value="">— Select employee —</option>
               {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.role.replace(/_/g, ' ').toUpperCase()})
-                </option>
+                <option key={emp.id} value={emp.id}>{referrerOptionLabel(emp)}</option>
               ))}
             </select>
           </div>
+          {transferInfo.transferred && (
+            <p className="text-xs font-medium text-amber-700 mt-1.5">
+              ⚠ Transferred out on <strong>{transferInfo.transferredAt}</strong> — only entries before that date allowed.
+            </p>
+          )}
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">

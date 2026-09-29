@@ -24,6 +24,7 @@ import { BranchPicker } from '../../components/BranchPicker';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
+import { getTransferredReferrerInfo, referrerOptionLabel, checkTransferredReferrerDate } from '../../lib/transferredReferrer';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -70,6 +71,7 @@ export const LssAddSlotPage = () => {
   const [result, setResult] = useState(null);
 
   const set = createFormSetter(setForm);
+  const transferInfo = getTransferredReferrerInfo(employees, form.referrerId);
 
   const selectedPlan = useMemo(
     () => plans.find(p => p.id === form.planId) || null,
@@ -91,6 +93,8 @@ export const LssAddSlotPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, form.saleDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer)       { setError('Please select or create a customer.'); return; }
     if (!form.planId)    { setError('Please pick a plan.'); return; }
     if (effectiveQuantity < 1 || effectiveQuantity > SLOTS_PER_ROOM) {
@@ -328,7 +332,7 @@ export const LssAddSlotPage = () => {
           <BackdateDateInput
             value={form.saleDate}
             onChange={set('saleDate')}
-            max={getTodayISO()}
+            max={transferInfo.transferred && transferInfo.maxEntryDate ? transferInfo.maxEntryDate : getTodayISO()}
             className={SCHEME_INPUT_CLASS}
             required
           />
@@ -383,11 +387,14 @@ export const LssAddSlotPage = () => {
           >
             <option value="">— No referrer (walk-in) —</option>
             {employees.map(emp => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name} ({emp.role.replace(/_/g, ' ').toUpperCase()})
-              </option>
+              <option key={emp.id} value={emp.id}>{referrerOptionLabel(emp)}</option>
             ))}
           </select>
+          {transferInfo.transferred && (
+            <p className="text-xs font-medium text-amber-700 mt-1.5">
+              ⚠ Transferred out on <strong>{transferInfo.transferredAt}</strong> — only entries before that date allowed.
+            </p>
+          )}
         </FormField>
 
         <FormField label="Notes">

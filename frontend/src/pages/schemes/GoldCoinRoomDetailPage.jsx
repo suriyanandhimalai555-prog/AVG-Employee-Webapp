@@ -115,7 +115,7 @@ const SlotAdminActions = ({ slot, branchId }) => {
             <select value={form.referrerId} onChange={e => setForm(f => ({ ...f, referrerId: e.target.value }))}
               className={`${IC} text-xs appearance-none`}>
               <option value="">— No referrer —</option>
-              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}{emp.transferred ? ' (Transferred)' : ''}</option>)}
             </select>
           </div>
           <div>

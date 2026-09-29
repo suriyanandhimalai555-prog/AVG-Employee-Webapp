@@ -388,19 +388,54 @@ export const GoldService = {
   // ─── GET BRANCH EMPLOYEES (referrer picker) ───
   // Returns branch-resident staff PLUS the GMs/Directors overseeing this branch
   // (linked via user_oversight_branches, not branch_id) PLUS the MD (no branch link).
+  // Also includes active staff who were transferred OUT of this branch (with
+  // transferred=true and a transferred_at date).  Transferred-out users are shown
+  // in the picker so the branch admin can backfill pre-transfer scheme entries,
+  // but the transferred-referrer-guard blocks entries dated on/after the cutoff.
   async getBranchEmployees(db: Pool, branchId: string): Promise<any[]> {
     const result = await db.query(
-      `SELECT DISTINCT u.id, u.name, u.role
-       FROM users u
-       WHERE u.is_active = true
-         AND (
-           (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
-           OR (u.role IN ('gm', 'director')
-               AND EXISTS (SELECT 1 FROM user_oversight_branches uob
-                           WHERE uob.user_id = u.id AND uob.branch_id = $1))
-           OR u.role = 'md'
-         )
-       ORDER BY u.name ASC`,
+      // Part 1: currently-visible staff — residents, oversight GMs/Directors, MD.
+      // transferred=false so the picker knows they have no date restriction.
+      `SELECT DISTINCT u.id, u.name, u.role,
+              false                AS transferred,
+              NULL::timestamptz    AS transferred_at
+         FROM users u
+        WHERE u.is_active = true
+          AND (
+            (u.branch_id = $1 AND u.role NOT IN ('md', 'client'))
+            OR (u.role IN ('gm', 'director')
+                AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                            WHERE uob.user_id = u.id AND uob.branch_id = $1))
+            OR u.role = 'md'
+          )
+       UNION ALL
+       -- Part 2: active staff transferred OUT of this branch who are no longer
+       -- resident here.  We exclude anyone who would already appear in Part 1
+       -- (oversight GMs/Directors and the MD) to keep the two parts disjoint.
+       SELECT u.id, u.name, u.role,
+              true             AS transferred,
+              t.transferred_at
+         FROM users u
+         JOIN (
+               SELECT user_id, MAX(decided_at) AS transferred_at
+                 FROM user_transfer_requests
+                WHERE previous_branch_id = $1
+                  AND kind   = 'transfer'
+                  AND status = 'approved'
+                GROUP BY user_id
+              ) t ON t.user_id = u.id
+        WHERE u.is_active = true
+          -- Must no longer be resident in this branch (handles transfer-back)
+          AND u.branch_id IS DISTINCT FROM $1
+          -- MD never appears here (always resident via Part 1)
+          AND u.role != 'md'
+          -- GM/Directors already visible via oversight in Part 1 are excluded
+          AND NOT (
+            u.role IN ('gm', 'director')
+            AND EXISTS (SELECT 1 FROM user_oversight_branches uob
+                        WHERE uob.user_id = u.id AND uob.branch_id = $1)
+          )
+       ORDER BY name ASC`,
       [branchId]
     );
     return result.rows;

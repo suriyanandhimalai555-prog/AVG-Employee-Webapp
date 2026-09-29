@@ -10,6 +10,7 @@ import {
 } from '../../store/api/apiSlice';
 import { formatCurrency } from '../../lib/formatters';
 import { SCHEME_INPUT_CLASS, createFormSetter, getTodayISO } from '../../lib/schemeConstants';
+import { getTransferredReferrerInfo, checkTransferredReferrerDate } from '../../lib/transferredReferrer';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { FormField } from './components/FormField';
@@ -61,6 +62,7 @@ export const LandAddBookingPage = () => {
   const suggestedRef = refData?.suggestedRef || '';
 
   const [createBooking, { isLoading }] = useCreateLandBookingMutation();
+  const transferInfo = getTransferredReferrerInfo(employees, form.referrerId);
 
   // Auto-prefill the booking ID with the suggested next number when the picker
   // data arrives and the field is still empty (covers both initial load and when
@@ -114,6 +116,8 @@ export const LandAddBookingPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, form.bookingDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer) { setError('Please select or create a customer.'); return; }
     if (!form.plotId) { setError('Please select a plot.'); return; }
     if (isManagement && !branchId) { setError('Please select a branch.'); return; }
@@ -225,13 +229,18 @@ export const LandAddBookingPage = () => {
             <option value="">— No referrer —</option>
             {employees.map(emp => (
               <option key={emp.id} value={emp.id}>
-                {emp.name} · {ROLE_LABELS[emp.role] || emp.role}
+                {emp.name} · {ROLE_LABELS[emp.role] || emp.role}{emp.transferred ? ' (Transferred)' : ''}
               </option>
             ))}
           </select>
           {!effectiveBranchId && (
             <p className="text-[10px] text-navy/40 mt-1">
               {isManagement ? 'Select a branch first to load employees.' : 'No employees found.'}
+            </p>
+          )}
+          {transferInfo.transferred && (
+            <p className="text-xs font-medium text-amber-700 mt-1.5">
+              ⚠ Transferred out on <strong>{transferInfo.transferredAt}</strong> — only entries before that date allowed.
             </p>
           )}
         </FormField>
@@ -257,6 +266,7 @@ export const LandAddBookingPage = () => {
 
         <FormField label="Booking Date" required>
           <BackdateDateInput value={form.bookingDate} onChange={set('bookingDate')}
+            max={transferInfo.transferred && transferInfo.maxEntryDate ? transferInfo.maxEntryDate : undefined}
             className={SCHEME_INPUT_CLASS} required />
         </FormField>
 

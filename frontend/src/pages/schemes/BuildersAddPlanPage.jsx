@@ -16,6 +16,7 @@ import {
   createFormSetter,
   getTodayISO,
 } from '../../lib/schemeConstants';
+import { getTransferredReferrerInfo, referrerOptionLabel, checkTransferredReferrerDate } from '../../lib/transferredReferrer';
 import { BackdateDateInput } from '../../components/BackdateDateInput';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
@@ -53,7 +54,8 @@ export const BuildersAddPlanPage = () => {
   const set = createFormSetter(setForm);
 
   const { data: packages } = useGetBuildersPackagesQuery();
-  const { data: employees } = useGetGoldEmployeesQuery();
+  const { data: employees = [] } = useGetGoldEmployeesQuery();
+  const transferInfo = getTransferredReferrerInfo(employees, form.referrerId);
   const [createPlan, { isLoading }] = useCreateBuildersPlanMutation();
   const [createPending, { isLoading: creatingPending }] = useCreatePendingEnrollmentMutation();
   const [payMode, setPayMode] = useState('full');
@@ -90,7 +92,8 @@ export const BuildersAddPlanPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
+    const referrerDateErr = checkTransferredReferrerDate(transferInfo.transferred, transferInfo.transferredAt, form.lumpSumDate);
+    if (referrerDateErr) { setError(referrerDateErr); return; }
     if (!customer) { setError('Please select a customer.'); return; }
     if (!form.packageNumber) { setError('Please select a package.'); return; }
     if (!form.referrerId) { setError('Referrer is required to distribute incentives.'); return; }
@@ -257,6 +260,7 @@ export const BuildersAddPlanPage = () => {
           <BackdateDateInput
             value={form.lumpSumDate}
             onChange={set('lumpSumDate')}
+            max={transferInfo.transferred && transferInfo.maxEntryDate ? transferInfo.maxEntryDate : undefined}
             className={SCHEME_INPUT_CLASS}
             required
           />
@@ -314,12 +318,15 @@ export const BuildersAddPlanPage = () => {
             required
           >
             <option value="">Select referrer…</option>
-            {(employees || []).map(emp => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name} · {emp.role?.replace(/_/g, ' ').toUpperCase()}
-              </option>
+            {employees.map(emp => (
+              <option key={emp.id} value={emp.id}>{referrerOptionLabel(emp)}</option>
             ))}
           </select>
+          {transferInfo.transferred && (
+            <p className="text-xs font-medium text-amber-700 mt-1.5">
+              ⚠ Transferred out on <strong>{transferInfo.transferredAt}</strong> — only entries before that date allowed.
+            </p>
+          )}
         </FormField>
 
         {/* Notes */}
