@@ -194,6 +194,11 @@ export const BranchDetailPage = () => {
                     <p className="text-[9px] font-medium text-navy/40 uppercase tracking-widest mt-0.5 truncate">
                       {emp.role?.replace(/_/g, ' ')}
                     </p>
+                    {emp.managerName && (
+                      <p className="text-[9px] font-medium text-indigo/50 tracking-wide mt-0.5 truncate">
+                        ↑ {emp.managerName}{emp.managerRole ? ` · ${emp.managerRole.replace(/_/g, ' ').toUpperCase()}` : ''}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`text-[9px] font-bold uppercase tracking-widest ${

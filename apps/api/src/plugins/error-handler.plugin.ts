@@ -49,6 +49,14 @@ const errorHandlerPlugin: FastifyPluginAsync = fp(async (fastify: FastifyInstanc
       });
     }
 
+    // 3b. Handle rate limit errors — @fastify/rate-limit v10 throws the errorResponseBuilder
+    // result as the error object, not a proper Error instance. Detect it by the known code and
+    // re-send as 429. Do not log at error level; these are expected operational events.
+    const maybeRateLimit = error as any;
+    if (maybeRateLimit?.error?.code === 'RATE_LIMIT_EXCEEDED' || (error as any)?.statusCode === 429) {
+      return reply.code(429).send(error);
+    }
+
     // 4. Handle all other unexpected errors (database connection, network, etc.)
     // Log the full error details to the internal logger for debugging using the object-first pattern
     fastify.log.error({ err: error }, '❌ Unexpected error');

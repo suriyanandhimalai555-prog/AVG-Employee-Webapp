@@ -26,11 +26,12 @@ interface SchemeAdapter {
   entityTable: string;
   // Required enrollment amount (may need a DB lookup for package/group-derived amounts).
   requiredAmount(db: Pool, branchId: string, payload: any): Promise<number>;
-  // Replay the stored payload (with synthesised payment fields + today's date) through the
-  // scheme's existing create fn, inside the caller's transaction. Returns the new entity id.
+  // Replay the stored payload (with synthesised payment fields + the enrollment date from the
+  // first deposit's paid_date) through the scheme's existing create fn, inside the caller's
+  // transaction. Returns the new entity id.
   complete(
     client: PoolClient, db: Pool, enteredBy: string, branchId: string,
-    payload: any, required: number, synth: Synth, today: string,
+    payload: any, required: number, synth: Synth, enrollmentDate: string,
   ): Promise<string>;
 }
 
@@ -38,9 +39,9 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
   gold_scheme: {
     entityTable: 'gold_scheme_members',
     requiredAmount: async (_db, _b, p) => Number(p.monthlyAmount),
-    complete: async (client, db, enteredBy, branchId, p, required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, required, synth, enrollmentDate) => {
       const full = {
-        ...p, monthlyAmount: required, startDate: today,
+        ...p, monthlyAmount: required, startDate: enrollmentDate,
         firstPaymentMode: synth.mode, firstPaymentProofKey: synth.proofKey, firstPaymentTransactionId: synth.transactionId,
       };
       const res = await GoldService.addMember(db, enteredBy, branchId, full as any, client);
@@ -50,9 +51,9 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
   trading_academy: {
     entityTable: 'trading_academy_members',
     requiredAmount: async (_db, _b, p) => Number(p.amount),
-    complete: async (client, db, enteredBy, branchId, p, required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, required, synth, enrollmentDate) => {
       const full = {
-        ...p, amount: required, enrollmentDate: today,
+        ...p, amount: required, enrollmentDate,
         paymentMode: synth.mode, proofKey: synth.proofKey, transactionId: synth.transactionId,
       };
       const res = await TradingAcademyService.addMember(db, enteredBy, branchId, full as any, client);
@@ -67,9 +68,9 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
       if (!pkg) throw new ValidationError('Invalid package number');
       return Number(pkg.investmentAmount);
     },
-    complete: async (client, db, enteredBy, branchId, p, _required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, _required, synth, enrollmentDate) => {
       const full = {
-        ...p, lumpSumDate: today,
+        ...p, lumpSumDate: enrollmentDate,
         lumpSumMode: synth.mode, lumpSumProofKey: synth.proofKey, lumpSumTransactionId: synth.transactionId,
       };
       const res = await BuildersService.createPlan(db, enteredBy, branchId, full as any, client);
@@ -83,9 +84,9 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
       if (r.rows.length === 0) throw new NotFoundError('Chit group not found in this branch');
       return Number(r.rows[0].full_amount);
     },
-    complete: async (client, db, enteredBy, branchId, p, _required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, _required, synth, enrollmentDate) => {
       const full = {
-        ...p, firstPaymentDate: today,
+        ...p, firstPaymentDate: enrollmentDate,
         firstPaymentMode: synth.mode, firstPaymentProofKey: synth.proofKey, firstPaymentTransactionId: synth.transactionId,
       };
       const res = await ChitService.addMember(db, enteredBy, p.groupId, branchId, full as any, client);
@@ -99,7 +100,7 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
       if (r.rows.length === 0) throw new NotFoundError('Gold coin package not found or inactive');
       return Number(r.rows[0].price) * (Number(p.quantity) || 1);
     },
-    complete: async (client, db, enteredBy, branchId, p, required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, required, synth, enrollmentDate) => {
       // No slot was reserved — re-read the CURRENT price; createSlot requires amountPaid == price.
       const r = await client.query('SELECT price FROM gold_coin_packages WHERE id = $1 AND is_active = true', [p.packageId]);
       if (r.rows.length === 0) throw new NotFoundError('Gold coin package not found or inactive');
@@ -109,7 +110,7 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
         throw new ValidationError(`Package price increased — collect ₹${(price * qty - required).toFixed(2)} more before starting the slot`);
       }
       const full = {
-        ...p, amountPaid: price, saleDate: today,
+        ...p, amountPaid: price, saleDate: enrollmentDate,
         paymentMode: synth.mode, proofKey: synth.proofKey, transactionId: synth.transactionId,
       };
       const res = await GoldCoinSlotsService.createSlot(db, branchId, enteredBy, full as any, client);
@@ -123,7 +124,7 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
       if (r.rows.length === 0) throw new NotFoundError('LSS plan not found or inactive');
       return Number(r.rows[0].price) * (Number(p.quantity) || 1);
     },
-    complete: async (client, db, enteredBy, branchId, p, required, synth, today) => {
+    complete: async (client, db, enteredBy, branchId, p, required, synth, enrollmentDate) => {
       const r = await client.query('SELECT price FROM lss_plans WHERE id = $1 AND is_active = true', [p.planId]);
       if (r.rows.length === 0) throw new NotFoundError('LSS plan not found or inactive');
       const price = Number(r.rows[0].price);
@@ -132,7 +133,7 @@ const ADAPTERS: Record<string, SchemeAdapter> = {
         throw new ValidationError(`Plan price increased — collect ₹${(price * qty - required).toFixed(2)} more before starting the slot`);
       }
       const full = {
-        ...p, amountPaid: price, saleDate: today,
+        ...p, amountPaid: price, saleDate: enrollmentDate,
         paymentMode: synth.mode, proofKey: synth.proofKey, transactionId: synth.transactionId,
       };
       const res = await LssSlotsService.createSlot(db, branchId, enteredBy, full as any, client);
@@ -259,8 +260,14 @@ export const PendingEnrollmentsService = {
         if (!adapter) throw new ValidationError(`Unsupported scheme ${pe.scheme_code}`);
 
         // Synthesise the single enrollment payment from the installment ledger.
+        // Also fetch paid_date so the enrollment date reflects the admin's chosen date
+        // (the first deposit row, ordered by created_at) rather than today.
         const pays = (await client.query(
-          'SELECT payment_mode, proof_key, transaction_id FROM pending_enrollment_payments WHERE pending_enrollment_id = $1 ORDER BY created_at',
+          `SELECT payment_mode, proof_key, transaction_id,
+                  to_char(paid_date, 'YYYY-MM-DD') AS paid_date
+           FROM pending_enrollment_payments
+           WHERE pending_enrollment_id = $1
+           ORDER BY created_at`,
           [pe.id],
         )).rows;
         const modes = Array.from(new Set(pays.map((r: any) => r.payment_mode)));
@@ -274,9 +281,12 @@ export const PendingEnrollmentsService = {
           transactionId: pays.flatMap((r: any) => r.transaction_id || []),
         };
 
-        const today = getCompanyToday();
+        // Use the first deposit's paid_date as the enrollment date — that is the date
+        // the admin selected on the add-customer form and was stored by _recordPayment.
+        // Fall back to today only if the ledger is unexpectedly empty.
+        const enrollmentDate = pays[0]?.paid_date ?? getCompanyToday();
         const payload = { ...pe.payload, customerId: pe.customer_id, referrerId: pe.referrer_id ?? undefined };
-        const entityId = await adapter.complete(client, db, enteredBy, pe.branch_id, payload, Number(pe.required_amount), synth, today);
+        const entityId = await adapter.complete(client, db, enteredBy, pe.branch_id, payload, Number(pe.required_amount), synth, enrollmentDate);
 
         // Exactly-once link (UNIQUE pending_enrollment_id) — a racing completion rolls back here.
         await client.query(`UPDATE ${adapter.entityTable} SET pending_enrollment_id = $1 WHERE id = $2`, [pe.id, entityId]);

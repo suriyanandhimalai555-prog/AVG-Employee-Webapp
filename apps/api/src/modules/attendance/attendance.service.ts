@@ -850,10 +850,15 @@ export const AttendanceService = {
         a.check_out_time,
         a.check_out_lat,
         a.check_out_lng,
-        b.name      AS branch_name
+        b.name      AS branch_name,
+        -- Direct superior resolved via self-join on manager_id; NULL when no manager
+        m.name      AS "managerName",
+        m.role      AS "managerRole"
       FROM users u
       LEFT JOIN attendance a ON a.user_id = u.id AND a.date = $1
       LEFT JOIN branches b   ON u.branch_id = b.id
+      -- Self-join to resolve the immediate manager (superior) of each employee
+      LEFT JOIN users    m   ON u.manager_id = m.id
       ${baseWhere}
     `;
 

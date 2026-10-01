@@ -88,16 +88,30 @@ const buildApp = async (): Promise<FastifyInstance> => {
   // Register the Authentication plugin (decorates instance with 'fastify.authenticate')
   await app.register(authPlugin);
 
-  // Step 4: Register Rate Limiting AFTER authPlugin so request.user.id is populated when
-  // keyGenerator runs — limits are per authenticated user, not per IP. Dashboard roles
-  // (MD, GM) legitimately fire many requests per minute (branch summaries, photo URLs for
-  // every employee), so the ceiling is raised to 300 to avoid false-positive 429s.
+  // Step 4: Register Rate Limiting. The global hook runs before per-route onRequest hooks,
+  // so request.user is never populated here by fastify.authenticate. Instead we extract the
+  // user ID by Base64-decoding the JWT payload (no signature check — just for bucketing).
+  // Falls back to IP for unauthenticated requests (login, health). Dashboard roles (MD, GM)
+  // legitimately fire many requests per minute, so the ceiling is 300.
   await app.register(fastifyRateLimit, {
     max: 300,
     timeWindow: 60000,
     redis: redisClient,
-    // With auth registered first, request.user.id is always available for logged-in requests
-    keyGenerator: (request: any) => request.user?.id ?? request.ip,
+    // Decode JWT payload without verification to get the user ID for per-user bucketing.
+    // Unauthenticated requests (login, health) fall back to IP.
+    keyGenerator: (request: any) => {
+      if (request.user?.id) return `user:${request.user.id}`;
+      const auth = (request.headers as any).authorization;
+      if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+        try {
+          // JWT is three base64url segments; the middle one is the payload JSON.
+          const raw = auth.slice(7).split('.')[1];
+          const payload = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+          if (payload?.id) return `user:${payload.id}`;
+        } catch {}
+      }
+      return `ip:${request.ip}`;
+    },
     errorResponseBuilder: () => ({
       success: false,
       error: {
