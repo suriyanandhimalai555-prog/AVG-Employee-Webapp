@@ -312,21 +312,33 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   });
 
   // ─── PATCH /chit/groups/:groupId/members/:memberId/correct ───
+  // Extended to allow the original branch admin to correct their own members,
+  // even after the group has been combined into a head-branch group.
   fastify.patch('/groups/:groupId/members/:memberId/correct', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertCanManageSchemeData(req.user.role as any);
         const { groupId, memberId } = req.params as { groupId: string; memberId: string };
         const body = CorrectChitMemberSchema.parse(req.body);
-        const rows = await fastify.db.query(
-          `SELECT g.branch_id FROM agila_chit_groups g
-           JOIN agila_chit_members m ON m.group_id = g.id
-           WHERE m.id = $1`,
-          [memberId]
-        );
-        if (rows.rows.length === 0) throw new Error('Not found');
-        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+
+        let branchId: string;
+        if (req.user.role === Role.BRANCH_ADMIN) {
+          // Branch admin may only correct members belonging to their own branch.
+          // Use the JWT branchId directly (WRITER_ROLES already validated above via SCHEME_WRITER_ROLES).
+          branchId = resolveWriterBranch(req.user.role, req.user.branchId, undefined);
+        } else {
+          // MD / Management: derive branch from the member's group (or body override).
+          assertCanManageSchemeData(req.user.role as any);
+          const rows = await fastify.db.query(
+            `SELECT g.branch_id FROM agila_chit_groups g
+             JOIN agila_chit_members m ON m.group_id = g.id
+             WHERE m.id = $1`,
+            [memberId]
+          );
+          if (rows.rows.length === 0) throw new Error('Not found');
+          branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        }
+
         const data = await ChitService.correctMember(fastify.db, req.user.id, groupId, memberId, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
@@ -334,18 +346,29 @@ export default async function chitRoutes(fastify: FastifyInstance): Promise<void
   );
 
   // ─── PATCH /chit/groups/:groupId/members/:memberId/payments/:paymentId/correct ───
+  // Extended to allow the original branch admin to correct payments for their own members,
+  // even after the group has been combined into a head-branch group.
   fastify.patch('/groups/:groupId/members/:memberId/payments/:paymentId/correct', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const req = request as AuthRequest;
-        assertCanManageSchemeData(req.user.role as any);
         const { groupId, memberId, paymentId } = req.params as { groupId: string; memberId: string; paymentId: string };
         const body = CorrectChitPaymentSchema.parse(req.body);
-        const rows = await fastify.db.query(
-          `SELECT g.branch_id FROM agila_chit_groups g WHERE g.id = $1`, [groupId]
-        );
-        if (rows.rows.length === 0) throw new Error('Group not found');
-        const branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+
+        let branchId: string;
+        if (req.user.role === Role.BRANCH_ADMIN) {
+          // Branch admin may only correct payments for their own branch's members.
+          branchId = resolveWriterBranch(req.user.role, req.user.branchId, undefined);
+        } else {
+          // MD / Management: derive branch from the group row (or body override).
+          assertCanManageSchemeData(req.user.role as any);
+          const rows = await fastify.db.query(
+            `SELECT g.branch_id FROM agila_chit_groups g WHERE g.id = $1`, [groupId]
+          );
+          if (rows.rows.length === 0) throw new Error('Group not found');
+          branchId = resolveCorrectionBranch(req.user.role, req.user.branchId, rows.rows[0].branch_id, (body as any).branchId);
+        }
+
         const data = await ChitService.correctPayment(fastify.db, req.user.id, groupId, memberId, paymentId, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }

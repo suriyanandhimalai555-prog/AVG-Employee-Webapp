@@ -188,6 +188,8 @@ export const ChitService = {
 
     // Referrer-scoped roles see only groups where they referred ≥1 member, across
     // ALL branches; everyone else stays branch-scoped.
+    // The OR EXISTS path surfaces combined groups whose branch_id is the head branch
+    // but which contain members enrolled by the caller's branch (original branch).
     const params: any[] = [];
     let where: string;
     if (referrerId) {
@@ -195,7 +197,8 @@ export const ChitService = {
       where = 'EXISTS (SELECT 1 FROM agila_chit_members mm WHERE mm.group_id = g.id AND mm.referrer_id = $1)';
     } else {
       params.push(branchId);
-      where = 'g.branch_id = $1';
+      // TS: OR EXISTS makes combined groups visible to the original branch admin
+      where = '(g.branch_id = $1 OR EXISTS (SELECT 1 FROM agila_chit_members mm WHERE mm.group_id = g.id AND mm.branch_id = $1))';
     }
     let idx = 2;
 
@@ -276,6 +279,8 @@ export const ChitService = {
   async getGroup(db: Pool, groupId: string, branchId: string, referrerId?: string): Promise<any> {
     // Referrer-scoped roles can open a group from any branch, but only if they have
     // a card in it — gate access via EXISTS instead of the branch match.
+    // Branch admins can open the group if it belongs to their branch (direct owner)
+    // OR if they have enrolled members in it (original branch after combine).
     const groupResult = await db.query(
       referrerId
         ? `SELECT g.*, u.name AS created_by_name, b.is_head_branch AS branch_is_head
@@ -288,7 +293,11 @@ export const ChitService = {
            FROM agila_chit_groups g
            JOIN users    u ON g.created_by = u.id
            JOIN branches b ON b.id = g.branch_id
-           WHERE g.id = $1 AND g.branch_id = $2`,
+           WHERE g.id = $1
+             AND (g.branch_id = $2 OR EXISTS (
+               SELECT 1 FROM agila_chit_members mm
+               WHERE mm.group_id = g.id AND mm.branch_id = $2
+             ))`,
       [groupId, referrerId ?? branchId]
     );
     if (groupResult.rows.length === 0) throw new NotFoundError('Group not found');
@@ -304,12 +313,26 @@ export const ChitService = {
     }
 
     // Referrer-scoped roles only see the cards (and their winners) they referred.
-    const memberScope = referrerId ? ' AND m.referrer_id = $2' : '';
-    const memberParams = referrerId ? [groupId, referrerId] : [groupId];
+    // Non-owner branch admins (access via member.branch_id match) see only their own members —
+    // preserves the "Branch Admin — their branch only" visibility rule.
+    const isGroupOwner = !referrerId && group.branch_id === branchId;
+    let memberScope = '';
+    let memberParams: any[];
+    if (referrerId) {
+      memberScope = ' AND m.referrer_id = $2';
+      memberParams = [groupId, referrerId];
+    } else if (!isGroupOwner) {
+      // TS: non-owner branch admin — scope to their own members so cross-branch data stays hidden
+      memberScope = ' AND m.branch_id = $2';
+      memberParams = [groupId, branchId];
+    } else {
+      memberParams = [groupId];
+    }
 
     const membersResult = await db.query(
       `SELECT
          m.*,
+         m.branch_id AS source_branch_id,
          c.name AS customer_name, c.phone AS customer_phone, c.customer_code,
          u.name AS entered_by_name,
          COALESCE(SUM(p.amount), 0)::numeric  AS total_paid,
@@ -420,12 +443,13 @@ export const ChitService = {
 
       // Insert member — card_number tracks which card this is for customers
       // who hold multiple positions in the same group (e.g. Card 1, Card 2).
+      // branch_id records the original branch so ownership is preserved after combine.
       const memberResult = await client.query(
         `INSERT INTO agila_chit_members
-           (group_id, customer_id, referrer_id, referrer_name, entered_by, card_number)
-         VALUES ($1,$2,$3,$4,$5,$6)
+           (group_id, customer_id, referrer_id, referrer_name, entered_by, card_number, branch_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING *`,
-        [groupId, payload.customerId, payload.referrerId || null, referrerName, enteredBy, cardNumber]
+        [groupId, payload.customerId, payload.referrerId || null, referrerName, enteredBy, cardNumber, branchId]
       );
       const member = memberResult.rows[0];
 
@@ -511,12 +535,17 @@ export const ChitService = {
     branchId: string,
     payload: RecordChitPaymentInput
   ): Promise<any> {
-    // Allow payment recording for all non-terminal statuses
+    // Allow payment recording for all non-terminal statuses.
+    // The OR m.branch_id = $3 path allows the original branch admin to record
+    // monthly payments for their members in a combined group (where g.branch_id
+    // is the head branch, not the original branch). The member's own branch_id
+    // stays as the original even after the group is combined.
     const memberResult = await db.query(
       `SELECT m.*, g.full_amount, g.half_amount
        FROM agila_chit_members m
        JOIN agila_chit_groups g ON g.id = m.group_id
-       WHERE m.id = $1 AND m.group_id = $2 AND g.branch_id = $3
+       WHERE m.id = $1 AND m.group_id = $2
+         AND (g.branch_id = $3 OR m.branch_id = $3)
          AND g.status NOT IN ('combined_into','expired')`,
       [memberId, groupId, branchId]
     );
@@ -724,9 +753,16 @@ export const ChitService = {
 
   // ─── MARK REFUND PAID ──────────────────────────────────────────────────────
   async markRefundPaid(db: Pool, groupId: string, memberId: string, branchId: string): Promise<any> {
+    // The OR EXISTS path allows the original branch admin to mark their own member's
+    // refund as credited, even when the group is now owned by the head branch.
     const groupResult = await db.query(
-      `SELECT g.status FROM agila_chit_groups g WHERE g.id = $1 AND g.branch_id = $2`,
-      [groupId, branchId]
+      `SELECT g.status FROM agila_chit_groups g
+       WHERE g.id = $1
+         AND (g.branch_id = $2 OR EXISTS (
+           SELECT 1 FROM agila_chit_members mm
+           WHERE mm.id = $3 AND mm.group_id = g.id AND mm.branch_id = $2
+         ))`,
+      [groupId, branchId, memberId]
     );
     if (groupResult.rows.length === 0) throw new NotFoundError('Group not found');
     if (!['completed','expired'].includes(groupResult.rows[0].status)) {
@@ -744,9 +780,11 @@ export const ChitService = {
     return result.rows[0];
   },
 
-  // ─── CORRECT MEMBER (admin: MD / Management) ────────────────────────────────
+  // ─── CORRECT MEMBER (admin: MD / Management, or original branch_admin) ────────
   // Patches editable fields on an existing chit member. When referrerId or
   // amount changes the enrollment incentive is reversed and re-distributed.
+  // Branch admins may correct their own members (matched via member.branch_id)
+  // even when the group is now owned by the head branch after combine.
   async correctMember(
     db: Pool,
     correctedBy: string,
@@ -761,7 +799,8 @@ export const ChitService = {
          FROM agila_chit_members m
          JOIN agila_chit_groups g ON g.id = m.group_id
          JOIN customers c ON c.id = m.customer_id
-         WHERE m.id = $1 AND m.group_id = $2 AND g.branch_id = $3`,
+         WHERE m.id = $1 AND m.group_id = $2
+           AND (g.branch_id = $3 OR m.branch_id = $3)`,
         [memberId, groupId, branchId]
       );
       if (beforeRes.rows.length === 0) throw new NotFoundError('Chit member not found');
@@ -937,8 +976,10 @@ export const ChitService = {
     });
   },
 
-  // ─── CORRECT PAYMENT (admin: MD / Management) ────────────────────────────────
+  // ─── CORRECT PAYMENT (admin: MD / Management, or original branch_admin) ────────
   // Edits an existing chit payment row (month/amount/date/mode/notes).
+  // Branch admins may correct payments for their own members (matched via member.branch_id)
+  // even when the group is now owned by the head branch after combine.
   async correctPayment(
     db: Pool,
     correctedBy: string,
@@ -949,9 +990,16 @@ export const ChitService = {
     payload: CorrectChitPaymentInput
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
+      // Allow access if the group belongs to the caller's branch (direct owner)
+      // OR if the member being corrected belongs to the caller's branch (original branch).
       const groupRow = await client.query(
-        `SELECT * FROM agila_chit_groups WHERE id = $1 AND branch_id = $2`,
-        [groupId, branchId]
+        `SELECT g.* FROM agila_chit_groups g
+         WHERE g.id = $1
+           AND (g.branch_id = $2 OR EXISTS (
+             SELECT 1 FROM agila_chit_members mm
+             WHERE mm.id = $3 AND mm.group_id = g.id AND mm.branch_id = $2
+           ))`,
+        [groupId, branchId, memberId]
       );
       if (groupRow.rows.length === 0) throw new NotFoundError('Chit group not found');
 

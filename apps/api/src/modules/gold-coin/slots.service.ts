@@ -266,14 +266,17 @@ export const SlotsService = {
       // Pre-fetch active batch slots for both incentive calc and field propagation.
       // Status filter (Bug 5): excludes refunded/voided so batchAmount isn't inflated.
       // Used below (Bug 6) to propagate field changes to overflow-room slots.
+      // Branch filter: a batch is always single-branch; the AND branch_id = $2 guard
+      // ensures a branch_admin call can never touch another branch's sibling slot.
       const batchSlotsRes = await client.query(
         `SELECT s.id
          FROM   gold_coin_slots s
          JOIN   gold_coin_rooms r ON r.id = s.room_id
          WHERE  s.batch_id = $1
+         AND    s.branch_id = $2
          AND    s.status NOT IN ('refunded', 'voided')
          ORDER  BY r.created_at ASC, s.slot_number ASC`,
-        [old.batch_id]
+        [old.batch_id, branchId]
       );
       const batchIds     = batchSlotsRes.rows.map((r: { id: string }) => r.id);
       const anchorSlotId = batchSlotsRes.rows[0]?.id ?? slotId;

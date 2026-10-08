@@ -402,7 +402,8 @@ export const LssRoomDetailPage = () => {
   const heldSlots  = room.slots.filter(s => s.status === 'held').length;
   const canActivate   = canWrite && room.status === 'filling' && heldSlots === SLOTS_PER_ROOM;
   const canSendToHead = canWrite && room.status === 'filling' && heldSlots < SLOTS_PER_ROOM;
-  const canDraw       = canWrite && room.status === 'active';
+  // Draw is restricted to the room owner (= head branch after combine); non-owner branch admin can view but not draw.
+  const canDraw       = canWrite && room.status === 'active' && user?.branchId === room.branch_id;
   const canVoidRoom   = isAdmin && room.status !== 'voided' && room.status !== 'completed';
   const canDeleteRoom = isAdmin;
 
@@ -726,8 +727,9 @@ export const LssRoomDetailPage = () => {
                         )}
                       </div>
                     </div>
-                    {isAdmin && isHeld && (
-                      <SlotAdminActions slot={s} branchId={room.branch_id} roomStatus={room.status} />
+                    {/* Show payment-edit actions to MD/Management OR to the branch admin who owns this slot's original branch. */}
+                    {isHeld && (isAdmin || (user?.role === 'branch_admin' && user?.branchId === s.source_branch_id)) && (
+                      <SlotAdminActions slot={s} branchId={s.source_branch_id ?? room.branch_id} roomStatus={room.status} />
                     )}
                     <PhotoProof photoKey={s.proof_key} />
                     <TransactionIdList transactionId={s.transaction_id} />

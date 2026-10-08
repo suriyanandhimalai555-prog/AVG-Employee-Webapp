@@ -243,8 +243,11 @@ export const RoomsService = {
     if (filters.status)  { where += ` AND r.status = $${idx++}`;         params.push(filters.status); }
     if (filters.planId)  { where += ` AND r.plan_id = $${idx++}`;        params.push(filters.planId); }
     if (filters.branchIds !== null) {
-      where += ` AND r.branch_id = ANY($${idx++}::uuid[])`;
+      // TS: OR EXISTS surfaces combined rooms that contain the caller's slots even
+      // though the combined room's branch_id is the head branch (not the caller's).
+      where += ` AND (r.branch_id = ANY($${idx}::uuid[]) OR EXISTS (SELECT 1 FROM lss_slots s WHERE s.room_id = r.id AND s.branch_id = ANY($${idx}::uuid[])))`;
       params.push(filters.branchIds);
+      idx++;
     }
     // Date range: filter on first_draw_date (when the plan starts after activation).
     // Rooms not yet activated (first_draw_date IS NULL) naturally drop out when a range is applied.
@@ -351,25 +354,52 @@ export const RoomsService = {
     );
     if (roomRes.rows.length === 0) throw new NotFoundError('Room not found', 'LSS_ROOM_NOT_FOUND');
 
+    // TS: isOwner = caller owns the room (MD/Management global, or room belongs to their branch)
+    let isOwner = true;
     if (allowedBranchIds !== null) {
       const room = roomRes.rows[0];
-      const canView =
+      const directMatch =
         allowedBranchIds.includes(room.branch_id) ||
         (allowPendingCombine && room.status === 'pending_combine');
-      if (!canView) throw new ForbiddenError('You do not have access to this room');
+
+      if (!directMatch) {
+        // Third path: original branch admin accessing a combined room that contains
+        // their slots. EXISTS check avoids loading all slots just for the gate.
+        const existsRes = await db.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM lss_slots
+             WHERE room_id = $1 AND branch_id = ANY($2::uuid[])
+           ) AS exists`,
+          [roomId, allowedBranchIds]
+        );
+        if (!existsRes.rows[0].exists) throw new ForbiddenError('You do not have access to this room');
+        // TS: caller got in via slot membership, not room ownership → non-owner
+        isOwner = false;
+      }
+    }
+
+    // Non-owner branch admins see only their own slots — preserves the
+    // "Branch Admin — their branch only" visibility rule: a combined room
+    // is visible to them but they must not see other branches' customers/payment data.
+    const slotParams: any[] = [roomId];
+    let slotBranchFilter = '';
+    if (!isOwner && allowedBranchIds !== null) {
+      // TS: filter slots to the caller's branch(es) so cross-branch data stays hidden
+      slotBranchFilter = ` AND s.branch_id = ANY($2::uuid[])`;
+      slotParams.push(allowedBranchIds);
     }
 
     const slotsRes = await db.query(
       `SELECT s.*, c.name AS customer_name, c.customer_code, c.phone AS customer_phone,
               u.name AS referrer_name, u.role AS referrer_role,
-              bs.name AS source_branch_name
+              bs.name AS source_branch_name, s.branch_id AS source_branch_id
        FROM lss_slots s
        JOIN customers c ON s.customer_id = c.id
        LEFT JOIN users u ON s.referrer_id = u.id
        JOIN branches bs  ON s.branch_id  = bs.id
-       WHERE s.room_id = $1
+       WHERE s.room_id = $1${slotBranchFilter}
        ORDER BY s.slot_number ASC`,
-      [roomId]
+      slotParams
     );
 
     const drawsRes = await db.query(

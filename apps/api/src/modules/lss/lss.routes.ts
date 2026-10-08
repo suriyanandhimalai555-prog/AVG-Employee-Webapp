@@ -377,17 +377,38 @@ export default async function lssRoutes(fastify: FastifyInstance): Promise<void>
   );
 
   // ─── PATCH /lss/slots/:id/correct ────────────────────────────────────────
+  // Extended to allow the original branch admin to correct their own slots,
+  // even after the slot has been moved into a combined head-branch room.
+  // Also fixes the "Slot not found" defect for MD/Management: previously the
+  // body branchId (= head room branch) was passed instead of the slot's own branch.
   fastify.patch('/slots/:id/correct', { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply) => {
       try {
-        const req = request as { user: { id: string; role: string; branchId: string | null }; params: any; body: any };
-        assertCanManageSchemeData((req as any).user.role as any);
+        const req = request as AuthenticatedRequest;
         const { id } = req.params as { id: string };
         const body = CorrectLssSlotSchema.parse(req.body);
+        // Resolve the slot's own branch — authoritative regardless of which
+        // room the slot currently lives in (combined rooms have a different branch_id).
         const rows = await fastify.db.query('SELECT branch_id FROM lss_slots WHERE id = $1', [id]);
-        if (rows.rows.length === 0) throw new Error('Slot not found');
-        const branchId = resolveCorrectionBranch((req as any).user.role, (req as any).user.branchId, rows.rows[0].branch_id, (body as any).branchId);
-        const data = await SlotsService.correctSlot(fastify.db, (req as any).user.id, id, branchId, body);
+        if (rows.rows.length === 0) throw new NotFoundError('Slot not found');
+        const slotBranchId: string = rows.rows[0].branch_id;
+
+        let branchId: string;
+        if (req.user.role === Role.BRANCH_ADMIN) {
+          // Branch admins may only correct slots belonging to their own branch.
+          const callerBranchId = await resolveBranchAdminBranchId(fastify.db, req.user.id, req.user.branchId);
+          if (slotBranchId !== callerBranchId) {
+            throw new ForbiddenError('You can only correct slots belonging to your branch');
+          }
+          branchId = slotBranchId;
+        } else {
+          // MD / Management: always use the slot's own branch (never the body override).
+          // Using the body's branchId was the "Slot not found" defect — the body
+          // carried the combined room's head branch while the slot's branch is original.
+          assertCanManageSchemeData(req.user.role as any);
+          branchId = slotBranchId;
+        }
+        const data = await SlotsService.correctSlot(fastify.db, req.user.id, id, branchId, body);
         return reply.send({ success: true, data });
       } catch (error) { return handleError(error, reply); }
     }

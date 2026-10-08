@@ -462,9 +462,15 @@ export const ChitGroupDetailPage = () => {
   const monthsProgress  = group.winners?.length || 0;
   const daysLeft        = isForming ? daysUntilDeadline(group.fill_deadline) : null;
 
-  // Gate checks
-  const canSelectWinner = isAdmin && isActive && currentMonth <= 20 && group.eligibleForWin > 0;
-  const canAddMember    = isAdmin && (isForming || isActive) && memberCount < 19;
+  // isGroupOwner: caller's branch matches the group's current owner (= head branch after combine).
+  // Non-owner branch admins have read + payment access to their own members only.
+  const isGroupOwner = user?.branchId === group?.branch_id;
+
+  // Gate checks — draw and add-member are group-owner actions only.
+  // canSelectWinner: combined groups are active, but only the head branch (group owner) runs the draw.
+  const canSelectWinner = isAdmin && isActive && isGroupOwner && currentMonth <= 20 && group.eligibleForWin > 0;
+  // canAddMember: only the group owner may enroll new members (branch scope matches group branch).
+  const canAddMember    = isAdmin && isGroupOwner && (isForming || isActive) && memberCount < 19;
   const canSendToHead   = isAdmin && isForming && !isHeadBranch;
 
   return (
@@ -664,45 +670,57 @@ export const ChitGroupDetailPage = () => {
                   </div>
                 )}
 
-                {isAdmin && !isLocked && (
-                  <div className="flex gap-2">
-                    {!isCancelled && (
-                      <button onClick={() => setPaymentTarget(member)}
-                        className="flex-1 py-2 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-xl flex items-center justify-center gap-1 tactile-press">
-                        <CreditCard size={12} aria-hidden="true" />
-                        Record Payment
-                      </button>
-                    )}
-                    {!isCancelled && !hasWon && isActive && (
-                      <button onClick={() => setCancelTarget(member)}
-                        className="py-2 px-3 bg-red-50 text-red-600 text-[10px] font-bold rounded-xl flex items-center gap-1 tactile-press">
-                        <XCircle size={12} aria-hidden="true" />
-                        Cancel
-                      </button>
-                    )}
-                    {isCancelled && (
-                      <>
+                {isAdmin && !isLocked && (() => {
+                  // Payment-editable: original branch admin for their own members, or group owner.
+                  // Backend now accepts branch_admin requests scoped to member.branch_id.
+                  const canPayment  = isGroupOwner || member.source_branch_id === user?.branchId;
+                  // Lifecycle actions (cancel, reinstate): group owner only — these affect group state.
+                  const canLifecycle = isGroupOwner;
+                  if (!canPayment && !canLifecycle) return null;
+                  return (
+                    <div className="flex gap-2">
+                      {canPayment && !isCancelled && (
                         <button onClick={() => setPaymentTarget(member)}
-                          className="py-2 px-3 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-xl flex items-center gap-1 tactile-press">
+                          className="flex-1 py-2 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-xl flex items-center justify-center gap-1 tactile-press">
                           <CreditCard size={12} aria-hidden="true" />
-                          Pay Due
+                          Record Payment
                         </button>
-                        <button onClick={() => handleReinstate(member)}
+                      )}
+                      {canLifecycle && !isCancelled && !hasWon && isActive && (
+                        <button onClick={() => setCancelTarget(member)}
+                          className="py-2 px-3 bg-red-50 text-red-600 text-[10px] font-bold rounded-xl flex items-center gap-1 tactile-press">
+                          <XCircle size={12} aria-hidden="true" />
+                          Cancel
+                        </button>
+                      )}
+                      {isCancelled && (
+                        <>
+                          {canPayment && (
+                            <button onClick={() => setPaymentTarget(member)}
+                              className="py-2 px-3 bg-violet-50 text-violet-700 text-[10px] font-bold rounded-xl flex items-center gap-1 tactile-press">
+                              <CreditCard size={12} aria-hidden="true" />
+                              Pay Due
+                            </button>
+                          )}
+                          {canLifecycle && (
+                            <button onClick={() => handleReinstate(member)}
+                              className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-xl flex items-center justify-center gap-1 tactile-press">
+                              <RotateCcw size={12} aria-hidden="true" />
+                              Reinstate
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {canPayment && canRefund && (
+                        <button onClick={() => handleMarkRefund(member)}
                           className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-xl flex items-center justify-center gap-1 tactile-press">
-                          <RotateCcw size={12} aria-hidden="true" />
-                          Reinstate
+                          <CheckCircle2 size={12} aria-hidden="true" />
+                          Mark Refund Paid
                         </button>
-                      </>
-                    )}
-                    {canRefund && (
-                      <button onClick={() => handleMarkRefund(member)}
-                        className="flex-1 py-2 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-xl flex items-center justify-center gap-1 tactile-press">
-                        <CheckCircle2 size={12} aria-hidden="true" />
-                        Mark Refund Paid
-                      </button>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
