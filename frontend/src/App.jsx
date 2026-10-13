@@ -121,13 +121,20 @@ function App() {
   const dispatch = useDispatch();
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
-  const { isLoading: isMeLoading, isError: isMeError } = useGetMeQuery(undefined, {
+  // Fetch the current user profile on mount; skip when not yet authenticated.
+  // We destructure `error` (not the boolean `isError`) so we can inspect the HTTP
+  // status — only a genuine 401 means the token is invalid and the user should be
+  // logged out.  A transient 429 or 5xx must never clear the session.
+  const { isLoading: isMeLoading, error: meError } = useGetMeQuery(undefined, {
     skip: !isAuthenticated,
   });
 
   useEffect(() => {
-    if (isMeError) dispatch(clearCredentials());
-  }, [isMeError, dispatch]);
+    // Clear credentials only on a real auth failure (401 Unauthorized).
+    // 429 / 5xx / network errors are transient; keeping the session avoids
+    // a spurious logout that would frustrate the user on a busy server.
+    if (meError?.status === 401) dispatch(clearCredentials());
+  }, [meError, dispatch]);
 
   if (isAuthenticated && isMeLoading) {
     return (

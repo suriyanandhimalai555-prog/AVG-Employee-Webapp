@@ -7,6 +7,8 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import { env } from './config/env';
 // Redis client used for session caching and rate limiting
 import redisClient from './config/redis';
+// Named role-set: back-office dashboard roles that are exempt from the rate limiter.
+import { RATE_LIMIT_EXEMPT_ROLES } from './shared/role-constants';
 
 // Infrastructure Plugins: DB, Auth decorators, and Global Error Handling
 import dbPlugin from './plugins/db.plugin';
@@ -90,26 +92,53 @@ const buildApp = async (): Promise<FastifyInstance> => {
 
   // Step 4: Register Rate Limiting. The global hook runs before per-route onRequest hooks,
   // so request.user is never populated here by fastify.authenticate. Instead we extract the
-  // user ID by Base64-decoding the JWT payload (no signature check — just for bucketing).
-  // Falls back to IP for unauthenticated requests (login, health). Dashboard roles (MD, GM)
-  // legitimately fire many requests per minute, so the ceiling is 300.
+  // user ID and role by Base64-decoding the JWT payload (no signature check — just for
+  // bucketing/exemption). Falls back to IP for unauthenticated requests (login, health).
+  // Back-office dashboard roles (MD/Management/Director) are exempt because the Management
+  // Control Center legitimately fires 25+ queries per page load.
+  //
+  // Security note: the unverified decode is only used for rate-limit bucketing and exemption.
+  // Every protected route still runs jwtVerify via fastify.authenticate — a forged token
+  // claiming an exempt role will skip the limiter but still receive a 401 on the actual call.
+
+  // Decode the JWT payload from the Authorization header without signature verification.
+  // Returns the raw payload object (with id/role/…) or null if absent/malformed.
+  const decodeBearerPayload = (request: any): Record<string, unknown> | null => {
+    // request.user is only populated after authenticate runs; check it first as a fast path.
+    if (request.user?.id) return request.user as Record<string, unknown>;
+    const auth = (request.headers as any).authorization;
+    // Only process Bearer tokens; skip API key or other schemes.
+    if (typeof auth !== 'string' || !auth.startsWith('Bearer ')) return null;
+    try {
+      // JWT is three base64url segments; the middle one is the payload JSON.
+      const raw = auth.slice(7).split('.')[1];
+      // Node's base64 decoder also accepts base64url (- → +, _ → /) since Node 16+.
+      return JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+    } catch {
+      // Malformed token — fall back gracefully (limiter will bucket by IP instead).
+      return null;
+    }
+  };
+
   await app.register(fastifyRateLimit, {
-    max: 300,
+    // 600 req/min per user: doubled from the prior 300 ceiling to accommodate query-dense
+    // role dashboards (Director/GM) without exempting them entirely.
+    max: 600,
     timeWindow: 60000,
     redis: redisClient,
-    // Decode JWT payload without verification to get the user ID for per-user bucketing.
-    // Unauthenticated requests (login, health) fall back to IP.
+    // Skip the limiter entirely for back-office roles (MD/Management/Director) whose
+    // dashboards fire 25+ queries per load — rate-limiting them breaks normal use.
+    allowList: (request: any) => {
+      // Decode once per request; null means unauthenticated (never exempt).
+      const payload = decodeBearerPayload(request);
+      // Cast to string[] so includes() type-checks; RATE_LIMIT_EXEMPT_ROLES is readonly RoleValue[].
+      return !!payload?.role && (RATE_LIMIT_EXEMPT_ROLES as readonly string[]).includes(payload.role as string);
+    },
+    // Key per authenticated user so heavy users can't starve others on the same IP.
     keyGenerator: (request: any) => {
-      if (request.user?.id) return `user:${request.user.id}`;
-      const auth = (request.headers as any).authorization;
-      if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
-        try {
-          // JWT is three base64url segments; the middle one is the payload JSON.
-          const raw = auth.slice(7).split('.')[1];
-          const payload = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-          if (payload?.id) return `user:${payload.id}`;
-        } catch {}
-      }
+      const payload = decodeBearerPayload(request);
+      // Prefer user-scoped bucket; fall back to IP for unauthenticated traffic (login, health).
+      if (payload?.id) return `user:${payload.id}`;
       return `ip:${request.ip}`;
     },
     errorResponseBuilder: () => ({

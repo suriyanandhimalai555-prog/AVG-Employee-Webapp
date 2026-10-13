@@ -116,6 +116,13 @@ export const INCENTIVE_OVERVIEW_ROLES: readonly RoleValue[] = [
   Role.MD, Role.MANAGEMENT,
 ];
 
+// Roles exempt from the global per-user rate limiter.
+// Management/MD/Director use the Management Control Center which legitimately fires
+// 25+ queries per page load; imposing a tight ceiling would 429 normal back-office use.
+export const RATE_LIMIT_EXEMPT_ROLES: readonly RoleValue[] = [
+  Role.MD, Role.MANAGEMENT, Role.DIRECTOR,
+];
+
 // Helper: O(1) membership test against any of the sets above.
 export const hasRole = (
   role: string,
