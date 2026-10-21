@@ -70,7 +70,10 @@ export async function getHierarchyVisibleUserIds(
     ids = await getSubtreeIds(viewer.id);
   } else {
     ids = await getSubtreeIds(viewer.id);
-    const canFallbackByBranch = allowAbmBranchFallback && ['branch_manager', 'abm'].includes(viewer.role);
+    // ABM visibility is subtree-only ("their team only" per CLAUDE.md) — exclude abm from the
+    // branch fallback so a freshly-promoted ABM with no reports sees an empty list, not the
+    // whole branch. Branch Manager retains branch-wide visibility ("their branch only").
+    const canFallbackByBranch = allowAbmBranchFallback && ['branch_manager'].includes(viewer.role);
     if (canFallbackByBranch && ids.length <= 1 && viewer.branchId) {
       const descendants = getDescendantRoles(viewer.role);
       ids = await getBranchUserIdsByRoles(db, viewer.branchId, descendants);
