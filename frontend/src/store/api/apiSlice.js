@@ -903,6 +903,12 @@ export const apiSlice = createApi({
       invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
     }),
 
+    deleteGoldCoinRoom: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/gold-coin/rooms/${id}`, method: 'DELETE', body: data }),
+      transformResponse: (response) => response.data,
+      invalidatesTags: ['GoldCoinRooms', 'GoldCoinRoom', 'GoldCoinSummary', 'Incentives', 'IncentiveWallet', 'SchemeBranchEntries'],
+    }),
+
     voidGoldCoinRoom: builder.mutation({
       query: ({ id, ...data }) => ({ url: `/gold-coin/rooms/${id}/void`, method: 'PATCH', body: data }),
       transformResponse: (response) => response.data,
@@ -2534,6 +2540,7 @@ export const {
   useCorrectGoldCoinSlotMutation,
   useVoidGoldCoinSlotMutation,
   useDeleteGoldCoinSlotMutation,
+  useDeleteGoldCoinRoomMutation,
   useVoidGoldCoinRoomMutation,
   useRemoveGoldCoinSlotMutation,
   useCorrectLssSlotMutation,

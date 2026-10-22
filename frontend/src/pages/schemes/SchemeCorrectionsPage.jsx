@@ -60,6 +60,7 @@ import {
   useDeleteLssSlotMutation,
   useUndoLssDrawMutation,
   useDeleteLssRoomMutation,
+  useDeleteGoldCoinRoomMutation,
   useCorrectLandBookingMutation,
   useVoidLandBookingMutation,
   useDeleteLandBookingMutation,
@@ -1830,10 +1831,16 @@ const SEARCH_KEYS = {
   land_scheme:       ['customer_name', 'customer_code', 'booking_ref', 'site_number', 'site_name'],
 };
 
-// Room card for Gold Coin and LSS — identical display, but LSS also shows a Delete Room button.
+// Room card for Gold Coin and LSS — identical display, both show a Delete Room button.
 const LssRoomCorrectionsCard = ({ entry, branchId, schemeCode, schemeActions }) => {
-  const isLss = schemeCode === 'lss_scheme';
-  const [deleteRoom]    = useDeleteLssRoomMutation();
+  const isLss      = schemeCode === 'lss_scheme';
+  const isGoldCoin = schemeCode === 'gold_coin_scheme';
+  // Both LSS and Gold Coin support room-level permanent delete + incentive clawback.
+  const canDeleteRoom = isLss || isGoldCoin;
+  const [deleteLssRoom] = useDeleteLssRoomMutation();
+  const [deleteGcRoom]  = useDeleteGoldCoinRoomMutation();
+  // Pick the scheme-specific mutation so the correct backend route is called.
+  const deleteRoom = isGoldCoin ? deleteGcRoom : deleteLssRoom;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteErr,     setDeleteErr]     = useState('');
   const [deleting,      setDeleting]      = useState(false);
@@ -1856,7 +1863,7 @@ const LssRoomCorrectionsCard = ({ entry, branchId, schemeCode, schemeActions }) 
         <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${statusStyleFor(schemeCode, entry.status)}`}>
           {(entry.status || '').replace(/_/g, ' ')}
         </span>
-        {isLss && !confirmDelete && (
+        {canDeleteRoom && !confirmDelete && (
           <button
             type="button"
             onClick={() => { setConfirmDelete(true); setDeleteErr(''); }}
