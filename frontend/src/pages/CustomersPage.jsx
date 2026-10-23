@@ -36,7 +36,7 @@ export const CustomersPage = () => {
   const flashTimer = useRef(null);
 
   const [editCustomer, setEditCustomer] = useState(null);
-  const [editForm, setEditForm] = useState({ phone: '', address: '' });
+  const [editForm, setEditForm] = useState({ name: '', phone: '', address: '' });
   const [editError, setEditError] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
 
@@ -99,7 +99,7 @@ export const CustomersPage = () => {
 
   const openEdit = (customer) => {
     setEditError(null);
-    setEditForm({ phone: customer.phone || '', address: customer.address || '' });
+    setEditForm({ name: customer.name || '', phone: customer.phone || '', address: customer.address || '' });
     setEditCustomer(customer);
   };
 
@@ -113,12 +113,20 @@ export const CustomersPage = () => {
       setEditError('Enter a valid phone number (at least 6 digits).');
       return;
     }
+    // Management is the only role allowed to rename a customer (enforced server-side too).
+    if (isManagement) {
+      const name = editForm.name.trim();
+      if (!name) { setEditError('Name is required.'); return; }
+    }
     setEditError(null);
     setEditSaving(true);
     try {
       const savedId = editCustomer.id;
       await updateCustomer({
         id: savedId,
+        // Only include name in the payload when management is editing — other
+        // roles must not send it (the server would 403 anyway).
+        ...(isManagement ? { name: editForm.name.trim() } : {}),
         phone,
         address,
         ...(!phone && editCustomer.has_whatsapp ? { has_whatsapp: false } : {}),
@@ -380,6 +388,29 @@ export const CustomersPage = () => {
         title={editCustomer ? `Edit ${editCustomer.name}` : ''}
       >
         <form onSubmit={handleEditSave} className="space-y-5">
+          {/* Name field — management only; the server also enforces this restriction */}
+          {isManagement && (
+            <div className="space-y-1.5">
+              <label htmlFor="customer-name" className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1 block">
+                Customer Name
+              </label>
+              <div className="relative">
+                <Users size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30 pointer-events-none" />
+                <input
+                  id="customer-name"
+                  type="text"
+                  maxLength={255}
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Full name"
+                  className={`${INPUT_BASE} pl-11`}
+                  autoFocus
+                  required
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label htmlFor="customer-phone" className="text-[10px] font-bold text-navy/40 uppercase tracking-widest ml-1 block">
               Phone Number
@@ -395,7 +426,7 @@ export const CustomersPage = () => {
                 onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
                 placeholder="e.g. 9876543210"
                 className={`${INPUT_BASE} pl-11`}
-                autoFocus
+                autoFocus={!isManagement}
               />
             </div>
             <p className="text-[10px] text-navy/60 ml-1">

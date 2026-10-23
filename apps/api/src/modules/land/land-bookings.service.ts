@@ -162,7 +162,31 @@ export const LandBookingsService = {
       params
     );
     if (result.rows.length === 0) throw new NotFoundError('Booking not found');
-    return result.rows[0];
+    const row = result.rows[0];
+
+    // Fetch the individual advance instalment rows from the child table so the
+    // detail page can render each payment with its own date, channel and proof.
+    const advancesResult = await db.query(
+      `SELECT id, amount, advance_date, channel, proof_key, transaction_id, created_at
+       FROM land_booking_advances
+       WHERE booking_id = $1
+       ORDER BY advance_date, created_at`,
+      [row.id]
+    );
+    // TS: pg returns NUMERIC as strings — parse each advance amount at the read site.
+    row.advances = advancesResult.rows.map((a: any) => ({
+      ...a,
+      amount: parseFloat(a.amount),
+    }));
+
+    // Compute and expose the remaining balance on the booking object so the
+    // frontend can prefill the full-payment field without a separate calculation.
+    // TS: advance_amount is NUMERIC — parse before subtraction.
+    const landCost   = parseFloat(row.land_cost);
+    const advTotal   = row.advance_amount != null ? parseFloat(row.advance_amount) : 0;
+    row.balance_remaining = Math.round((landCost - advTotal) * 100) / 100;
+
+    return row;
   },
 
   // ─── CREATE BOOKING ───────────────────────────────────────────────────────
@@ -314,8 +338,13 @@ export const LandBookingsService = {
   },
 
   // ─── RECORD ADVANCE PAYMENT ───────────────────────────────────────────────
-  // Wrapped in runInTransaction so the booking UPDATE and audit log row are
-  // either both committed or both rolled back — mirrors recordFullPayment below.
+  // Wrapped in runInTransaction so all writes (child row, booking UPDATE, audit)
+  // are either all committed or all rolled back.
+  //
+  // Multiple partial advances are supported: each call inserts one row into
+  // land_booking_advances and accumulates land_bookings.advance_amount as a
+  // running total.  The booking stays at 'advance_paid' after the first advance;
+  // subsequent advances update the scalar to the new cumulative total.
   async recordAdvance(
     db: Pool,
     userId: string,
@@ -324,13 +353,21 @@ export const LandBookingsService = {
     payload: RecordAdvanceInput
   ): Promise<any> {
     return runInTransaction(db, async (client: PoolClient) => {
+      // Lock the booking row so concurrent advances are serialised.
       const params: any[] = [bookingId];
-      let findWhere = 'id = $1';
-      if (branchId) { findWhere += ` AND branch_id = $2`; params.push(branchId); }
+      let findWhere = 'bk.id = $1';
+      if (branchId) { findWhere += ` AND bk.branch_id = $2`; params.push(branchId); }
 
-      // TS: FOR UPDATE locks the row so concurrent advance attempts are serialised.
+      // TS: join land_plots + land_layouts so we have land_cost (balance check)
+      // and buyback_bonus_monthly / buyback_months (auto-completion path) all in
+      // one locked query — avoids extra round-trips and keeps the check consistent.
       const existing = await client.query(
-        `SELECT * FROM land_bookings WHERE ${findWhere} FOR UPDATE`,
+        `SELECT bk.*, p.land_cost, ll.buyback_bonus_monthly, ll.buyback_months
+         FROM land_bookings bk
+         JOIN land_plots   p  ON p.id  = bk.plot_id
+         JOIN land_layouts ll ON ll.id = p.layout_id
+         WHERE ${findWhere}
+         FOR UPDATE OF bk`,
         params
       );
       if (existing.rows.length === 0) throw new NotFoundError('Booking not found');
@@ -339,36 +376,138 @@ export const LandBookingsService = {
       if (booking.payment_mode !== 'advance_full_payment') {
         throw new ValidationError('This booking uses full_payment mode; no advance applies');
       }
-      if (booking.status !== 'booked') {
-        throw new ValidationError(`Advance already recorded (current status: ${booking.status})`);
+      // Allow advances while status is 'booked' (first advance) OR 'advance_paid'
+      // (additional partial advances).  Any other status means full payment or
+      // cancellation has already been recorded.
+      if (!['booked', 'advance_paid'].includes(booking.status)) {
+        throw new ValidationError(`Cannot record an advance when booking status is "${booking.status}"`);
       }
 
-      const result = await client.query(
-        `UPDATE land_bookings
-         SET advance_amount = $1, advance_date = $2, status = 'advance_paid',
-             advance_channel = $3, advance_proof_key = $4, advance_transaction_id = $5,
-             updated_by = $6, updated_at = now()
-         WHERE id = $7
-         RETURNING *`,
-        [payload.advanceAmount, payload.advanceDate, payload.advanceChannel || 'cash',
+      // TS: pg returns NUMERIC columns as strings — parse before arithmetic.
+      const landCost     = parseFloat(booking.land_cost);
+      const prevTotal    = booking.advance_amount != null ? parseFloat(booking.advance_amount) : 0;
+      const newTotal     = Math.round((prevTotal + payload.advanceAmount) * 100) / 100;
+
+      if (newTotal > landCost) {
+        const balance = Math.round((landCost - prevTotal) * 100) / 100;
+        throw new ValidationError(
+          `Advance of ₹${payload.advanceAmount.toFixed(2)} would exceed the remaining balance of ₹${balance.toFixed(2)}`
+        );
+      }
+
+      // Insert the individual advance row into the child table.
+      await client.query(
+        `INSERT INTO land_booking_advances
+           (booking_id, amount, advance_date, channel, proof_key, transaction_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          bookingId,
+          payload.advanceAmount,
+          payload.advanceDate,
+          payload.advanceChannel || 'cash',
+          // TS: bind TEXT[] directly; empty/absent → NULL
           payload.advanceProofKey?.length ? payload.advanceProofKey : null,
-          // advanceTransactionId is TEXT[] — bind array directly; empty array → NULL
           payload.advanceTransactionId?.length ? payload.advanceTransactionId : null,
-          userId, bookingId]
+          userId,
+        ]
       );
-      const updated = result.rows[0];
 
-      // TS: pass the transaction client so the audit row and booking update share
-      // the same transaction — an audit-log failure rolls back the booking change too.
-      await LandAuditService.log(client, {
-        entity:    'booking',
-        recordId:  bookingId,
-        action:    'advance_payment',
-        changedBy: userId,
-        newValues: { advance_amount: payload.advanceAmount, advance_date: payload.advanceDate, status: 'advance_paid' },
-      });
+      // When advances fully cover the plot price the booking auto-completes to
+      // 'full_paid' and the buyback schedule is created in the same transaction —
+      // no separate "Record Full Payment" step is required from the branch admin.
+      // A ±0.005 tolerance absorbs floating-point rounding at two decimal places.
+      const fullyPaid = newTotal >= landCost - 0.005;
 
-      return updated;
+      let result: any;
+      if (fullyPaid) {
+        const buybackStartDate = addDays(payload.advanceDate, COOLING_DAYS);
+        result = await client.query(
+          `UPDATE land_bookings
+           SET advance_amount = $1, advance_date = $2, status = 'full_paid',
+               advance_channel = $3, advance_proof_key = $4, advance_transaction_id = $5,
+               full_amount = NULL, full_payment_date = $6, buyback_start_date = $7,
+               updated_by = $8, updated_at = now()
+           WHERE id = $9
+           RETURNING *`,
+          [
+            newTotal,
+            payload.advanceDate,
+            payload.advanceChannel || 'cash',
+            payload.advanceProofKey?.length ? payload.advanceProofKey : null,
+            payload.advanceTransactionId?.length ? payload.advanceTransactionId : null,
+            payload.advanceDate,
+            buybackStartDate,
+            userId,
+            bookingId,
+          ]
+        );
+
+        // TS: pg returns NUMERIC as strings — parse before comparison.
+        const bonusAmount: number  = parseFloat(booking.buyback_bonus_monthly) || 0;
+        const buybackCount: number = booking.buyback_months ?? BUYBACK_MONTHS;
+        if (bonusAmount > 0 && buybackCount > 0) {
+          for (let month = 1; month <= buybackCount; month++) {
+            const dueDate = addMonths(buybackStartDate, month - 1);
+            await client.query(
+              `INSERT INTO land_buyback_payouts (booking_id, month_number, amount, due_date)
+               VALUES ($1, $2, $3, $4)`,
+              [bookingId, month, bonusAmount, dueDate]
+            );
+          }
+        }
+
+        await LandAuditService.log(client, {
+          entity:    'booking',
+          recordId:  bookingId,
+          action:    'full_payment',
+          changedBy: userId,
+          newValues: {
+            advance_amount:      newTotal,
+            full_payment_date:   payload.advanceDate,
+            buyback_start_date:  buybackStartDate,
+            status:              'full_paid',
+            auto_completed:      true,
+          },
+        });
+      } else {
+        // Partial advance — update the running total and stay at advance_paid.
+        // advance_date / channel / proof / txn = this (most-recent) payment so
+        // existing list/report queries still display something meaningful.
+        result = await client.query(
+          `UPDATE land_bookings
+           SET advance_amount = $1, advance_date = $2, status = 'advance_paid',
+               advance_channel = $3, advance_proof_key = $4, advance_transaction_id = $5,
+               updated_by = $6, updated_at = now()
+           WHERE id = $7
+           RETURNING *`,
+          [
+            newTotal,
+            payload.advanceDate,
+            payload.advanceChannel || 'cash',
+            payload.advanceProofKey?.length ? payload.advanceProofKey : null,
+            // TS: advanceTransactionId is TEXT[] — bind array directly; empty → NULL
+            payload.advanceTransactionId?.length ? payload.advanceTransactionId : null,
+            userId,
+            bookingId,
+          ]
+        );
+
+        // TS: audit row shares the transaction — failure rolls back the booking update.
+        await LandAuditService.log(client, {
+          entity:    'booking',
+          recordId:  bookingId,
+          action:    'advance_payment',
+          changedBy: userId,
+          newValues: {
+            advance_amount:      newTotal,
+            advance_date:        payload.advanceDate,
+            status:              'advance_paid',
+            advance_installment: payload.advanceAmount,
+          },
+        });
+      }
+
+      return result.rows[0];
     });
   },
 
@@ -392,13 +531,14 @@ export const LandBookingsService = {
       // buyback_months — these moved from land_plots to land_layouts in migration 062.
       // land_plots.buyback_bonus_monthly still exists but defaults to 0 for new plots
       // and would cause the land_buyback_payouts CHECK(amount > 0) to fail.
+      // Also join land_plots directly to read land_cost for balance validation.
       const bookingResult = await client.query(
-        `SELECT bk.*, ll.buyback_bonus_monthly, ll.buyback_months
+        `SELECT bk.*, ll.buyback_bonus_monthly, ll.buyback_months, p.land_cost
          FROM land_bookings bk
          JOIN land_plots   p  ON p.id  = bk.plot_id
          JOIN land_layouts ll ON ll.id = p.layout_id
          WHERE ${findWhere}
-         FOR UPDATE`,
+         FOR UPDATE OF bk`,
         params
       );
       if (bookingResult.rows.length === 0) throw new NotFoundError('Booking not found');
@@ -406,6 +546,18 @@ export const LandBookingsService = {
 
       if (!['booked', 'advance_paid'].includes(booking.status)) {
         throw new ValidationError(`Full payment cannot be recorded when status is "${booking.status}"`);
+      }
+
+      // Guard: full amount must not exceed the remaining balance (land_cost −
+      // advances already paid).  Underpay (discount) is allowed.
+      // TS: pg returns NUMERIC as strings — parse before comparison.
+      const landCost       = parseFloat(booking.land_cost);
+      const advancePaid    = booking.advance_amount != null ? parseFloat(booking.advance_amount) : 0;
+      const balanceRemaining = Math.round((landCost - advancePaid) * 100) / 100;
+      if (payload.fullAmount > balanceRemaining + 0.005) {
+        throw new ValidationError(
+          `Full payment of ₹${payload.fullAmount.toFixed(2)} exceeds the remaining balance of ₹${balanceRemaining.toFixed(2)}`
+        );
       }
 
       // Validate loan: loan_amount required when loan_taken = true
@@ -659,16 +811,11 @@ export const LandBookingsService = {
         fields.push(`customer_id = $${idx++}`); vals.push(payload.customerId);
       }
 
-      // Advance corrections are only meaningful once an advance was recorded
-      if (payload.advanceAmount != null || payload.advanceDate != null || payload.advanceChannel != null || payload.advanceProofKey != null || payload.advanceTransactionId !== undefined) {
-        if (old.advance_amount == null) throw new ValidationError('No advance recorded on this booking');
-        if (payload.advanceAmount  != null) { fields.push(`advance_amount = $${idx++}`);     vals.push(payload.advanceAmount); }
-        if (payload.advanceDate    != null) { fields.push(`advance_date = $${idx++}`);        vals.push(payload.advanceDate); }
-        if (payload.advanceChannel != null) { fields.push(`advance_channel = $${idx++}`);     vals.push(payload.advanceChannel); }
-        if (payload.advanceProofKey != null) { fields.push(`advance_proof_key = $${idx++}`); vals.push(payload.advanceProofKey); }
-        // advanceTransactionId is TEXT[] — bind array directly; empty array or null → explicit NULL
-        if (payload.advanceTransactionId !== undefined) { fields.push(`advance_transaction_id = $${idx++}`); vals.push(payload.advanceTransactionId?.length ? payload.advanceTransactionId : null); }
-      }
+      // NOTE: advance_amount / advance_date are intentionally NOT editable via
+      // correctBooking.  Editing the scalar would desync it from the child-table
+      // sum in land_booking_advances.  Advance corrections must go through
+      // undoAdvance (which clears all child rows) followed by re-recording.
+      // The Land corrections UI already routes advances through undo.
 
       // Full-payment corrections — moving the date also moves the buyback start
       // (full_payment_date + cooling days) and the pending payout schedule below.
@@ -1082,9 +1229,19 @@ export const LandBookingsService = {
         throw new ValidationError(`Advance can only be undone on an advance_paid booking (status: ${old.status})`);
       }
 
+      // Remove all child advance rows first so the scalar reset is consistent.
+      // ON DELETE CASCADE on the FK would handle full booking deletion, but here
+      // the booking row is being kept — only its advance data is being cleared.
+      await client.query(
+        `DELETE FROM land_booking_advances WHERE booking_id = $1`,
+        [bookingId]
+      );
+
       const updated = await client.query(
         `UPDATE land_bookings
-         SET advance_amount = NULL, advance_date = NULL, status = 'booked',
+         SET advance_amount = NULL, advance_date = NULL,
+             advance_channel = NULL, advance_proof_key = NULL, advance_transaction_id = NULL,
+             status = 'booked',
              updated_by = $1, updated_at = now()
          WHERE id = $2
          RETURNING *`,

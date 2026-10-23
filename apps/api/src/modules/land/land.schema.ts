@@ -204,12 +204,9 @@ export const CorrectLandBookingSchema = z.object({
   paymentMode:     z.enum(['full_payment', 'advance_full_payment']).optional(),
   referrerId:      z.string().uuid().optional().nullable(),  // null clears the referrer
   customerId:      z.string().uuid().optional(),
-  advanceAmount:   z.number().positive().optional(),
-  advanceDate:     z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
-  advanceChannel:  z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
-  advanceProofKey: z.array(z.string()).max(5).optional(),
-  // advanceTransactionId is an array of up to 5 UPI/bank reference strings
-  advanceTransactionId: z.array(z.string().max(100)).max(5).optional().nullable(),
+  // NOTE: advance_amount and advance_date are intentionally excluded — editing
+  // them directly would desync the scalar from the land_booking_advances child
+  // table.  Advance corrections must go through undoAdvance + re-record.
   fullAmount:      z.number().positive().optional(),
   fullPaymentDate: z.string().regex(DATE_RE, 'Date must be YYYY-MM-DD').optional(),
   fullChannel:     z.enum(['cash', 'gpay', 'bank_receipt']).optional(),
@@ -221,25 +218,11 @@ export const CorrectLandBookingSchema = z.object({
   notes:           z.string().max(1000).optional().nullable(),
   branchId:        z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
-  if (data.advanceChannel && data.advanceChannel !== 'cash' && !data.advanceProofKey?.length) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'advanceProofKey is required when setting advanceChannel to gpay or bank_receipt',
-      path: ['advanceProofKey'],
-    });
-  }
   if (data.fullChannel && data.fullChannel !== 'cash' && !data.fullProofKey?.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'fullProofKey is required when setting fullChannel to gpay or bank_receipt',
       path: ['fullProofKey'],
-    });
-  }
-  if (data.advanceChannel && data.advanceChannel !== 'cash' && !data.advanceTransactionId?.length) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'advanceTransactionId is required when setting advanceChannel to gpay or bank_receipt',
-      path: ['advanceTransactionId'],
     });
   }
   if (data.fullChannel && data.fullChannel !== 'cash' && !data.fullTransactionId?.length) {

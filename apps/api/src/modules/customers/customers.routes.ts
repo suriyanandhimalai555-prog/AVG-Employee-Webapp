@@ -4,7 +4,7 @@ import { handleError } from '../../shared/route-error-handler';
 import { CustomerService } from './customers.service';
 import { CreateCustomerSchema, UpdateCustomerSchema, SearchCustomersQuerySchema } from './customers.schema';
 import { resolveBranchAdminBranchId } from '../../shared/attendance-scope';
-import { CUSTOMER_EDITOR_ROLES } from '../../shared/role-constants';
+import { CUSTOMER_EDITOR_ROLES, CUSTOMER_NAME_EDITOR_ROLES } from '../../shared/role-constants';
 
 interface AuthUser { id: string; role: string; branchId: string; }
 interface AuthReq extends FastifyRequest { user: AuthUser; }
@@ -99,6 +99,14 @@ export default async function customerRoutes(fastify: FastifyInstance): Promise<
 
       const { id } = req.params as { id: string };
       const body   = UpdateCustomerSchema.parse(req.body);
+
+      // TS: name changes are management-only — reject if a non-management caller
+      // includes name in the payload, even though UpdateCustomerSchema accepts it.
+      if (body.name !== undefined &&
+          !CUSTOMER_NAME_EDITOR_ROLES.includes(req.user.role as (typeof CUSTOMER_NAME_EDITOR_ROLES)[number])) {
+        throw new ForbiddenError('Only management can change a customer name');
+      }
+
       const data   = await CustomerService.update(fastify.db, id, branchId, body, req.user.id);
       return reply.send({ success: true, data });
     } catch (error) { return handleError(error, reply); }

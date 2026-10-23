@@ -113,8 +113,12 @@ const AdvanceModal = ({ booking, onClose, onSuccess }) => {
 // ─── Record Full Payment Modal ────────────────────────────────────────────────
 const FullPaymentModal = ({ booking, onClose, onSuccess }) => {
   const [recordFull, { isLoading }] = useRecordLandFullPaymentMutation();
+  // Pre-fill fullAmount with the remaining balance so the admin only needs to
+  // confirm rather than type the number.  booking.balance_remaining is computed
+  // server-side as land_cost − advance_amount.  Editable in case of a discount.
   const [form,  setForm]  = useState({
-    fullAmount: '', fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '', fullChannel: 'cash',
+    fullAmount: booking.balance_remaining != null ? String(booking.balance_remaining) : '',
+    fullPaymentDate: getTodayISO(), loanTaken: false, loanAmount: '', fullChannel: 'cash',
   });
   const [proofKey,     setProofKey]     = useState([]);
   const [txnId,        setTxnId]        = useState([]);
@@ -358,8 +362,13 @@ export const LandBookingDetailPage = () => {
   const canExtend = isBranchAdmin && ['booked','advance_paid'].includes(booking.status)
     && booking.payment_mode === 'advance_full_payment'
     && (booking.advance_extensions_used ?? 0) < 2;
-  const canAdvance = isBranchAdmin && booking.status === 'booked'
-    && booking.payment_mode === 'advance_full_payment';
+  // Allow recording another advance while status is 'booked' (first advance) or
+  // 'advance_paid' (additional partial advances) as long as there is still a
+  // balance remaining to pay.
+  const canAdvance = isBranchAdmin
+    && ['booked', 'advance_paid'].includes(booking.status)
+    && booking.payment_mode === 'advance_full_payment'
+    && (booking.balance_remaining == null || booking.balance_remaining > 0);
   const canFull    = isBranchAdmin && ['booked','advance_paid'].includes(booking.status);
   const canCancel  = isBranchAdmin && ['booked','advance_paid'].includes(booking.status);
 
@@ -419,10 +428,6 @@ export const LandBookingDetailPage = () => {
               { label: 'Booking Date',  val: formatDate(booking.booking_date) },
               { label: 'Payment Mode',  val: booking.payment_mode === 'full_payment' ? 'Full Payment' : 'Advance + Full' },
               { label: 'Land Cost',     val: formatCurrency(booking.land_cost) },
-              ...(booking.advance_amount ? [
-                { label: 'Advance Paid', val: `${formatCurrency(booking.advance_amount)} on ${formatDate(booking.advance_date)}` },
-                { label: 'Adv. Deadline', val: `${formatDate(booking.advance_deadline)} (${booking.advance_extensions_used || 0} ext.)` },
-              ] : []),
               ...(booking.full_amount ? [
                 { label: 'Full Payment', val: `${formatCurrency(booking.full_amount)} on ${formatDate(booking.full_payment_date)}` },
                 { label: 'Buyback Start', val: formatDate(booking.buyback_start_date) },
@@ -440,23 +445,61 @@ export const LandBookingDetailPage = () => {
               </div>
             ))}
           </div>
-          {(booking.advance_proof_key || booking.full_proof_key ||
-            booking.advance_transaction_id || booking.full_transaction_id) && (
-            <div className="mt-4 space-y-3">
-              {(booking.advance_proof_key || booking.advance_transaction_id) && (
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Advance Receipt</p>
-                  <PhotoProof photoKey={booking.advance_proof_key} />
-                  <TransactionIdList transactionId={booking.advance_transaction_id} />
+
+          {/* Advance payment history — one card per instalment */}
+          {booking.advances && booking.advances.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30">
+                Advance Payments ({booking.advances.length})
+              </p>
+              {booking.advances.map((adv, i) => (
+                <div key={adv.id || i} className="bg-amber-50 border border-amber-100 rounded-2xl p-3 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-800">
+                      #{i + 1} · {formatCurrency(adv.amount)}
+                    </span>
+                    <span className="text-[10px] text-amber-700">{formatDate(adv.advance_date)}</span>
+                  </div>
+                  {adv.channel && adv.channel !== 'cash' && (
+                    <p className="text-[10px] text-amber-700 capitalize">{adv.channel.replace('_', ' ')}</p>
+                  )}
+                  {(adv.proof_key || adv.transaction_id) && (
+                    <div className="pt-1">
+                      <PhotoProof photoKey={adv.proof_key} />
+                      <TransactionIdList transactionId={adv.transaction_id} />
+                    </div>
+                  )}
                 </div>
-              )}
-              {(booking.full_proof_key || booking.full_transaction_id) && (
+              ))}
+              {/* Summary row: total paid + remaining balance */}
+              <div className="flex items-center justify-between px-1 pt-1">
                 <div>
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Full Payment Receipt</p>
-                  <PhotoProof photoKey={booking.full_proof_key} />
-                  <TransactionIdList transactionId={booking.full_transaction_id} />
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30">Total Advance</p>
+                  <p className="text-sm font-bold text-amber-700">{formatCurrency(booking.advance_amount)}</p>
                 </div>
-              )}
+                {booking.balance_remaining != null && booking.balance_remaining > 0 && (
+                  <div className="text-right">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30">Balance Remaining</p>
+                    <p className="text-sm font-bold text-navy">{formatCurrency(booking.balance_remaining)}</p>
+                  </div>
+                )}
+                {booking.payment_mode === 'advance_full_payment' && booking.advance_deadline && (
+                  <div className="text-right">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30">Deadline</p>
+                    <p className="text-xs font-semibold text-navy">
+                      {formatDate(booking.advance_deadline)} ({booking.advance_extensions_used || 0} ext.)
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(booking.full_proof_key || booking.full_transaction_id) && (
+            <div className="mt-4">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-navy/30 mb-1">Full Payment Receipt</p>
+              <PhotoProof photoKey={booking.full_proof_key} />
+              <TransactionIdList transactionId={booking.full_transaction_id} />
             </div>
           )}
         </div>
@@ -468,7 +511,7 @@ export const LandBookingDetailPage = () => {
           <button type="button" onClick={() => setShowAdvanceModal(true)}
             className="w-full py-3.5 rounded-2xl bg-amber-500 text-white text-sm font-bold shadow-md tactile-press flex items-center justify-center gap-2">
             <Banknote size={16} aria-hidden="true" />
-            Record Advance Payment
+            {booking.status === 'advance_paid' ? 'Add Another Advance' : 'Record Advance Payment'}
           </button>
         )}
         {canFull && (

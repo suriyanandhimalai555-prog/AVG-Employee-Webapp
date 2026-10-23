@@ -72,6 +72,11 @@ export const CUSTOMER_EDITOR_ROLES: readonly RoleValue[] = [
   Role.BRANCH_MANAGER, Role.BRANCH_ADMIN, Role.MANAGEMENT,
 ];
 
+// Only the management back-office may rename an existing customer. All other
+// CUSTOMER_EDITOR_ROLES keep phone/address/WhatsApp editing but not the name
+// — the field-level guard lives in customers.routes.ts PATCH /:id.
+export const CUSTOMER_NAME_EDITOR_ROLES: readonly RoleValue[] = [Role.MANAGEMENT];
+
 // Roles allowed to list users via GET /users (the personnel directory).
 // MD + management see the whole org; director/gm see their subtrees;
 // branch_admin sees their branch.
