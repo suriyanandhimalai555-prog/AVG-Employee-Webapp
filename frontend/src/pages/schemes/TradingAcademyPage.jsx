@@ -20,6 +20,10 @@ import { AddMemberSheet } from './components/AddMemberSheet';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
 
+// Rows added per "Load more"; MAX_LIMIT matches the API's limit ceiling for this list.
+const PAGE_SIZE = 30;
+const MAX_LIMIT = 200;
+
 export const TradingAcademyPage = () => {
   const navigate = useNavigate();
   const user     = useSelector(selectCurrentUser);
@@ -36,8 +40,9 @@ export const TradingAcademyPage = () => {
   const { data: summary }                = useGetTradingSummaryQuery({ startDate: period.startDate, endDate: period.endDate });
   const { data: membersData, isLoading } = useGetTradingMembersQuery({
     search,
-    page,
-    limit: 30,
+    // "Load more" grows the limit instead of requesting page N: asking for page 2
+    // REPLACED the first 30 rows with the next 30, so earlier members disappeared.
+    limit: Math.min(page * PAGE_SIZE, MAX_LIMIT),
     startDate: searchingGlobally ? undefined : period.startDate,
     endDate:   searchingGlobally ? undefined : period.endDate,
   });
@@ -48,7 +53,7 @@ export const TradingAcademyPage = () => {
 
   const members = membersData?.data ?? [];
   const total   = membersData?.total ?? 0;
-  const hasMore = total > page * 30;
+  const hasMore = total > members.length && page * PAGE_SIZE < MAX_LIMIT;
 
   return (
     <div className="relative pb-32 pt-4">

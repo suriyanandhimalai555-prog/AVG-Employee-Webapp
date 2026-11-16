@@ -85,11 +85,15 @@ export const GoldCoinSchemePage = () => {
       packageId: packageFilter || undefined,
       startDate: ignorePeriod ? undefined : period.startDate,
       endDate:   ignorePeriod ? undefined : period.endDate,
-      limit:     100,
+      // 200 = the API ceiling. A branch already holds 100+ rooms, so 100 cut the
+      // "All" tab short without saying so.
+      limit:     200,
     },
     { skip: !canViewRooms },
   );
   const rooms = roomsResult?.data || [];
+  // Server-side match count — larger than rooms.length when the list is capped.
+  const totalRooms = roomsResult?.total ?? rooms.length;
 
   return (
     <SchemePageWrapper>
@@ -241,11 +245,19 @@ export const GoldCoinSchemePage = () => {
         ) : rooms.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 card-shadow border border-border text-center">
             <Coins size={32} className="text-navy/20 mx-auto mb-2" aria-hidden="true" />
-            <p className="text-sm font-medium text-navy/40">No rooms yet</p>
-            <p className="text-xs text-navy/30 mt-1">Sell a slot to open the first room.</p>
+            <p className="text-sm font-medium text-navy/40">{search ? 'No matches' : 'No rooms yet'}</p>
+            <p className="text-xs text-navy/30 mt-1">
+              {search ? 'Try a different customer name, phone or code.' : 'Sell a slot to open the first room.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Never cut the list silently — say when more rooms exist than are shown. */}
+            {totalRooms > rooms.length && (
+              <p className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                Showing {rooms.length} of {totalRooms} rooms. Use search or the filters above to narrow the list.
+              </p>
+            )}
             {rooms.map((room) => {
               const style = STATUS_STYLES[room.status] || STATUS_STYLES.filling;
               const { Icon } = style;

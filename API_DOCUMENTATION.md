@@ -2547,11 +2547,18 @@ All endpoints restricted to `md` and `director` roles only.
 ---
 
 ### `GET /api/schemes/:code/branches/:branchId/entries`
-**Auth:** Yes — `md`, `director`
+**Auth:** Yes — `md`, `director`, `management`
 **Description:** Returns individual member/entry records for one scheme at one branch.
+The list is capped (newest first: 500 rows; 200 for Gold Coin / LSS rooms). `total` is the
+full match count before the cap — when `total > entries.length` the list is truncated.
 
 **Path Params:** `code` (scheme code), `branchId` (UUID)  
-**Query Params:** `startDate`, `endDate` (optional)
+**Query Params:** `startDate`, `endDate` (optional), `search` (optional, max 100 chars)
+
+`search` is applied in SQL **before** the cap, so it reaches every entry in the branch.
+It matches customer name / code / phone plus the scheme's own identifier (gold chit number,
+land booking ref / site, chit group name, room number / package). For Chit, Gold Coin and LSS
+a group/room also matches when any member/slot customer inside it matches.
 
 **Response 200:**
 ```json
@@ -2560,6 +2567,7 @@ All endpoints restricted to `md` and `director` roles only.
   "data": {
     "schemeCode": "gold_scheme",
     "branchId": "uuid",
+    "total": 577,
     "entries": [
       {
         "id": "uuid",

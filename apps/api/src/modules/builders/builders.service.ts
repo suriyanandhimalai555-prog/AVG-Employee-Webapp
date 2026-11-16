@@ -3,6 +3,8 @@ import { ConflictError, NotFoundError, ValidationError } from '../../shared/erro
 import { runInTransaction } from '../../shared/transaction-helper';
 import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
+// TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
+import { toContainsPattern } from '../../shared/search';
 import type {
   CreateBuildersPlanInput,
   RecordBuildersPayoutInput,
@@ -1068,7 +1070,8 @@ export const BuildersService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    dateFilter?: { startDate?: string; endDate?: string }
+    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
+    dateFilter?: { startDate?: string; endDate?: string; search?: string },
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'p.branch_id = $1';
@@ -1076,9 +1079,17 @@ export const BuildersService = {
     // Filter by business date (lump_sum_date) so backdated plans count in their real period
     if (dateFilter?.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND p.lump_sum_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    if (dateFilter?.search?.trim()) {
+      where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR p.referrer_name ILIKE $${idx})`;
+      params.push(toContainsPattern(dateFilter.search));
+      idx++;
+    }
 
     const res = await db.query(
       `SELECT
+         -- Full match count before LIMIT, so the UI can tell when the list is truncated
+         COUNT(*) OVER()::int AS total_count,
          p.id, p.package_number, p.investment_amount, p.monthly_payout,
          p.status, p.current_month, p.reward_choice, p.lump_sum_date, p.created_at,
          p.referrer_id, p.referrer_name,

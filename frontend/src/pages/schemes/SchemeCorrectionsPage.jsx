@@ -12,7 +12,7 @@
 // Audit, incentive clawback on void/unpay, and the correction write path
 // are all unchanged — they were already production-correct on the backend.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import {
   Loader2, Search, Edit2, Trash2, X, Check,
@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
-  useLazyGetSchemeBranchEntriesQuery,
+  useGetSchemeBranchEntriesQuery,
   useGetGoldPaymentsQuery,
   useGetBuildersPayoutsQuery,
   useGetChitMemberPaymentsQuery,
@@ -1820,16 +1820,22 @@ const AuditHistory = ({ schemeCode }) => {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-// Per-scheme keys to search across when filtering loaded entries.
-const SEARCH_KEYS = {
-  gold_scheme:       ['customer_name', 'customer_code', 'customer_phone', 'chit_number'],
-  trading_academy:   ['customer_name', 'customer_code', 'customer_phone'],
-  builders_scheme:   ['customer_name', 'customer_code'],
-  agila_chit_scheme: ['group_name'],
-  gold_coin_scheme:  ['room_number', 'package_name'],
-  lss_scheme:        ['room_number', 'plan_name'],
-  land_scheme:       ['customer_name', 'customer_code', 'booking_ref', 'site_number', 'site_name'],
+// Search runs on the SERVER (each scheme's getEntriesByBranch), before the row cap.
+// It used to filter the already-loaded list in the browser, which silently hid every
+// entry older than the newest 500 — a branch with 577 gold members could not find its
+// older chits here at all. These placeholders mirror the fields each scheme matches.
+const SEARCH_PLACEHOLDER = {
+  gold_scheme:       'Search name, chit #, phone, code, referrer…',
+  trading_academy:   'Search name, phone, code, enrolled by…',
+  builders_scheme:   'Search name, phone, code, referrer…',
+  agila_chit_scheme: 'Search group or member name, phone, code…',
+  gold_coin_scheme:  'Search room #, package, or slot customer…',
+  lss_scheme:        'Search room #, plan, or slot customer…',
+  land_scheme:       'Search name, phone, booking ref, site…',
 };
+
+// Delay between the last keystroke and the server search request.
+const SEARCH_DEBOUNCE_MS = 350;
 
 // Room card for Gold Coin and LSS — identical display, both show a Delete Room button.
 const LssRoomCorrectionsCard = ({ entry, branchId, schemeCode, schemeActions }) => {
@@ -1908,8 +1914,29 @@ export const SchemeCorrectionsPage = () => {
   const [endDate,    setEndDate]    = useState('');
   const [search,     setSearch]     = useState('');
   const [filterError, setFilterError] = useState('');
+  // The filter set last confirmed with "Load Entries". The list, its cards and every
+  // correction action use THESE values — not the live form fields — so changing the
+  // scheme/branch dropdown without reloading can never mis-route a correction.
+  const [loaded, setLoaded] = useState(null);
+  // Search term actually sent to the server (debounced copy of `search`).
+  const [appliedSearch, setAppliedSearch] = useState('');
 
-  const [getEntries, { data, isFetching }] = useLazyGetSchemeBranchEntriesQuery();
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: rawData, isFetching, refetch } = useGetSchemeBranchEntriesQuery(
+    { ...loaded, search: appliedSearch || undefined },
+    { skip: !loaded },
+  );
+  // RTK Query keeps the previous response while new args load. Only show it when it
+  // belongs to the loaded scheme + branch; otherwise old-scheme rows would render
+  // inside the new scheme's cards for a moment.
+  const data = loaded && rawData?.schemeCode === loaded.code && rawData?.branchId === loaded.branchId
+    ? rawData
+    : undefined;
+
   const actions     = useSchemeActions();
   const chitActions = actions.agila_chit_scheme;
 
@@ -1929,22 +1956,34 @@ export const SchemeCorrectionsPage = () => {
   const handleApply = () => {
     setFilterError('');
     if (!branchId) { setFilterError('Please select a branch.'); return; }
+    if (startDate && endDate && startDate > endDate) { setFilterError('"From" date must be on or before the "To" date.'); return; }
+    const next = { code: schemeCode, branchId, startDate: startDate || undefined, endDate: endDate || undefined };
+    const unchanged = loaded
+      && loaded.code === next.code && loaded.branchId === next.branchId
+      && loaded.startDate === next.startDate && loaded.endDate === next.endDate
+      && !appliedSearch;
+    // Reset the search together with the filters so the new list starts unfiltered.
     setSearch('');
-    getEntries({ code: schemeCode, branchId, startDate: startDate || undefined, endDate: endDate || undefined });
+    setAppliedSearch('');
+    setLoaded(next);
+    // Same filters again = the user wants fresh data, not the cached response.
+    if (unchanged) refetch();
   };
 
-  const entries       = data?.entries ?? [];
-  const schemeActions = actions[schemeCode];
-  const isChit        = schemeCode === 'agila_chit_scheme';
-  const isRoomScheme  = schemeCode === 'gold_coin_scheme' || schemeCode === 'lss_scheme';
+  // Everything below renders from the LOADED filter set (see `loaded` above).
+  const activeCode     = loaded?.code;
+  const activeBranchId = loaded?.branchId;
+  const entries        = data?.entries ?? [];
+  const total          = data?.total ?? entries.length;
+  const schemeActions  = actions[activeCode];
+  const isChit         = activeCode === 'agila_chit_scheme';
+  const isRoomScheme   = activeCode === 'gold_coin_scheme' || activeCode === 'lss_scheme';
 
-  // Client-side search filter across the already-loaded entries.
-  const q = search.trim().toLowerCase();
-  const visible = q
-    ? entries.filter((e) =>
-        (SEARCH_KEYS[schemeCode] ?? []).some((k) => String(e[k] ?? '').toLowerCase().includes(q))
-      )
-    : entries;
+  // `q` is the term the visible list was fetched with; `searchPending` covers the
+  // debounce gap + the request, so we never show "No matches" for a half-typed term.
+  const q = appliedSearch;
+  const searchPending = search.trim() !== appliedSearch || isFetching;
+  const truncated = total > entries.length;
 
   return (
     <SchemePageWrapper>
@@ -1953,7 +1992,7 @@ export const SchemeCorrectionsPage = () => {
       <div className="px-4 space-y-3 mb-4">
         <div>
           <label className="text-[9px] font-bold uppercase tracking-widest text-navy/40 block mb-1.5">Scheme</label>
-          <select value={schemeCode} onChange={(e) => { setSchemeCode(e.target.value); setSearch(''); }}
+          <select value={schemeCode} onChange={(e) => setSchemeCode(e.target.value)}
             className="w-full px-4 py-3 bg-navy/3 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20 appearance-none">
             {SCHEMES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
           </select>
@@ -1979,9 +2018,9 @@ export const SchemeCorrectionsPage = () => {
 
         {filterError && <p className="text-xs text-red-600 font-medium">{filterError}</p>}
 
-        <button type="button" onClick={handleApply} disabled={isFetching}
+        <button type="button" onClick={handleApply} disabled={isFetching && !appliedSearch}
           className="w-full py-3.5 rounded-2xl bg-stone-700 text-white text-sm font-bold disabled:opacity-50 tactile-press flex items-center justify-center gap-2">
-          {isFetching
+          {isFetching && !appliedSearch
             ? <><Loader2 size={16} className="animate-spin" /> Loading…</>
             : <><Search size={16} /> Load Entries</>}
         </button>
@@ -1989,38 +2028,66 @@ export const SchemeCorrectionsPage = () => {
 
       {data && (
         <div className="px-4 space-y-3">
-          {/* In-scheme search filter */}
-          {entries.length > 0 && (
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/30 pointer-events-none" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, code, chit #…"
-                className="w-full pl-8 pr-3 py-2.5 bg-navy/3 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
-              />
-            </div>
-          )}
+          {/* Server-side search across EVERY entry of the loaded scheme + branch (+ dates).
+              Always visible once loaded — a search with zero hits must stay editable. */}
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-navy/30 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setSearch(''); }}
+              placeholder={SEARCH_PLACEHOLDER[activeCode] || 'Search…'}
+              aria-label="Search entries"
+              className="w-full pl-8 pr-9 py-2.5 bg-navy/3 rounded-2xl border border-navy/10 text-sm font-medium text-navy outline-none focus:ring-2 ring-indigo/20"
+            />
+            {search && searchPending ? (
+              <Loader2 size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-navy/30 animate-spin" aria-hidden="true" />
+            ) : search ? (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-navy/30 hover:text-navy/60">
+                <X size={13} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
 
-          {visible.length === 0 ? (
+          {entries.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 border border-border card-shadow text-center">
-              <p className="text-sm font-bold text-navy">{q ? 'No matches' : 'No entries found'}</p>
-              <p className="text-xs text-navy/40 mt-1">{q ? 'Try a different search term.' : 'Try different filters.'}</p>
+              {searchPending ? (
+                <Loader2 size={18} className="animate-spin text-navy/30 mx-auto" aria-hidden="true" />
+              ) : (
+                <>
+                  <p className="text-sm font-bold text-navy">{q ? 'No matches' : 'No entries found'}</p>
+                  <p className="text-xs text-navy/40 mt-1">
+                    {q
+                      ? `Nothing in this branch matches "${q}"${loaded?.startDate || loaded?.endDate ? ' within the selected dates' : ''}.`
+                      : 'Try different filters.'}
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <>
               <p className="text-[9px] font-bold uppercase tracking-widest text-navy/40">
-                {q ? `${visible.length} of ${entries.length}` : visible.length}{' '}
-                {visible.length === 1 ? 'entry' : 'entries'}
+                {truncated
+                  ? `Showing newest ${entries.length} of ${total} ${q ? 'matches' : 'entries'}`
+                  : `${entries.length} ${q ? (entries.length === 1 ? 'match' : 'matches') : (entries.length === 1 ? 'entry' : 'entries')}`}
               </p>
-              {visible.map((entry) =>
+              {/* The list is capped — say so, and point at the search that reaches the rest. */}
+              {truncated && (
+                <p className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  {q
+                    ? 'Too many matches to list. Add more of the name, chit number or phone to narrow it down.'
+                    : `Only the newest ${entries.length} are listed. Search above to find any of the other ${total - entries.length}.`}
+                </p>
+              )}
+              {entries.map((entry) =>
                 isChit ? (
                   // Chit shows groups; drill into members for individual corrections.
                   <ChitGroupCard
                     key={entry.id}
                     entry={entry}
-                    branchId={branchId}
+                    branchId={activeBranchId}
                     chitActions={chitActions}
                   />
                 ) : isRoomScheme ? (
@@ -2029,23 +2096,23 @@ export const SchemeCorrectionsPage = () => {
                   <LssRoomCorrectionsCard
                     key={entry.id}
                     entry={entry}
-                    branchId={branchId}
-                    schemeCode={schemeCode}
+                    branchId={activeBranchId}
+                    schemeCode={activeCode}
                     schemeActions={schemeActions}
                   />
                 ) : (
                   <EntryCard
                     key={entry.id}
                     entry={entry}
-                    schemeCode={schemeCode}
-                    branchId={branchId}
+                    schemeCode={activeCode}
+                    branchId={activeBranchId}
                     actions={schemeActions}
                   />
                 )
               )}
             </>
           )}
-          <AuditHistory schemeCode={schemeCode} />
+          <AuditHistory schemeCode={activeCode} />
         </div>
       )}
     </SchemePageWrapper>

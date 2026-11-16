@@ -24,7 +24,7 @@ import type { Pool } from 'pg';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
 import { SCHEME_REGISTRY, getScheme, listSchemes } from './scheme.registry';
-import type { SchemeBranchTotals, SchemeDateFilter } from './scheme.contract';
+import type { SchemeBranchTotals, SchemeDateFilter, SchemeEntriesFilter } from './scheme.contract';
 import { PendingEnrollmentsService } from '../pending-enrollments/pending-enrollments.service';
 import { getDailyCollection, getDailyCollectionByScheme } from './daily-collection.service';
 
@@ -38,6 +38,13 @@ const VIEWER_ROLES = new Set(['md', 'director', 'management']);
 const DateFilterSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'startDate must be YYYY-MM-DD').optional(),
   endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'endDate must be YYYY-MM-DD').optional(),
+});
+
+// Entries drill-down filter: the date range plus an optional free-text search that each
+// scheme applies in SQL before its row cap (so every entry is reachable by search).
+// TS: .extend() reuses the date rules; trim+max keep the ILIKE param small and tidy.
+const EntriesFilterSchema = DateFilterSchema.extend({
+  search: z.string().trim().max(100, 'search must be at most 100 characters').optional(),
 });
 
 // TS: validates the optional date and optional/required branchId on daily-collection routes.
@@ -160,14 +167,20 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
         if (!svc || typeof svc.getEntriesByBranch !== 'function') {
           throw new NotFoundError(`Scheme '${code}' does not expose a per-branch entry list`);
         }
-        const dateFilter: SchemeDateFilter = DateFilterSchema.parse(request.query ?? {});
+        // TS: typed as the entries filter (dates + search) so it matches the contract signature
+        const filter: SchemeEntriesFilter = EntriesFilterSchema.parse(request.query ?? {});
 
-        const entries = await svc.getEntriesByBranch(fastify.db, branchId, dateFilter);
+        const entries = await svc.getEntriesByBranch(fastify.db, branchId, filter);
+        // Every row carries total_count (matches before the scheme's row cap). When the
+        // cap bites, total > entries.length and the UI tells the user to search/narrow.
+        // TS: Number() because the window-count column arrives untyped from pg rows.
+        const total = entries.length > 0 ? Number(entries[0].total_count ?? entries.length) : 0;
         return reply.send({
           success: true,
           data: {
             schemeCode: svc.schemeCode,
             branchId,
+            total,
             entries,
           },
         });

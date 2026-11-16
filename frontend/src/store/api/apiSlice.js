@@ -1106,10 +1106,13 @@ export const apiSlice = createApi({
     }),
 
     getSchemeBranchEntries: builder.query({
-      query: ({ code, branchId, startDate, endDate }) => {
+      // `search` is applied server-side BEFORE the row cap, so it reaches every entry
+      // in the branch — not just the newest ones the unfiltered list returns.
+      query: ({ code, branchId, startDate, endDate, search }) => {
         const qs = new URLSearchParams();
         if (startDate) qs.set('startDate', startDate);
         if (endDate)   qs.set('endDate',   endDate);
+        if (search)    qs.set('search',    search);
         const q = qs.toString();
         return `/schemes/${code}/branches/${branchId}/entries${q ? `?${q}` : ''}`;
       },

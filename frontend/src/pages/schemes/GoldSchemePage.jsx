@@ -23,16 +23,27 @@ const STATUS_FILTERS = [
   ['cancelled', 'Cancelled'],
 ];
 
+// Rows fetched per step. A busy branch holds 700+ members in one period, so the list
+// grows by this much each time "Show more" is tapped instead of stopping at one page.
+const PAGE_SIZE = 200;
+
 export const GoldSchemePage = () => {
   const user          = useSelector(selectCurrentUser);
   const navigate      = useNavigate();
   const isReferrerView  = REFERRER_ROLES.has(user?.role);
   const isBranchAdmin   = user?.role === 'branch_admin';
 
-  const [search,       setSearch]       = useState('');
-  const [scope,        setScope]        = useState('all'); // 'all' | 'period'
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [period,       setPeriod]       = useState(getCurrentPeriod);
+  const [search,       setSearchRaw]       = useState('');
+  const [scope,        setScopeRaw]        = useState('all'); // 'all' | 'period'
+  const [statusFilter, setStatusFilterRaw] = useState('all');
+  const [period,       setPeriodRaw]       = useState(getCurrentPeriod);
+  const [limit,        setLimit]           = useState(PAGE_SIZE);
+
+  // Any filter change starts again from the first PAGE_SIZE rows.
+  const setSearch       = (v) => { setSearchRaw(v);       setLimit(PAGE_SIZE); };
+  const setScope        = (v) => { setScopeRaw(v);        setLimit(PAGE_SIZE); };
+  const setStatusFilter = (v) => { setStatusFilterRaw(v); setLimit(PAGE_SIZE); };
+  const setPeriod       = (v) => { setPeriodRaw(v);       setLimit(PAGE_SIZE); };
 
   // When searching globally OR viewing cancelled cards, omit period bounds.
   // Cancelled cards started months/years ago and fall outside the current period.
@@ -40,10 +51,10 @@ export const GoldSchemePage = () => {
   const ignorePeriod      = searchingGlobally || statusFilter === 'cancelled';
 
   // Backend auto-forces referrerId = user.id for referrer roles
-  const { data: membersResult, isLoading } = useGetGoldMembersQuery({
+  const { data: membersResult, isLoading, isFetching } = useGetGoldMembersQuery({
     status:    statusFilter === 'all' ? undefined : statusFilter,
     search:    search || undefined,
-    limit:     200,
+    limit,
     startDate: ignorePeriod ? undefined : period.startDate,
     endDate:   ignorePeriod ? undefined : period.endDate,
   });
@@ -75,6 +86,9 @@ export const GoldSchemePage = () => {
     endDate:   period.endDate,
   });
   const members = membersResult?.data || [];
+  // Full match count from the server — members.length is only what has been loaded so far.
+  const total   = membersResult?.total ?? members.length;
+  const hasMore = total > members.length;
 
   const addButton = user?.role === 'branch_admin' ? (
     <button
@@ -159,7 +173,7 @@ export const GoldSchemePage = () => {
               </button>
             ))}
             {!isLoading && (
-              <span className="ml-auto text-[10px] font-medium text-navy/40">{members.length} results</span>
+              <span className="ml-auto text-[10px] font-medium text-navy/40">{total} {total === 1 ? 'result' : 'results'}</span>
             )}
           </div>
         )}
@@ -188,12 +202,16 @@ export const GoldSchemePage = () => {
           <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl card-shadow border border-border">
             <Users size={28} className="text-navy/20 mb-3" aria-hidden="true" />
             <p className="text-sm font-bold text-navy">
-              {isReferrerView ? 'No referrals yet' : 'No Members Found'}
+              {search ? 'No matches' : isReferrerView ? 'No referrals yet' : 'No Members Found'}
             </p>
             <p className="text-xs font-medium text-navy/40 mt-1">
-              {user?.role === 'branch_admin'
-                ? 'Tap + to add the first member.'
-                : 'Customers you refer will appear here.'}
+              {search
+                ? (scope === 'period' && !ignorePeriod
+                    ? 'Nothing matches in the selected month. Try "All periods".'
+                    : 'Try a different name, chit number or phone.')
+                : user?.role === 'branch_admin'
+                  ? 'Tap + to add the first member.'
+                  : 'Customers you refer will appear here.'}
             </p>
           </div>
         ) : (
@@ -247,6 +265,23 @@ export const GoldSchemePage = () => {
                 </tbody>
               </table>
             </div>
+            {/* Never end the list silently: show how many are loaded vs. how many exist. */}
+            {hasMore && (
+              <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40">
+                  Showing {members.length} of {total}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setLimit((l) => l + PAGE_SIZE)}
+                  disabled={isFetching}
+                  className="px-3 py-1.5 rounded-xl border border-navy/10 text-[10px] font-bold uppercase tracking-wider text-indigo disabled:opacity-50 tactile-press flex items-center gap-1.5"
+                >
+                  {isFetching && <Loader2 size={11} className="animate-spin" aria-hidden="true" />}
+                  Show more
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

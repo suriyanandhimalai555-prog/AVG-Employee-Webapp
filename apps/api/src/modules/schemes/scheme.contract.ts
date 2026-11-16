@@ -20,6 +20,15 @@ export interface SchemeDateFilter {
   endDate?:   string;
 }
 
+// Filter for getEntriesByBranch: the date range plus an optional free-text search.
+// Search MUST be applied in SQL before the row LIMIT — filtering the capped list in
+// the browser hides every entry older than the newest N (the Corrections Center bug
+// where a 577-member branch could not find its 530th-newest member).
+// TS: extends the date filter so existing callers that pass only dates still type-check.
+export interface SchemeEntriesFilter extends SchemeDateFilter {
+  search?: string;
+}
+
 // Stable per-branch row returned by every scheme's getOverviewByBranch().
 // Keeping this stable (rather than scheme-specific) lets the aggregate route
 // stitch together cards across schemes without per-scheme branching.
@@ -56,10 +65,13 @@ export interface SchemeService {
   // Per-scheme, per-branch list of entries (members / rooms / slots — the
   // scheme picks). The shape is scheme-specific by design: the dashboard
   // renders a scheme-aware template, not a generic one.
+  // Rows are capped (newest first); each row carries total_count = the full number of
+  // matches before the cap, so callers can report truncation honestly.
   getEntriesByBranch?(
     db: Pool | PoolClient,
     branchId: string,
-    dateFilter?: SchemeDateFilter,
+    // TS: date range + optional server-side search term
+    filter?: SchemeEntriesFilter,
   ): Promise<any[]>;
 
   // Strictly cash RECEIVED in [startDate,endDate], keyed on each money row's

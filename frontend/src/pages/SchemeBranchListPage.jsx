@@ -225,8 +225,17 @@ const BranchEntries = ({ schemeCode, branchId, startDate, endDate, onEntryClick 
   const entries = data?.entries ?? [];
   if (entries.length === 0) return <p className="px-4 py-6 text-xs text-navy/40 text-center">No entries for this branch{startDate ? ' in this period' : ''}.</p>;
 
+  // The API caps this list (newest first) and reports the full count as `total`.
+  const total = data?.total ?? entries.length;
+
   return (
     <div className="divide-y divide-border">
+      {/* Never cut the list silently — say when the branch has more than is shown. */}
+      {total > entries.length && (
+        <p className="px-4 py-2 text-[11px] font-medium text-amber-700 bg-amber-50">
+          Showing the newest {entries.length} of {total}. Pick a period to see the rest.
+        </p>
+      )}
       {entries.map(e => {
         const row = Row ? <Row entry={e} /> : (
           <div className="px-4 py-3 text-xs text-navy/40">{e.id}</div>

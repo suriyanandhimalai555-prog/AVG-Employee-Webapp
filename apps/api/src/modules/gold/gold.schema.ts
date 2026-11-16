@@ -84,7 +84,9 @@ export const GetGoldMembersQuerySchema = z.object({
   startDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page:       z.coerce.number().min(1).default(1),
-  limit:      z.coerce.number().min(1).max(500).default(50),
+  // Max 2000: the branch list grows its limit via "Show more" and one branch can hold
+  // 700+ members in a single period — a 500 ceiling would silently hide the rest.
+  limit:      z.coerce.number().min(1).max(2000).default(50),
 });
 
 // Schema for summary query — optional date filter

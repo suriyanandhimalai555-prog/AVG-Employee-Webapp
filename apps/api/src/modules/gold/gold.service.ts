@@ -4,6 +4,8 @@ import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import { getCompanyToday } from '../../shared/date';
+// TS: named imports — shared ILIKE-pattern builder (escapes % and _) and natural-order SQL fragment for text ids
+import { toContainsPattern, naturalOrder } from '../../shared/search';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
@@ -176,7 +178,7 @@ export const GoldService = {
       const searchFields = ['c.name', 'g.chit_number', 'c.phone', 'c.customer_code'];
       if (query.searchReferrers === 'true') searchFields.push('r.name');
       where += ` AND (${searchFields.map(f => `${f} ILIKE $${idx}`).join(' OR ')})`;
-      params.push(`%${query.search}%`);
+      params.push(toContainsPattern(query.search));
       idx++;
     }
 
@@ -200,6 +202,18 @@ export const GoldService = {
     );
     const total = parseInt(countResult.rows[0].count, 10);
 
+    // When searching, rank an exact chit-number / customer-code hit above substring hits
+    // (typing "300" should put chit 300 first, not a phone number that contains 300).
+    // The exact term is appended AFTER the count query's params so the count stays valid.
+    // TS: string[] because the extra param is only present while a search is active.
+    const exactParams: string[] = [];
+    let exactFirst = '';
+    if (query.search?.trim()) {
+      exactParams.push(query.search.trim());
+      exactFirst = `(CASE WHEN LOWER(g.chit_number) = LOWER($${idx}) THEN 0 WHEN LOWER(c.customer_code) = LOWER($${idx}) THEN 1 ELSE 2 END), `;
+      idx++;
+    }
+
     const dataResult = await db.query(
       `SELECT
          g.*,
@@ -222,9 +236,9 @@ export const GoldService = {
        JOIN users u      ON g.entered_by   = u.id
        LEFT JOIN users r ON g.referrer_id  = r.id
        WHERE ${where}
-       ORDER BY g.chit_number ASC
+       ORDER BY ${exactFirst}${naturalOrder('g.chit_number')}
        LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, query.limit, (query.page - 1) * query.limit]
+      [...params, ...exactParams, query.limit, (query.page - 1) * query.limit]
     );
 
     return { data: dataResult.rows, total };
@@ -1095,7 +1109,8 @@ export const GoldService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    dateFilter?: { startDate?: string; endDate?: string },
+    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
+    dateFilter?: { startDate?: string; endDate?: string; search?: string },
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'm.branch_id = $1';
@@ -1103,9 +1118,17 @@ export const GoldService = {
     // Filter by business date (start_date) so backdated members count in their real period
     if (dateFilter?.startDate) { where += ` AND m.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND m.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    if (dateFilter?.search?.trim()) {
+      where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR m.chit_number ILIKE $${idx} OR m.referrer_name ILIKE $${idx})`;
+      params.push(toContainsPattern(dateFilter.search));
+      idx++;
+    }
 
     const res = await db.query(
       `SELECT
+         -- Full match count before LIMIT, so the UI can tell when the list is truncated
+         COUNT(*) OVER()::int AS total_count,
          m.id, m.chit_number, m.monthly_amount,
          m.total_months, m.status, m.start_date, m.created_at,
          m.referrer_id, m.referrer_name,

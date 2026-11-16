@@ -3,6 +3,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { IncentiveService } from '../incentives/incentives.service';
 import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
+// TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
+import { toContainsPattern } from '../../shared/search';
 import type {
   CreateChitGroupInput,
   AddChitMemberInput,
@@ -1503,7 +1505,8 @@ export const ChitService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    dateFilter?: { startDate?: string; endDate?: string }
+    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
+    dateFilter?: { startDate?: string; endDate?: string; search?: string },
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'g.branch_id = $1';
@@ -1511,9 +1514,24 @@ export const ChitService = {
     // Filter by business date (start_date) so backdated groups count in their real period
     if (dateFilter?.startDate) { where += ` AND g.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND g.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
+    // A group also matches when any of its members' customers match — typing a customer
+    // name must surface the group that holds them (members are corrected inside the group).
+    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    if (dateFilter?.search?.trim()) {
+      where += ` AND (g.group_name ILIKE $${idx} OR EXISTS (
+        SELECT 1 FROM agila_chit_members sm
+        JOIN customers sc ON sc.id = sm.customer_id
+        WHERE sm.group_id = g.id
+          AND (sc.name ILIKE $${idx} OR sc.phone ILIKE $${idx} OR sc.customer_code ILIKE $${idx})
+      ))`;
+      params.push(toContainsPattern(dateFilter.search));
+      idx++;
+    }
 
     const res = await db.query(
       `SELECT
+         -- Full match count before LIMIT, so the UI can tell when the list is truncated
+         COUNT(*) OVER()::int AS total_count,
          g.id, g.group_name, g.package_number, g.full_amount, g.half_amount,
          g.status, g.current_month, g.start_date, g.created_at,
          (SELECT COUNT(*)::int FROM agila_chit_members m WHERE m.group_id = g.id) AS member_count,

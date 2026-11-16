@@ -7,7 +7,9 @@
 // Re-exports sub-services so land.routes.ts only needs to import from this one file.
 
 import { Pool, PoolClient } from 'pg';
-import type { SchemeService, SchemeDateFilter, SchemeBranchTotals } from '../schemes/scheme.contract';
+import type { SchemeService, SchemeEntriesFilter, SchemeDateFilter, SchemeBranchTotals } from '../schemes/scheme.contract';
+// TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
+import { toContainsPattern } from '../../shared/search';
 import { LandBookingsService } from './land-bookings.service';
 
 const SCHEME_CODE = 'land_scheme';
@@ -128,16 +130,25 @@ export const LandService: SchemeService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    dateFilter?: SchemeDateFilter
+    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
+    dateFilter?: SchemeEntriesFilter
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'bk.branch_id = $1';
     let idx = 2;
     if (dateFilter?.startDate) { where += ` AND bk.booking_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND bk.booking_date <= $${idx++}::date`; params.push(dateFilter.endDate); }
+    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    if (dateFilter?.search?.trim()) {
+      where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR bk.booking_ref ILIKE $${idx} OR p.site_number::text ILIKE $${idx} OR s.name ILIKE $${idx} OR u.name ILIKE $${idx})`;
+      params.push(toContainsPattern(dateFilter.search));
+      idx++;
+    }
 
     const res = await db.query(
       `SELECT
+         -- Full match count before LIMIT, so the UI can tell when the list is truncated
+         COUNT(*) OVER()::int AS total_count,
          bk.id, bk.booking_ref, bk.booking_date, bk.payment_mode,
          bk.full_amount, bk.status, bk.created_at, bk.notes,
          bk.advance_amount, bk.advance_date, bk.full_payment_date,
