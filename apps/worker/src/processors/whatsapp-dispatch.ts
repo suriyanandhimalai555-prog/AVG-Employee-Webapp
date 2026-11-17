@@ -193,7 +193,7 @@ async function dispatchGoldCoinEnrollments(
        )
      FROM (
        SELECT
-         MIN(s.id)                     AS source_id,
+         MIN(s.id::text)::uuid         AS source_id,
          s.customer_id,
          s.branch_id,
          DATE(s.created_at)            AS slot_date,
@@ -244,7 +244,7 @@ async function dispatchLssEnrollments(
        )
      FROM (
        SELECT
-         MIN(s.id)                     AS source_id,
+         MIN(s.id::text)::uuid         AS source_id,
          s.customer_id,
          s.branch_id,
          DATE(s.created_at)            AS slot_date,
