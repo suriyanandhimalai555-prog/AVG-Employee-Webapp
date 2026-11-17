@@ -6,11 +6,13 @@ import { Plus, Loader2, Users, IndianRupee, Calendar } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import { SchemeSearchBar } from './components/SchemeSearchBar';
 import {
-  useGetTradingMembersQuery,
+  useGetTradingMembersPagedInfiniteQuery,
   useGetTradingSummaryQuery,
   useGetTradingEmployeesQuery,
 } from '../../store/api/apiSlice';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import { getCurrentPeriod } from '../../lib/schemePeriod';
 import { formatCurrency, formatDate } from '../../lib/formatters';
 import { TRADING_ROLE_LABELS } from '../../lib/schemeConstants';
@@ -20,9 +22,8 @@ import { AddMemberSheet } from './components/AddMemberSheet';
 import { PhotoProof } from '../../components/money/PhotoProof';
 import { TransactionIdList } from '../../components/money/TransactionIdList';
 
-// Rows added per "Load more"; MAX_LIMIT matches the API's limit ceiling for this list.
+// Rows per page of the members list ("Load more" fetches the next page).
 const PAGE_SIZE = 30;
-const MAX_LIMIT = 200;
 
 export const TradingAcademyPage = () => {
   const navigate = useNavigate();
@@ -30,7 +31,6 @@ export const TradingAcademyPage = () => {
 
   const [search,   setSearch]   = useState('');
   const [scope,    setScope]    = useState('all'); // 'all' | 'period'
-  const [page,     setPage]     = useState(1);
   const [showAdd,  setShowAdd]  = useState(false);
   const [period,   setPeriod]   = useState(getCurrentPeriod);
 
@@ -38,11 +38,13 @@ export const TradingAcademyPage = () => {
   const searchingGlobally = search && scope === 'all';
 
   const { data: summary }                = useGetTradingSummaryQuery({ startDate: period.startDate, endDate: period.endDate });
-  const { data: membersData, isLoading } = useGetTradingMembersQuery({
-    search,
-    // "Load more" grows the limit instead of requesting page N: asking for page 2
-    // REPLACED the first 30 rows with the next 30, so earlier members disappeared.
-    limit: Math.min(page * PAGE_SIZE, MAX_LIMIT),
+  // Paged list — pages accumulate (the old ?page=N call REPLACED the first 30 rows
+  // with the next 30). Any filter change starts again from page 1.
+  const {
+    rows: members, total, hasMore, loadMore, isLoading, isLoadingMore,
+  } = usePagedList(useGetTradingMembersPagedInfiniteQuery, {
+    search:    search || undefined,
+    limit:     PAGE_SIZE,
     startDate: searchingGlobally ? undefined : period.startDate,
     endDate:   searchingGlobally ? undefined : period.endDate,
   });
@@ -51,9 +53,6 @@ export const TradingAcademyPage = () => {
 
   const { data: employees = [] }         = useGetTradingEmployeesQuery(undefined, { skip: user?.role !== 'branch_admin' && !isManagement });
 
-  const members = membersData?.data ?? [];
-  const total   = membersData?.total ?? 0;
-  const hasMore = total > members.length && page * PAGE_SIZE < MAX_LIMIT;
 
   return (
     <div className="relative pb-32 pt-4">
@@ -96,13 +95,13 @@ export const TradingAcademyPage = () => {
 
       {/* Period picker */}
       <div className="px-4 mb-4">
-        <SchemeCalendar compact onPeriodChange={(p) => { setPeriod(p); setPage(1); }} />
+        <SchemeCalendar compact onPeriodChange={setPeriod} />
       </div>
 
       {/* Search + scope toggle */}
       <div className="px-4 mb-4 space-y-2">
         <SchemeSearchBar
-          onSearch={(val) => { setSearch(val); setPage(1); }}
+          onSearch={setSearch}
           placeholder="Search by name or phone…"
         />
         {search && (
@@ -112,7 +111,7 @@ export const TradingAcademyPage = () => {
               <button
                 key={key}
                 type="button"
-                onClick={() => { setScope(key); setPage(1); }}
+                onClick={() => setScope(key)}
                 className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${
                   scope === key ? 'bg-indigo text-white' : 'bg-navy/5 text-navy/50 hover:text-navy/70'
                 }`}
@@ -179,14 +178,14 @@ export const TradingAcademyPage = () => {
             </div>
           ))}
 
-          {hasMore && (
-            <button
-              onClick={() => setPage(p => p + 1)}
-              className="w-full py-3 rounded-2xl border border-navy/10 text-sm font-medium text-navy/50 tactile-press"
-            >
-              Load more
-            </button>
-          )}
+          <LoadMoreFooter
+            shown={members.length}
+            total={total}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            loading={isLoadingMore}
+            noun="members"
+          />
         </div>
       )}
 

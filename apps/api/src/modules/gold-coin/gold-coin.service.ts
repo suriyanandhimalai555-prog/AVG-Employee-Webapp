@@ -7,9 +7,11 @@
 // draws.service.ts / combine.service.ts.
 
 import type { Pool, PoolClient } from 'pg';
-import type { SchemeDateFilter, SchemeService } from '../schemes/scheme.contract';
+import type { SchemeDateFilter, SchemeEntriesFilter, SchemeService } from '../schemes/scheme.contract';
 // TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
 import { toContainsPattern } from '../../shared/search';
+// TS: named import — converts ?page/&limit into SQL LIMIT/OFFSET with safe clamping
+import { toLimitOffset } from '../../shared/pagination';
 import { PackagesService } from './packages.service';
 import { RoomsService }    from './rooms.service';
 import { SlotsService }    from './slots.service';
@@ -189,8 +191,8 @@ export const GoldCoinService = {
   async getEntriesByBranch(
     db: Pool | PoolClient,
     branchId: string,
-    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
-    dateFilter?: { startDate?: string; endDate?: string; search?: string },
+    // TS: date range + server-side search + page window (see SchemeEntriesFilter in the contract)
+    dateFilter?: SchemeEntriesFilter,
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'r.branch_id = $1';
@@ -199,7 +201,7 @@ export const GoldCoinService = {
     if (dateFilter?.endDate)   { where += ` AND r.created_at < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
     // A room also matches when any of its slots' customers match — slot-level corrections
     // live inside the room card, so typing a customer name must surface their room.
-    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    // Server-side search — in the WHERE clause, so it covers every page, not just the loaded one
     if (dateFilter?.search?.trim()) {
       where += ` AND (r.room_number::text ILIKE $${idx} OR p.name ILIKE $${idx} OR EXISTS (
         SELECT 1 FROM gold_coin_slots ss
@@ -210,6 +212,9 @@ export const GoldCoinService = {
       params.push(toContainsPattern(dateFilter.search));
       idx++;
     }
+
+    // One page of rows; id is the ORDER BY tie-breaker so pages never overlap.
+    const { limit, offset } = toLimitOffset(dateFilter);
 
     const res = await db.query(
       `SELECT
@@ -227,9 +232,9 @@ export const GoldCoinService = {
        FROM gold_coin_rooms r
        JOIN gold_coin_packages p ON p.id = r.package_id
        WHERE ${where}
-       ORDER BY r.created_at DESC
-       LIMIT 200`,
-      params
+       ORDER BY r.created_at DESC, r.id DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
     );
     return res.rows;
   },

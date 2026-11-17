@@ -3,7 +3,13 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, Users, AlertTriangle } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetGoldMembersQuery, useGetGoldSummaryQuery } from '../../store/api/apiSlice';
+import {
+  useGetGoldMembersQuery,
+  useGetGoldMembersPagedInfiniteQuery,
+  useGetGoldSummaryQuery,
+} from '../../store/api/apiSlice';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import { SchemeCalendar } from '../../components/SchemeCalendar';
 import { getCurrentPeriod, getPeriodForDate } from '../../lib/schemePeriod';
 import { getISTToday } from '../../lib/date';
@@ -23,9 +29,9 @@ const STATUS_FILTERS = [
   ['cancelled', 'Cancelled'],
 ];
 
-// Rows fetched per step. A busy branch holds 700+ members in one period, so the list
-// grows by this much each time "Show more" is tapped instead of stopping at one page.
-const PAGE_SIZE = 200;
+// Rows per page. A busy branch holds 700+ members in one period, so the table loads a
+// page at a time ("Load more") instead of stopping silently at a fixed cap.
+const PAGE_SIZE = 100;
 
 export const GoldSchemePage = () => {
   const user          = useSelector(selectCurrentUser);
@@ -33,17 +39,10 @@ export const GoldSchemePage = () => {
   const isReferrerView  = REFERRER_ROLES.has(user?.role);
   const isBranchAdmin   = user?.role === 'branch_admin';
 
-  const [search,       setSearchRaw]       = useState('');
-  const [scope,        setScopeRaw]        = useState('all'); // 'all' | 'period'
-  const [statusFilter, setStatusFilterRaw] = useState('all');
-  const [period,       setPeriodRaw]       = useState(getCurrentPeriod);
-  const [limit,        setLimit]           = useState(PAGE_SIZE);
-
-  // Any filter change starts again from the first PAGE_SIZE rows.
-  const setSearch       = (v) => { setSearchRaw(v);       setLimit(PAGE_SIZE); };
-  const setScope        = (v) => { setScopeRaw(v);        setLimit(PAGE_SIZE); };
-  const setStatusFilter = (v) => { setStatusFilterRaw(v); setLimit(PAGE_SIZE); };
-  const setPeriod       = (v) => { setPeriodRaw(v);       setLimit(PAGE_SIZE); };
+  const [search,       setSearch]       = useState('');
+  const [scope,        setScope]        = useState('all'); // 'all' | 'period'
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [period,       setPeriod]       = useState(getCurrentPeriod);
 
   // When searching globally OR viewing cancelled cards, omit period bounds.
   // Cancelled cards started months/years ago and fall outside the current period.
@@ -51,10 +50,13 @@ export const GoldSchemePage = () => {
   const ignorePeriod      = searchingGlobally || statusFilter === 'cancelled';
 
   // Backend auto-forces referrerId = user.id for referrer roles
-  const { data: membersResult, isLoading, isFetching } = useGetGoldMembersQuery({
+  // Paged list: any change to these filters starts again from page 1.
+  const {
+    rows: members, total, hasMore, loadMore, isLoading, isLoadingMore,
+  } = usePagedList(useGetGoldMembersPagedInfiniteQuery, {
     status:    statusFilter === 'all' ? undefined : statusFilter,
     search:    search || undefined,
-    limit,
+    limit:     PAGE_SIZE,
     startDate: ignorePeriod ? undefined : period.startDate,
     endDate:   ignorePeriod ? undefined : period.endDate,
   });
@@ -64,11 +66,12 @@ export const GoldSchemePage = () => {
   // all cancelled members (statusFilter === 'cancelled' sets ignorePeriod=true).
   const { data: cancelledResult } = useGetGoldMembersQuery(
     { status: 'cancelled', limit: 200 },
-    { skip: !isBranchAdmin || isReferrerView || statusFilter === 'cancelled' }
+    { skip: !isBranchAdmin || isReferrerView }
   );
 
-  // When on the cancelled tab the main query already has all cancelled data; reuse it.
-  const cancelledData = statusFilter === 'cancelled' ? membersResult?.data : cancelledResult?.data;
+  // The banner needs every cancelled card, so it always reads its own query (the main
+  // list is paged and may not have loaded them all yet).
+  const cancelledData = cancelledResult?.data;
 
   // Compute which cancelled members are matured and have a pending refund (IST date).
   // Parse YYYY-MM-DD parts to avoid UTC-midnight timezone shift (display only;
@@ -85,10 +88,6 @@ export const GoldSchemePage = () => {
     startDate: period.startDate,
     endDate:   period.endDate,
   });
-  const members = membersResult?.data || [];
-  // Full match count from the server — members.length is only what has been loaded so far.
-  const total   = membersResult?.total ?? members.length;
-  const hasMore = total > members.length;
 
   const addButton = user?.role === 'branch_admin' ? (
     <button
@@ -266,22 +265,15 @@ export const GoldSchemePage = () => {
               </table>
             </div>
             {/* Never end the list silently: show how many are loaded vs. how many exist. */}
-            {hasMore && (
-              <div className="border-t border-border px-4 py-3 flex items-center justify-between gap-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-navy/40">
-                  Showing {members.length} of {total}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setLimit((l) => l + PAGE_SIZE)}
-                  disabled={isFetching}
-                  className="px-3 py-1.5 rounded-xl border border-navy/10 text-[10px] font-bold uppercase tracking-wider text-indigo disabled:opacity-50 tactile-press flex items-center gap-1.5"
-                >
-                  {isFetching && <Loader2 size={11} className="animate-spin" aria-hidden="true" />}
-                  Show more
-                </button>
-              </div>
-            )}
+            <LoadMoreFooter
+              shown={members.length}
+              total={total}
+              hasMore={hasMore}
+              onLoadMore={loadMore}
+              loading={isLoadingMore}
+              noun="members"
+              className="border-t border-border px-4 py-3"
+            />
           </div>
         )}
       </div>

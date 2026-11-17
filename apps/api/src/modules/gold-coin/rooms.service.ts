@@ -6,7 +6,8 @@
 
 import { Pool, PoolClient } from 'pg';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
-import { assertTransition, isStaleFilling, nextDrawDate, RoomStatus } from './status-machine';
+// The room status machine is shared by all room-based schemes (see ../room-schemes/).
+import { assertTransition, isStaleFilling, nextDrawDate, RoomStatus } from '../room-schemes/status-machine';
 import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 import { runInTransaction } from '../../shared/transaction-helper';
@@ -317,7 +318,7 @@ export const RoomsService = {
        JOIN gold_coin_packages p ON r.package_id = p.id
        JOIN branches b           ON r.branch_id  = b.id
        WHERE ${where}
-       ORDER BY r.created_at DESC
+       ORDER BY r.created_at DESC, r.id DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, filters.limit, (filters.page - 1) * filters.limit]
     );

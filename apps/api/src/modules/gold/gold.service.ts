@@ -6,6 +6,10 @@ import { SchemeAudit } from '../../shared/scheme-audit';
 import { getCompanyToday } from '../../shared/date';
 // TS: named imports — shared ILIKE-pattern builder (escapes % and _) and natural-order SQL fragment for text ids
 import { toContainsPattern, naturalOrder } from '../../shared/search';
+// TS: named import — converts ?page/&limit into SQL LIMIT/OFFSET with safe clamping
+import { toLimitOffset } from '../../shared/pagination';
+// TS: type-only import — the shared entries filter (dates + search + page window)
+import type { SchemeEntriesFilter } from '../schemes/scheme.contract';
 import type {
   AddGoldMemberInput,
   GetGoldMembersQuery,
@@ -236,7 +240,7 @@ export const GoldService = {
        JOIN users u      ON g.entered_by   = u.id
        LEFT JOIN users r ON g.referrer_id  = r.id
        WHERE ${where}
-       ORDER BY ${exactFirst}${naturalOrder('g.chit_number')}
+       ORDER BY ${exactFirst}${naturalOrder('g.chit_number')}, g.id ASC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, ...exactParams, query.limit, (query.page - 1) * query.limit]
     );
@@ -1109,8 +1113,8 @@ export const GoldService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
-    dateFilter?: { startDate?: string; endDate?: string; search?: string },
+    // TS: date range + server-side search + page window (see SchemeEntriesFilter in the contract)
+    dateFilter?: SchemeEntriesFilter,
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'm.branch_id = $1';
@@ -1118,12 +1122,15 @@ export const GoldService = {
     // Filter by business date (start_date) so backdated members count in their real period
     if (dateFilter?.startDate) { where += ` AND m.start_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND m.start_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
-    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    // Server-side search — in the WHERE clause, so it covers every page, not just the loaded one
     if (dateFilter?.search?.trim()) {
       where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR m.chit_number ILIKE $${idx} OR m.referrer_name ILIKE $${idx})`;
       params.push(toContainsPattern(dateFilter.search));
       idx++;
     }
+
+    // One page of rows; id is the ORDER BY tie-breaker so pages never overlap.
+    const { limit, offset } = toLimitOffset(dateFilter);
 
     const res = await db.query(
       `SELECT
@@ -1138,9 +1145,9 @@ export const GoldService = {
        FROM gold_scheme_members m
        LEFT JOIN customers c ON c.id = m.customer_id
        WHERE ${where}
-       ORDER BY m.created_at DESC
-       LIMIT 500`,
-      params
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
     );
     return res.rows;
   },

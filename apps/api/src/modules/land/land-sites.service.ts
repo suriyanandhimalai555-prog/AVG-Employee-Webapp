@@ -50,7 +50,7 @@ export const LandSitesService = {
        LEFT JOIN land_plots  lp ON lp.layout_id = ll.id
        WHERE ${where}
        GROUP BY s.id, u.name
-       ORDER BY s.created_at DESC
+       ORDER BY s.created_at DESC, s.id DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, query.limit, (query.page - 1) * query.limit]
     );
@@ -318,7 +318,7 @@ export const LandSitesService = {
        LEFT JOIN land_layouts ll ON ll.id = p.layout_id
        LEFT JOIN land_sites   s  ON s.id  = ll.site_id
        WHERE ${where}
-       ORDER BY s.name ASC, ll.layout_name ASC, p.site_number ASC
+       ORDER BY s.name ASC, ll.layout_name ASC, p.site_number ASC, p.id ASC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, query.limit, (query.page - 1) * query.limit]
     );

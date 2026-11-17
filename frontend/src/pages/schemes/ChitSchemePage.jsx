@@ -3,7 +3,9 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, Layers, ChevronRight, ShieldCheck } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetChitGroupsQuery, useGetChitSummaryQuery } from '../../store/api/apiSlice';
+import { useGetChitGroupsPagedInfiniteQuery, useGetChitSummaryQuery } from '../../store/api/apiSlice';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import { REFERRER_ROLES } from '../../lib/schemeConstants';
 import { formatCurrency } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -64,14 +66,15 @@ export const ChitSchemePage = () => {
   const [search,       setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('in_progress');
 
-  const { data: groupsResult, isLoading } = useGetChitGroupsQuery({
+  // Paged list: changing the status tab or search starts again from page 1.
+  const {
+    rows: groups, total, hasMore, loadMore, isLoading, isLoadingMore,
+  } = usePagedList(useGetChitGroupsPagedInfiniteQuery, {
     status: statusFilter === 'all' ? undefined : statusFilter,
     search: search || undefined,
-    limit:  200,
   });
   const { data: summary } = useGetChitSummaryQuery({});
 
-  const groups = groupsResult?.data || [];
 
   const isHeadBranchAdmin = user?.role === 'branch_admin' && user?.isHeadBranch;
   const canSeeHeadPage    = HEAD_VIEW_ROLES.has(user?.role) && (isHeadBranchAdmin || user?.role !== 'branch_admin');
@@ -170,7 +173,8 @@ export const ChitSchemePage = () => {
             </p>
           </div>
         ) : (
-          groups.map(group => {
+          <>
+          {groups.map(group => {
             const pkg          = PACKAGES[group.package_number] || PACKAGES[1];
             const progress     = group.winners_selected || 0;
             const isForming    = group.status === 'forming';
@@ -256,7 +260,16 @@ export const ChitSchemePage = () => {
                 {search && <SchemeMatchLine matches={group.matched_members} />}
               </button>
             );
-          })
+          })}
+          <LoadMoreFooter
+            shown={groups.length}
+            total={total}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            loading={isLoadingMore}
+            noun="groups"
+          />
+          </>
         )}
       </div>
     </SchemePageWrapper>

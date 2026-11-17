@@ -165,9 +165,20 @@ Modules (`src/modules/`): each has `*.routes.ts` + `*.service.ts` +
 own schema validation is NOT used; keep that convention.
 
 Bigger schemes are decomposed per concern: gold-coin and lss each have
-rooms/slots/draws/combine services + a status machine; land has
-sites/bookings/incentives/audit services; builders has its own incentives
-service.
+rooms/slots/draws services, and share the room status machine + combine logic
+in `modules/room-schemes/` (each scheme's `combine.service.ts` only binds its
+tables and room size). chit is packages/groups/members/payments/winners/
+corrections/combine/reports sub-services; land has sites/audit/incentives plus
+bookings split into read/lifecycle/buyback/corrections; builders has its own
+incentives service. `ChitService` and `LandBookingsService` are **facades**
+that spread their sub-services into one object — routes import the facade;
+put a new method in the sub-service that owns its concern.
+
+**Lists are paged, never capped.** Every list endpoint takes `?page=&limit=`
+(`shared/pagination.ts`: default 50, max 200) and returns the full match count.
+Search and filters go in the SQL `WHERE` (`shared/search.ts` for the ILIKE
+pattern) — never filter a loaded page in the browser. Every paged `ORDER BY`
+ends in a unique column (the primary key) so pages cannot overlap.
 
 Shared (`src/shared/`) — the load-bearing directory:
 - `role-constants.ts`      → canonical Role enum + role sets + resolve helpers. **Add new RBAC rules here** (permissions.ts is the older, frozen system).
@@ -210,8 +221,9 @@ and any direct insert MUST still write `scheme_code` + `payment_event`.
    `notifications.outbox.ts` if customers should be notified.
 6. Register in `modules/schemes/scheme.registry.ts` and `src/app.ts`.
 7. Frontend: route in `App.jsx` (lazy), scheme entry in `NAVIGABLE_SCHEMES` +
-   `SOURCE_META` in `frontend/src/lib/schemeConstants.js`, endpoints in
-   `apiSlice.js`.
+   `SOURCE_META` in `frontend/src/lib/schemeConstants.js`, endpoints in a new
+   `store/api/endpoints/<scheme>Api.js` (add its `export *` line to
+   `apiSlice.js`).
 8. Guards on write routes, in order: role check → `resolveWriterBranch` →
    `assertBackdateAllowed` → `assertReconciliationSubmitted` (see existing
    scheme routes for the exact pattern).
@@ -226,8 +238,13 @@ attendance.status='absent'` + audit row in one txn → Redis pub/sub → Socket.
 
 ### Frontend (frontend/)
 - Redux Toolkit for auth state; **RTK Query for ALL API calls** — never raw
-  fetch/axios in components. All endpoints in `store/api/apiSlice.js`
-  (2,200+ lines; see GAPS.md #14 before adding — consider `injectEndpoints`).
+  fetch/axios in components. One API instance in `store/api/baseApi.js`
+  (base query, tag types); endpoints live in `store/api/endpoints/<domain>Api.js`
+  and are added with `injectEndpoints`. `store/api/apiSlice.js` is the barrel —
+  **components import every hook from `apiSlice`**, never from an endpoints file.
+- Lists use "Load more": an `...Paged` infinite-query endpoint
+  (`store/api/pagedList.js`) read through `hooks/usePagedList.js`, with
+  `components/LoadMoreFooter.jsx` underneath. Never pass a big fixed `limit`.
 - React Router 7, lazy routes from `App.jsx`. Everyday flow (Login,
   AttendanceHome, Profile) is eager; everything else lazy.
 - Socket hook: `pages/attendance/hooks/useAttendanceSocket.js` invalidates
@@ -361,7 +378,8 @@ DATABASE_URL=postgresql://postgres:RLlGzGBgbHrPnGCUbzxYtSJbGgZqbXPP@viaduct.prox
    service files.
 3. Every async route handler has try/catch ending in
    `return handleError(error, reply)`.
-4. All frontend API calls go through RTK Query in apiSlice.js.
+4. All frontend API calls go through RTK Query (`store/api/endpoints/*`, hooks
+   imported from `apiSlice.js`). Lists are paged (`usePagedList`), never capped.
 5. Multi-statement writes use `runInTransaction()`; incentive writes go
    through `IncentiveService.distributeIncentives` (exceptions: builders,
    land — see PROJECT.md).
@@ -395,7 +413,7 @@ apps/worker/src/
 └── processors/            ← attendance, signOff, autoAbsent, autoDeactivate, whatsapp*
 frontend/src/
 ├── App.jsx                ← routing + lazy boundaries + route guards
-├── store/api/apiSlice.js  ← ALL endpoints (RTK Query)
+├── store/api/             ← baseApi.js (the API) · endpoints/<domain>Api.js · apiSlice.js (barrel)
 ├── store/slices/authSlice.js
 ├── lib/                   ← formatters, constants, schemePeriod, motion, date
 ├── components/            ← shared primitives (+ money/, attendance/, branches/, layout/)

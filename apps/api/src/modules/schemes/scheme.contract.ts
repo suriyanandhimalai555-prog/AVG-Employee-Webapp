@@ -14,18 +14,20 @@
 // Anything beyond that is the scheme's own business.
 
 import type { Pool, PoolClient } from 'pg';
+// TS: type-only import — optional { page, limit } window shared by every paged list
+import type { PageWindow } from '../../shared/pagination';
 
 export interface SchemeDateFilter {
   startDate?: string;
   endDate?:   string;
 }
 
-// Filter for getEntriesByBranch: the date range plus an optional free-text search.
-// Search MUST be applied in SQL before the row LIMIT — filtering the capped list in
-// the browser hides every entry older than the newest N (the Corrections Center bug
-// where a 577-member branch could not find its 530th-newest member).
-// TS: extends the date filter so existing callers that pass only dates still type-check.
-export interface SchemeEntriesFilter extends SchemeDateFilter {
+// Filter for getEntriesByBranch: date range, optional free-text search, page window.
+// Search MUST be applied in SQL (WHERE), never to a loaded page in the browser — that
+// hides every entry outside the page (the Corrections Center bug where a 577-member
+// branch could not find its 530th-newest member).
+// TS: extends both so callers passing only dates, or only a page, still type-check.
+export interface SchemeEntriesFilter extends SchemeDateFilter, PageWindow {
   search?: string;
 }
 
@@ -65,12 +67,12 @@ export interface SchemeService {
   // Per-scheme, per-branch list of entries (members / rooms / slots — the
   // scheme picks). The shape is scheme-specific by design: the dashboard
   // renders a scheme-aware template, not a generic one.
-  // Rows are capped (newest first); each row carries total_count = the full number of
-  // matches before the cap, so callers can report truncation honestly.
+  // Returns ONE page (newest first, see shared/pagination.ts). Each row carries
+  // total_count = the number of matches across all pages.
   getEntriesByBranch?(
     db: Pool | PoolClient,
     branchId: string,
-    // TS: date range + optional server-side search term
+    // TS: date range + optional server-side search term + page window
     filter?: SchemeEntriesFilter,
   ): Promise<any[]>;
 

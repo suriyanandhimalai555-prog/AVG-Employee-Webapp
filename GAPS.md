@@ -233,21 +233,27 @@
   (`Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })`, mirroring the
   server) and use it inside `getPeriodForDate`'s default argument.
 
-### 14. `SchemeCorrectionsPage.jsx` (2,029 lines) and `apiSlice.js` (2,277 lines) are monoliths
-- **What:** The corrections console implements per-scheme edit/unpay/delete UI
-  for seven schemes in one file; `apiSlice.js` holds ~230 endpoints in one
-  file. `ManagementControlCenter.jsx` (1,194 lines) is close behind.
-- **Where:** `frontend/src/pages/schemes/SchemeCorrectionsPage.jsx`,
-  `frontend/src/store/api/apiSlice.js`,
-  `frontend/src/pages/ManagementControlCenter.jsx`
-- **Why it matters:** For smaller models especially, these files exceed
-  comfortable edit windows; unrelated schemes' UI regress together; RTK Query
-  supports `injectEndpoints` precisely to avoid the single-file slice.
-- **Fix (single task):** Split `apiSlice.js` only: keep `createApi` +
-  tagTypes in `apiSlice.js`, move endpoints into
-  `store/api/endpoints/<domain>.js` files using
-  `apiSlice.injectEndpoints({ endpoints })`, re-export the hooks. No behaviour
-  change; page splits can follow later per scheme.
+### 14. Monolith files — mostly resolved; `ManagementControlCenter.jsx` and the room-scheme twins remain
+- **Done:** `apiSlice.js` is now a barrel over `store/api/baseApi.js` +
+  `store/api/endpoints/<domain>Api.js` (`injectEndpoints`).
+  `SchemeCorrectionsPage.jsx` is a ~270-line shell over
+  `pages/schemes/corrections/*`. `chit.service.ts` and
+  `land-bookings.service.ts` are facades over per-concern sub-services.
+  Gold Coin and LSS share `modules/room-schemes/` (status machine + combine).
+- **What remains:** `ManagementControlCenter.jsx` (1,194 lines) is still one
+  file. Gold Coin and LSS still carry separate `rooms` / `slots` / `draws`
+  services (~75% alike) and near-identical frontend pages.
+- **Where:** `frontend/src/pages/ManagementControlCenter.jsx`,
+  `apps/api/src/modules/{gold-coin,lss}/{rooms,slots,draws}.service.ts`
+- **Why it matters:** A fix to slot selling or draws must be made twice. But
+  those files also hold real business differences (16 vs 20 slots, LSS
+  `payout_amount` and draw-date edits, LSS sale-date correction), so they
+  cannot be merged by renaming.
+- **Fix (single task):** Write characterization tests for
+  `rooms/slots/draws` against a throwaway database first; only then lift the
+  shared flow into `modules/room-schemes/` with the differences as config,
+  the way `combine.service.ts` was done. Do not merge them without tests —
+  this is money code.
 
 ### 15. `hasSmartphone`/role changes leave stale 30-min profile cache
 - **What:** `user:{userId}` profile cache (30 min TTL) is written at login and

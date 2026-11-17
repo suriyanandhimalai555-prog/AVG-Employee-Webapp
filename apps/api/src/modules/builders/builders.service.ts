@@ -5,6 +5,10 @@ import { IncentiveService } from '../incentives/incentives.service';
 import { SchemeAudit } from '../../shared/scheme-audit';
 // TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
 import { toContainsPattern } from '../../shared/search';
+// TS: named import — converts ?page/&limit into SQL LIMIT/OFFSET with safe clamping
+import { toLimitOffset } from '../../shared/pagination';
+// TS: type-only import — the shared entries filter (dates + search + page window)
+import type { SchemeEntriesFilter } from '../schemes/scheme.contract';
 import type {
   CreateBuildersPlanInput,
   RecordBuildersPayoutInput,
@@ -242,7 +246,7 @@ export const BuildersService = {
            WHEN 'cancelled'        THEN 6
            ELSE 7
          END ASC,
-         p.created_at DESC
+         p.created_at DESC, p.id DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, query.limit, (query.page - 1) * query.limit]
     );
@@ -1070,8 +1074,8 @@ export const BuildersService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
-    dateFilter?: { startDate?: string; endDate?: string; search?: string },
+    // TS: date range + server-side search + page window (see SchemeEntriesFilter in the contract)
+    dateFilter?: SchemeEntriesFilter,
   ): Promise<any[]> {
     const params: any[] = [branchId];
     let where = 'p.branch_id = $1';
@@ -1079,12 +1083,15 @@ export const BuildersService = {
     // Filter by business date (lump_sum_date) so backdated plans count in their real period
     if (dateFilter?.startDate) { where += ` AND p.lump_sum_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND p.lump_sum_date < ($${idx++}::date + INTERVAL '1 day')`; params.push(dateFilter.endDate); }
-    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    // Server-side search — in the WHERE clause, so it covers every page, not just the loaded one
     if (dateFilter?.search?.trim()) {
       where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR p.referrer_name ILIKE $${idx})`;
       params.push(toContainsPattern(dateFilter.search));
       idx++;
     }
+
+    // One page of rows; id is the ORDER BY tie-breaker so pages never overlap.
+    const { limit, offset } = toLimitOffset(dateFilter);
 
     const res = await db.query(
       `SELECT
@@ -1098,9 +1105,9 @@ export const BuildersService = {
        FROM builders_plans p
        JOIN customers c ON c.id = p.customer_id
        WHERE ${where}
-       ORDER BY p.created_at DESC
-       LIMIT 500`,
-      params
+       ORDER BY p.created_at DESC, p.id DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
     );
     return res.rows;
   },

@@ -23,6 +23,8 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 import { ForbiddenError, NotFoundError } from '../../shared/errors';
 import { handleError } from '../../shared/route-error-handler';
+// TS: named import — shared Zod fields for ?page=&limit= (see shared/pagination.ts)
+import { pageQueryFields } from '../../shared/pagination';
 import { SCHEME_REGISTRY, getScheme, listSchemes } from './scheme.registry';
 import type { SchemeBranchTotals, SchemeDateFilter, SchemeEntriesFilter } from './scheme.contract';
 import { PendingEnrollmentsService } from '../pending-enrollments/pending-enrollments.service';
@@ -40,11 +42,12 @@ const DateFilterSchema = z.object({
   endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'endDate must be YYYY-MM-DD').optional(),
 });
 
-// Entries drill-down filter: the date range plus an optional free-text search that each
-// scheme applies in SQL before its row cap (so every entry is reachable by search).
-// TS: .extend() reuses the date rules; trim+max keep the ILIKE param small and tidy.
+// Entries drill-down filter: date range, optional free-text search, and the page window.
+// Search runs in each scheme's WHERE clause, so it covers every page of the branch.
+// TS: .extend() reuses the date rules; pageQueryFields adds validated ?page=&limit=.
 const EntriesFilterSchema = DateFilterSchema.extend({
   search: z.string().trim().max(100, 'search must be at most 100 characters').optional(),
+  ...pageQueryFields,
 });
 
 // TS: validates the optional date and optional/required branchId on daily-collection routes.
@@ -171,16 +174,22 @@ export default async function schemesAggregateRoutes(fastify: FastifyInstance): 
         const filter: SchemeEntriesFilter = EntriesFilterSchema.parse(request.query ?? {});
 
         const entries = await svc.getEntriesByBranch(fastify.db, branchId, filter);
-        // Every row carries total_count (matches before the scheme's row cap). When the
-        // cap bites, total > entries.length and the UI tells the user to search/narrow.
+        // Every row carries total_count = matches across ALL pages, so the client knows
+        // whether another page exists. A page past the end returns no rows; in that case
+        // everything before it has been seen, so the offset is the best total we have.
         // TS: Number() because the window-count column arrives untyped from pg rows.
-        const total = entries.length > 0 ? Number(entries[0].total_count ?? entries.length) : 0;
+        const total = entries.length > 0
+          ? Number(entries[0].total_count ?? entries.length)
+          : (filter.page! - 1) * filter.limit!;
         return reply.send({
           success: true,
           data: {
             schemeCode: svc.schemeCode,
             branchId,
             total,
+            // TS: non-null — Zod defaults guarantee both are set after parse()
+            page:  filter.page!,
+            limit: filter.limit!,
             entries,
           },
         });

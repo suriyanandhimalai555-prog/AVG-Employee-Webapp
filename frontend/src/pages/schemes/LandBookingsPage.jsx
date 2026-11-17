@@ -3,7 +3,9 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Loader2, BookOpen, ChevronRight } from 'lucide-react';
 import { selectCurrentUser } from '../../store/slices/authSlice';
-import { useGetLandBookingsQuery } from '../../store/api/apiSlice';
+import { useGetLandBookingsPagedInfiniteQuery } from '../../store/api/apiSlice';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import { REFERRER_ROLES } from '../../lib/schemeConstants';
 import { formatDate } from '../../lib/formatters';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
@@ -43,11 +45,12 @@ export const LandBookingsPage = () => {
   const isReferrerView = REFERRER_ROLES.has(user?.role);
   const [statusFilter, setStatusFilter] = useState('');
 
-  const { data: result, isLoading } = useGetLandBookingsQuery({
+  // Paged list: changing the status tab starts again from page 1.
+  const {
+    rows: bookings, total, hasMore, loadMore, isLoading, isLoadingMore,
+  } = usePagedList(useGetLandBookingsPagedInfiniteQuery, {
     status: statusFilter || undefined,
-    limit:  200,
   });
-  const bookings = result?.data || [];
 
   const rightAction = isBranchAdmin ? (
     <button
@@ -133,6 +136,14 @@ export const LandBookingsPage = () => {
               </div>
             </button>
           ))}
+          <LoadMoreFooter
+            shown={bookings.length}
+            total={total}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            loading={isLoadingMore}
+            noun="bookings"
+          />
         </div>
       )}
     </SchemePageWrapper>

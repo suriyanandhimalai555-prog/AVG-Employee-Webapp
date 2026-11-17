@@ -10,6 +10,8 @@ import { Pool, PoolClient } from 'pg';
 import type { SchemeService, SchemeEntriesFilter, SchemeDateFilter, SchemeBranchTotals } from '../schemes/scheme.contract';
 // TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
 import { toContainsPattern } from '../../shared/search';
+// TS: named import — converts ?page/&limit into SQL LIMIT/OFFSET with safe clamping
+import { toLimitOffset } from '../../shared/pagination';
 import { LandBookingsService } from './land-bookings.service';
 
 const SCHEME_CODE = 'land_scheme';
@@ -138,12 +140,15 @@ export const LandService: SchemeService = {
     let idx = 2;
     if (dateFilter?.startDate) { where += ` AND bk.booking_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND bk.booking_date <= $${idx++}::date`; params.push(dateFilter.endDate); }
-    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    // Server-side search — in the WHERE clause, so it covers every page, not just the loaded one
     if (dateFilter?.search?.trim()) {
       where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR bk.booking_ref ILIKE $${idx} OR p.site_number::text ILIKE $${idx} OR s.name ILIKE $${idx} OR u.name ILIKE $${idx})`;
       params.push(toContainsPattern(dateFilter.search));
       idx++;
     }
+
+    // One page of rows; id is the ORDER BY tie-breaker so pages never overlap.
+    const { limit, offset } = toLimitOffset(dateFilter);
 
     const res = await db.query(
       `SELECT
@@ -163,9 +168,9 @@ export const LandService: SchemeService = {
        JOIN land_sites s  ON s.id = p.site_id
        LEFT JOIN users u  ON u.id = bk.referrer_id
        WHERE ${where}
-       ORDER BY bk.created_at DESC
-       LIMIT 500`,
-      params
+       ORDER BY bk.created_at DESC, bk.id DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
     );
     return res.rows;
   },

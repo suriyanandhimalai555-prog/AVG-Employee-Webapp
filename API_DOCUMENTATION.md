@@ -2549,13 +2549,14 @@ All endpoints restricted to `md` and `director` roles only.
 ### `GET /api/schemes/:code/branches/:branchId/entries`
 **Auth:** Yes — `md`, `director`, `management`
 **Description:** Returns individual member/entry records for one scheme at one branch.
-The list is capped (newest first: 500 rows; 200 for Gold Coin / LSS rooms). `total` is the
-full match count before the cap — when `total > entries.length` the list is truncated.
+Paged, newest first. `total` is the match count across all pages; request the next
+`page` while fewer than `total` entries have been loaded.
 
 **Path Params:** `code` (scheme code), `branchId` (UUID)  
-**Query Params:** `startDate`, `endDate` (optional), `search` (optional, max 100 chars)
+**Query Params:** `startDate`, `endDate` (optional), `search` (optional, max 100 chars),
+`page` (default 1), `limit` (default 50, max 200)
 
-`search` is applied in SQL **before** the cap, so it reaches every entry in the branch.
+`search` is applied in SQL across the whole branch, so it finds entries on any page.
 It matches customer name / code / phone plus the scheme's own identifier (gold chit number,
 land booking ref / site, chit group name, room number / package). For Chit, Gold Coin and LSS
 a group/room also matches when any member/slot customer inside it matches.
@@ -2568,6 +2569,8 @@ a group/room also matches when any member/slot customer inside it matches.
     "schemeCode": "gold_scheme",
     "branchId": "uuid",
     "total": 577,
+    "page": 1,
+    "limit": 50,
     "entries": [
       {
         "id": "uuid",

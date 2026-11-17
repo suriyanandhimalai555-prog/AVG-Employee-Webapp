@@ -16,9 +16,11 @@ import { SchemeSearchBar } from './components/SchemeSearchBar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   useGetGoldCoinPackagesQuery,
-  useGetGoldCoinRoomsQuery,
+  useGetGoldCoinRoomsPagedInfiniteQuery,
   useGetGoldCoinSummaryQuery,
 } from '../../store/api/apiSlice';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import EmptyState from '../../components/EmptyState';
 import SchemeCalendar from '../../components/SchemeCalendar';
 import { formatCurrency, formatDate } from '../../lib/formatters';
@@ -78,22 +80,20 @@ export const GoldCoinSchemePage = () => {
 
   const { data: summary } = useGetGoldCoinSummaryQuery();
   const { data: packages = [], isLoading: pkgLoading } = useGetGoldCoinPackagesQuery();
-  const { data: roomsResult, isLoading: roomsLoading } = useGetGoldCoinRoomsQuery(
+  // Paged list: any filter change (status, search, package/plan, period) restarts at page 1.
+  const {
+    rows: rooms, total, hasMore, loadMore, isLoading: roomsLoading, isLoadingMore,
+  } = usePagedList(
+    useGetGoldCoinRoomsPagedInfiniteQuery,
     {
       status:    statusFilter === 'all' ? undefined : statusFilter,
       search:    search || undefined,
       packageId: packageFilter || undefined,
       startDate: ignorePeriod ? undefined : period.startDate,
       endDate:   ignorePeriod ? undefined : period.endDate,
-      // 200 = the API ceiling. A branch already holds 100+ rooms, so 100 cut the
-      // "All" tab short without saying so.
-      limit:     200,
     },
     { skip: !canViewRooms },
   );
-  const rooms = roomsResult?.data || [];
-  // Server-side match count — larger than rooms.length when the list is capped.
-  const totalRooms = roomsResult?.total ?? rooms.length;
 
   return (
     <SchemePageWrapper>
@@ -252,12 +252,6 @@ export const GoldCoinSchemePage = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {/* Never cut the list silently — say when more rooms exist than are shown. */}
-            {totalRooms > rooms.length && (
-              <p className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                Showing {rooms.length} of {totalRooms} rooms. Use search or the filters above to narrow the list.
-              </p>
-            )}
             {rooms.map((room) => {
               const style = STATUS_STYLES[room.status] || STATUS_STYLES.filling;
               const { Icon } = style;
@@ -325,6 +319,14 @@ export const GoldCoinSchemePage = () => {
                 </button>
               );
             })}
+            <LoadMoreFooter
+              shown={rooms.length}
+              total={total}
+              hasMore={hasMore}
+              onLoadMore={loadMore}
+              loading={isLoadingMore}
+              noun="rooms"
+            />
           </div>
         )}
       </div>

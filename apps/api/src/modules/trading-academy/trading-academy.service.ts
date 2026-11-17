@@ -5,6 +5,10 @@ import { runInTransaction } from '../../shared/transaction-helper';
 import { SchemeAudit } from '../../shared/scheme-audit';
 // TS: named import — shared ILIKE-pattern builder that escapes % and _ in user-typed search text
 import { toContainsPattern } from '../../shared/search';
+// TS: named import — converts ?page/&limit into SQL LIMIT/OFFSET with safe clamping
+import { toLimitOffset } from '../../shared/pagination';
+// TS: type-only import — the shared entries filter (dates + search + page window)
+import type { SchemeEntriesFilter } from '../schemes/scheme.contract';
 import type { AddTradingMemberInput, GetTradingMembersQuery, CorrectTradingMemberInput } from './trading-academy.schema';
 
 // Stable project code for trading academy — set once at creation, never changes
@@ -170,7 +174,7 @@ export const TradingAcademyService = {
        JOIN users so     ON t.enrolled_by  = so.id
        JOIN users ent    ON t.entered_by   = ent.id
        WHERE ${where}
-       ORDER BY t.enrollment_date DESC, t.created_at DESC
+       ORDER BY t.enrollment_date DESC, t.created_at DESC, t.id DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, query.limit, (query.page - 1) * query.limit]
     );
@@ -498,8 +502,8 @@ export const TradingAcademyService = {
   async getEntriesByBranch(
     db: Pool,
     branchId: string,
-    // TS: optional date range + optional free-text search (server-side, so it reaches rows beyond the LIMIT)
-    dateFilter?: { startDate?: string; endDate?: string; search?: string },
+    // TS: date range + server-side search + page window (see SchemeEntriesFilter in the contract)
+    dateFilter?: SchemeEntriesFilter,
   ): Promise<any[]> {
     const projectId = await TradingAcademyService.getProjectId(db);
     const params: any[] = [branchId, projectId];
@@ -507,12 +511,15 @@ export const TradingAcademyService = {
     let idx = 3;
     if (dateFilter?.startDate) { where += ` AND t.enrollment_date >= $${idx++}::date`; params.push(dateFilter.startDate); }
     if (dateFilter?.endDate)   { where += ` AND t.enrollment_date <= $${idx++}::date`; params.push(dateFilter.endDate); }
-    // Server-side search — applied BEFORE the LIMIT so older entries stay findable
+    // Server-side search — in the WHERE clause, so it covers every page, not just the loaded one
     if (dateFilter?.search?.trim()) {
       where += ` AND (c.name ILIKE $${idx} OR c.customer_code ILIKE $${idx} OR c.phone ILIKE $${idx} OR u.name ILIKE $${idx})`;
       params.push(toContainsPattern(dateFilter.search));
       idx++;
     }
+
+    // One page of rows; id is the ORDER BY tie-breaker so pages never overlap.
+    const { limit, offset } = toLimitOffset(dateFilter);
 
     const res = await db.query(
       `SELECT
@@ -526,9 +533,9 @@ export const TradingAcademyService = {
        LEFT JOIN customers c ON c.id = t.customer_id
        LEFT JOIN users u     ON u.id = t.enrolled_by
        WHERE ${where}
-       ORDER BY t.created_at DESC
-       LIMIT 500`,
-      params
+       ORDER BY t.created_at DESC, t.id DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, limit, offset]
     );
     return res.rows;
   },

@@ -13,9 +13,11 @@ import {
 import { selectCurrentUser } from '../store/slices/authSlice';
 import {
   useGetSchemesOverviewQuery,
-  useGetSchemeBranchEntriesQuery,
+  useGetSchemeBranchEntriesPagedInfiniteQuery,
   useGetGoldMembersQuery,
 } from '../store/api/apiSlice';
+import { usePagedList } from '../hooks/usePagedList';
+import LoadMoreFooter from '../components/LoadMoreFooter';
 import { SchemeCalendar } from '../components/SchemeCalendar';
 import { BranchPicker } from '../components/BranchPicker';
 import { SchemeSearchBar } from './schemes/components/SchemeSearchBar';
@@ -216,26 +218,19 @@ const ENTRY_ROW = {
 // ─── Branch entries (inline expand) ──────────────────────────────────────────
 
 const BranchEntries = ({ schemeCode, branchId, startDate, endDate, onEntryClick }) => {
-  const { data, isLoading, error } = useGetSchemeBranchEntriesQuery({ code: schemeCode, branchId, startDate, endDate });
+  // Paged list ("Load more") — the branch's entries arrive a page at a time.
+  const {
+    rows: entries, total, hasMore, loadMore, isLoading, isLoadingMore, error,
+  } = usePagedList(useGetSchemeBranchEntriesPagedInfiniteQuery, { code: schemeCode, branchId, startDate, endDate });
   const Row = ENTRY_ROW[schemeCode];
 
   if (isLoading) return <div className="flex justify-center py-6"><Loader2 className="animate-spin text-indigo/40" size={20} aria-hidden="true" /></div>;
   if (error)     return <p className="px-4 py-4 text-xs text-red-600 text-center">Failed to load entries.</p>;
 
-  const entries = data?.entries ?? [];
   if (entries.length === 0) return <p className="px-4 py-6 text-xs text-navy/40 text-center">No entries for this branch{startDate ? ' in this period' : ''}.</p>;
-
-  // The API caps this list (newest first) and reports the full count as `total`.
-  const total = data?.total ?? entries.length;
 
   return (
     <div className="divide-y divide-border">
-      {/* Never cut the list silently — say when the branch has more than is shown. */}
-      {total > entries.length && (
-        <p className="px-4 py-2 text-[11px] font-medium text-amber-700 bg-amber-50">
-          Showing the newest {entries.length} of {total}. Pick a period to see the rest.
-        </p>
-      )}
       {entries.map(e => {
         const row = Row ? <Row entry={e} /> : (
           <div className="px-4 py-3 text-xs text-navy/40">{e.id}</div>
@@ -254,6 +249,15 @@ const BranchEntries = ({ schemeCode, branchId, startDate, endDate, onEntryClick 
           <div key={e.id}>{row}</div>
         );
       })}
+      {/* Never end the list silently — more pages load on demand. */}
+      <LoadMoreFooter
+        shown={entries.length}
+        total={total}
+        hasMore={hasMore}
+        onLoadMore={loadMore}
+        loading={isLoadingMore}
+        className="px-4 py-3"
+      />
     </div>
   );
 };

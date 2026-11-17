@@ -5,11 +5,13 @@ import { Plus, Loader2, Building2, ChevronRight, IndianRupee } from 'lucide-reac
 import { SchemeSearchBar } from './components/SchemeSearchBar';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
-  useGetBuildersPlansQuery,
+  useGetBuildersPlansPagedInfiniteQuery,
   useGetBuildersSummaryQuery,
   useGetBuildersPackagesQuery,
 } from '../../store/api/apiSlice';
 import { formatCurrency, formatCurrencyCompact, formatDate } from '../../lib/formatters';
+import { usePagedList } from '../../hooks/usePagedList';
+import LoadMoreFooter from '../../components/LoadMoreFooter';
 import { SchemePageWrapper } from './components/SchemePageWrapper';
 import { SchemePageHeader } from './components/SchemePageHeader';
 import { SchemePendingBanner } from './components/SchemePendingBanner';
@@ -61,15 +63,16 @@ export const BuildersSchemePage = () => {
   const [statusFilter, setStatusFilter] = useState('in_progress');
   const [search, setSearch] = useState('');
 
-  const { data: plansResult, isLoading } = useGetBuildersPlansQuery({
+  // Paged list: changing the status tab or search starts again from page 1.
+  const {
+    rows: plans, total, hasMore, loadMore, isLoading, isLoadingMore,
+  } = usePagedList(useGetBuildersPlansPagedInfiniteQuery, {
     status: statusFilter === 'all' ? undefined : statusFilter,
     search: search || undefined,
-    limit:  200,
   });
   const { data: summary }  = useGetBuildersSummaryQuery({});
   const { data: packages } = useGetBuildersPackagesQuery();
 
-  const plans = plansResult?.data || [];
 
   // Build a human-readable package label e.g. "₹5 L"
   const pkgLabel = (n) => {
@@ -174,7 +177,8 @@ export const BuildersSchemePage = () => {
             </p>
           </div>
         ) : (
-          plans.map(plan => {
+          <>
+          {plans.map(plan => {
             const colorClass    = PKG_COLORS[(plan.package_number - 1) % PKG_COLORS.length];
             const monthsLeft    = 60 - (plan.current_month || 0);
             const progress      = ((plan.current_month || 0) / 60) * 100;
@@ -262,7 +266,16 @@ export const BuildersSchemePage = () => {
                 )}
               </button>
             );
-          })
+          })}
+          <LoadMoreFooter
+            shown={plans.length}
+            total={total}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            loading={isLoadingMore}
+            noun="plans"
+          />
+          </>
         )}
       </div>
 
