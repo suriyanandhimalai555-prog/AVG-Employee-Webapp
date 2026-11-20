@@ -472,182 +472,200 @@ jobs:
   success-email:
     name: Send Success Email
     runs-on: ubuntu-latest
-
     needs:
+      - build
       - deploy
-
-    if: success()
+    if: ${{ always() && needs.build.result == 'success' && needs.deploy.result == 'success' }}
 
     steps:
+      - name: Send Success Email using Microsoft Graph
+        shell: bash
+        env:
+          MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          MS_SENDER_EMAIL: ${{ secrets.MS_SENDER_EMAIL }}
+          MAIL_TO: "Sanjayvanan03@gmail.com,devops@avgprimetech.com"
+          MAIL_CC: ""
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          PUSHED_BY: ${{ github.actor }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name || github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          NAMESPACE: ems
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
 
-      - name: Send Success Email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          secure: true
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          echo "Obtaining Microsoft Graph access token..."
 
-          subject: "EMS Deployment Successful"
+          TOKEN_RESPONSE=$(curl -fsS -X POST \
+            "https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "client_id=${MS_CLIENT_ID}" \
+            --data-urlencode "client_secret=${MS_CLIENT_SECRET}" \
+            --data-urlencode "scope=https://graph.microsoft.com/.default" \
+            --data-urlencode "grant_type=client_credentials")
 
-          from: ${{ secrets.SMTP_USERNAME }}
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Microsoft Graph access token generation failed"
+            echo "$TOKEN_RESPONSE" | jq 'del(.access_token)' || true
+            exit 1
+          fi
 
-          to: |
-            Sanjayvanan03@gmail.com,
-            devops@avgprimetech.com
+          TO_JSON=$(jq -Rn --arg emails "$MAIL_TO" \
+            '$emails | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map({emailAddress:{address:.}})')
+          CC_JSON=$(jq -Rn --arg emails "${MAIL_CC:-}" \
+            '$emails | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map({emailAddress:{address:.}})')
 
-          html_body: |
-            <h2>EMS Deployment Successful</h2>
+          HTML_BODY=$(cat <<EOF
+          <!DOCTYPE html>
+          <html>
+          <body style="font-family:Arial,sans-serif;color:#333;">
+            <div style="max-width:700px;margin:auto;border:1px solid #ddd;padding:25px;">
+              <h2 style="color:#198754;">EMS Kubernetes Deployment Successful</h2>
+              <p>Docker image build, Kubernetes deployment, rollout checks and backend health checks completed successfully.</p>
+              <table style="width:100%;border-collapse:collapse;" border="1" cellpadding="10">
+                <tr><td><b>Repository</b></td><td>${REPOSITORY}</td></tr>
+                <tr><td><b>Branch</b></td><td>${BRANCH}</td></tr>
+                <tr><td><b>Pushed By</b></td><td>${PUSHED_BY}</td></tr>
+                <tr><td><b>Commit Author</b></td><td>${COMMIT_AUTHOR}</td></tr>
+                <tr><td><b>Image Tag / Commit SHA</b></td><td>${COMMIT_SHA}</td></tr>
+                <tr><td><b>Docker Build Result</b></td><td>${BUILD_RESULT}</td></tr>
+                <tr><td><b>Deployment Job Result</b></td><td>${DEPLOY_RESULT}</td></tr>
+                <tr><td><b>Namespace</b></td><td>${NAMESPACE}</td></tr>
+                <tr><td><b>Status</b></td><td style="color:#198754;"><b>SUCCESS</b></td></tr>
+              </table>
+              <p style="margin-top:25px;"><a href="${RUN_URL}">View Docker Build Run</a></p>
+              <p><a href="${RUN_URL}">View Deployment Workflow Run</a></p>
+              <h2 style="color:#198754;">EMS Deployment SUCCESSFUL</h2>
+            </div>
+          </body>
+          </html>
+          EOF
+          )
 
-            <table border="1" cellpadding="8">
+          MAIL_PAYLOAD=$(jq -n \
+            --arg subject "EMS Kubernetes Deployment Successful" \
+            --arg html "$HTML_BODY" \
+            --argjson to "$TO_JSON" \
+            --argjson cc "$CC_JSON" \
+            '{message:{subject:$subject,body:{contentType:"HTML",content:$html},toRecipients:$to,ccRecipients:$cc},saveToSentItems:true}')
 
-              <tr>
-                <td><b>Repository</b></td>
-                <td>${{ github.repository }}</td>
-              </tr>
+          HTTP_STATUS=$(curl -sS -o /tmp/ems-graph-response.txt \
+            -w "%{http_code}" \
+            -X POST "https://graph.microsoft.com/v1.0/users/${MS_SENDER_EMAIL}/sendMail" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$MAIL_PAYLOAD")
 
-              <tr>
-                <td><b>Branch</b></td>
-                <td>${{ github.ref_name }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Commit</b></td>
-                <td>${{ github.sha }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Developer</b></td>
-                <td>${{ github.actor }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Architecture</b></td>
-                <td>ARM64</td>
-              </tr>
-
-              <tr>
-                <td><b>Backend Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>Frontend Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>Worker Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>HPA</b></td>
-                <td>Disabled</td>
-              </tr>
-
-              <tr>
-                <td><b>Status</b></td>
-                <td>SUCCESS</td>
-              </tr>
-
-              <tr>
-                <td><b>Rollback</b></td>
-                <td>Not required</td>
-              </tr>
-
-            </table>
-
+          if [ "$HTTP_STATUS" != "202" ]; then
+            echo "Microsoft Graph email failed: HTTP ${HTTP_STATUS}"
+            cat /tmp/ems-graph-response.txt
+            exit 1
+          fi
+          echo "SUCCESS email accepted by Microsoft Graph"
 
   failure-email:
     name: Send Failure Email
     runs-on: ubuntu-latest
-
     needs:
       - build
       - deploy
-
-    if: failure()
+    if: ${{ always() && (needs.build.result == 'failure' || needs.deploy.result == 'failure') }}
 
     steps:
+      - name: Send Failure Email using Microsoft Graph
+        shell: bash
+        env:
+          MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          MS_SENDER_EMAIL: ${{ secrets.MS_SENDER_EMAIL }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_CC: ${{ secrets.MAIL_CC }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          PUSHED_BY: ${{ github.actor }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name || github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          NAMESPACE: ems
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
 
-      - name: Send Failure Email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          secure: true
+          echo "Obtaining Microsoft Graph access token..."
 
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          TOKEN_RESPONSE=$(curl -fsS -X POST \
+            "https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "client_id=${MS_CLIENT_ID}" \
+            --data-urlencode "client_secret=${MS_CLIENT_SECRET}" \
+            --data-urlencode "scope=https://graph.microsoft.com/.default" \
+            --data-urlencode "grant_type=client_credentials")
 
-          subject: "EMS Deployment Failed - Automatic Rollback"
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Microsoft Graph access token generation failed"
+            echo "$TOKEN_RESPONSE" | jq 'del(.access_token)' || true
+            exit 1
+          fi
 
-          from: ${{ secrets.SMTP_USERNAME }}
+          TO_JSON=$(jq -Rn --arg emails "$MAIL_TO" \
+            '$emails | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map({emailAddress:{address:.}})')
+          CC_JSON=$(jq -Rn --arg emails "${MAIL_CC:-}" \
+            '$emails | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)) | map({emailAddress:{address:.}})')
 
-          to: |
-            Sanjayvanan03@gmail.com,
-            devops@avgprimetech.com
+          HTML_BODY=$(cat <<EOF
+          <!DOCTYPE html>
+          <html>
+          <body style="font-family:Arial,sans-serif;color:#333;">
+            <div style="max-width:700px;margin:auto;border:1px solid #ddd;padding:25px;">
+              <h2 style="color:#dc3545;">EMS Kubernetes Deployment Failed</h2>
+              <p>The Docker build or Kubernetes deployment failed. Please inspect the workflow logs for details.</p>
+              <table style="width:100%;border-collapse:collapse;" border="1" cellpadding="10">
+                <tr><td><b>Repository</b></td><td>${REPOSITORY}</td></tr>
+                <tr><td><b>Branch</b></td><td>${BRANCH}</td></tr>
+                <tr><td><b>Pushed By</b></td><td>${PUSHED_BY}</td></tr>
+                <tr><td><b>Commit Author</b></td><td>${COMMIT_AUTHOR}</td></tr>
+                <tr><td><b>Commit SHA</b></td><td>${COMMIT_SHA}</td></tr>
+                <tr><td><b>Docker Build Result</b></td><td>${BUILD_RESULT}</td></tr>
+                <tr><td><b>Deployment Job Result</b></td><td>${DEPLOY_RESULT}</td></tr>
+                <tr><td><b>Namespace</b></td><td>${NAMESPACE}</td></tr>
+                <tr><td><b>Status</b></td><td style="color:#dc3545;"><b>FAILED</b></td></tr>
+                <tr><td><b>Action</b></td><td>Automatic rollback attempted if deployment failed</td></tr>
+              </table>
+              <p style="margin-top:25px;"><a href="${RUN_URL}">View Docker Build Run</a></p>
+              <p><a href="${RUN_URL}">View Deployment Workflow Run</a></p>
+              <h2 style="color:#dc3545;">EMS Deployment FAILED</h2>
+            </div>
+          </body>
+          </html>
+          EOF
+          )
 
-          html_body: |
-            <h2>EMS Deployment Failed</h2>
+          MAIL_PAYLOAD=$(jq -n \
+            --arg subject "FAILED: EMS Kubernetes Deployment" \
+            --arg html "$HTML_BODY" \
+            --argjson to "$TO_JSON" \
+            --argjson cc "$CC_JSON" \
+            '{message:{subject:$subject,body:{contentType:"HTML",content:$html},toRecipients:$to,ccRecipients:$cc},saveToSentItems:true}')
 
-            <table border="1" cellpadding="8">
+          HTTP_STATUS=$(curl -sS -o /tmp/ems-graph-response.txt \
+            -w "%{http_code}" \
+            -X POST "https://graph.microsoft.com/v1.0/users/${MS_SENDER_EMAIL}/sendMail" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$MAIL_PAYLOAD")
 
-              <tr>
-                <td><b>Repository</b></td>
-                <td>${{ github.repository }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Branch</b></td>
-                <td>${{ github.ref_name }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Commit</b></td>
-                <td>${{ github.sha }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Developer</b></td>
-                <td>${{ github.actor }}</td>
-              </tr>
-
-              <tr>
-                <td><b>Architecture</b></td>
-                <td>ARM64</td>
-              </tr>
-
-              <tr>
-                <td><b>Backend Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>Frontend Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>Worker Replicas</b></td>
-                <td>1</td>
-              </tr>
-
-              <tr>
-                <td><b>HPA</b></td>
-                <td>Disabled</td>
-              </tr>
-
-              <tr>
-                <td><b>Status</b></td>
-                <td>FAILED</td>
-              </tr>
-
-              <tr>
-                <td><b>Action</b></td>
-                <td>Automatic rollback initiated</td>
-              </tr>
-
-            </table>
+          if [ "$HTTP_STATUS" != "202" ]; then
+            echo "Microsoft Graph email failed: HTTP ${HTTP_STATUS}"
+            cat /tmp/ems-graph-response.txt
+            exit 1
+          fi
+          echo "FAILURE email accepted by Microsoft Graph"
