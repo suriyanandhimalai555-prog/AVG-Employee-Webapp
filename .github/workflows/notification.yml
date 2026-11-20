@@ -1,0 +1,181 @@
+name: EMS Microsoft Graph Notifications
+
+on:
+  workflow_run:
+    workflows:
+      - Build EMS
+      - Deploy EMS
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  notify:
+    name: Send EMS Workflow Notification
+    runs-on: ubuntu-latest
+
+    if: >-
+      github.event.workflow_run.name == 'Deploy EMS' ||
+      (github.event.workflow_run.name == 'Build EMS' &&
+       github.event.workflow_run.conclusion != 'success')
+
+    steps:
+      - name: Send Notification using Microsoft Graph
+        shell: bash
+        env:
+          MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+
+          MS_SENDER_EMAIL: ${{ vars.MS_SENDER_EMAIL }}
+          MAIL_TO: ${{ vars.MAIL_TO }}
+          MAIL_CC: ${{ vars.MAIL_CC }}
+
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_RESULT: ${{ github.event.workflow_run.conclusion }}
+          REPOSITORY: ${{ github.event.repository.full_name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGERED_BY: ${{ github.event.workflow_run.actor.login }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          NAMESPACE: ems
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.event.workflow_run.id }}
+          GH_TOKEN: ${{ github.token }}
+
+        run: |
+          set -Eeuo pipefail
+
+          # Do not report success when the deployment job was skipped.
+          if [ "$WORKFLOW_NAME" = "Deploy EMS" ] && [ "$WORKFLOW_RESULT" = "success" ]; then
+            JOBS_JSON=$(curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GH_REPOSITORY}/actions/runs/${GH_RUN_ID}/jobs")
+
+            DEPLOY_JOB_RESULT=$(echo "$JOBS_JSON" | jq -r \
+              '.jobs[] | select(.name == "Deploy EMS to Kubernetes") | .conclusion' | head -n 1)
+
+            if [ "$DEPLOY_JOB_RESULT" != "success" ]; then
+              echo "Deployment job did not succeed (result: ${DEPLOY_JOB_RESULT:-not found})."
+              echo "Skipping deployment-success email."
+              exit 0
+            fi
+          fi
+
+          if [ -z "${MS_TENANT_ID}" ] ||
+             [ -z "${MS_CLIENT_ID}" ] ||
+             [ -z "${MS_CLIENT_SECRET}" ] ||
+             [ -z "${MS_SENDER_EMAIL}" ] ||
+             [ -z "${MAIL_TO}" ]; then
+            echo "Required Microsoft Graph configuration is missing."
+            exit 1
+          fi
+
+          if [ "${WORKFLOW_NAME}" = "Deploy EMS" ] &&
+             [ "${WORKFLOW_RESULT}" = "success" ]; then
+            STATUS="SUCCESS"
+            SUBJECT="SUCCESS: EMS Kubernetes Deployment"
+            HEADING="EMS Kubernetes Deployment Successful"
+            COLOR="#198754"
+            DESCRIPTION="Docker images were built and the Kubernetes deployment and production health checks completed successfully."
+          else
+            STATUS="FAILED"
+            SUBJECT="FAILED: EMS Build or Kubernetes Deployment"
+            HEADING="EMS Workflow Failed"
+            COLOR="#dc3545"
+            DESCRIPTION="The EMS build or deployment workflow did not complete successfully. Please inspect the workflow run."
+          fi
+
+          echo "Obtaining Microsoft Graph access token..."
+
+          TOKEN_RESPONSE=$(curl -fsS -X POST \
+            "https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "client_id=${MS_CLIENT_ID}" \
+            --data-urlencode "client_secret=${MS_CLIENT_SECRET}" \
+            --data-urlencode "scope=https://graph.microsoft.com/.default" \
+            --data-urlencode "grant_type=client_credentials")
+
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Microsoft Graph access token generation failed."
+            echo "$TOKEN_RESPONSE" | jq 'del(.access_token)' || true
+            exit 1
+          fi
+
+          TO_JSON=$(jq -Rn --arg emails "$MAIL_TO" \
+            '$emails | split(",") |
+             map(gsub("^\\s+|\\s+$"; "")) |
+             map(select(length > 0)) |
+             map({emailAddress:{address:.}})')
+
+          CC_JSON=$(jq -Rn --arg emails "${MAIL_CC:-}" \
+            '$emails | split(",") |
+             map(gsub("^\\s+|\\s+$"; "")) |
+             map(select(length > 0)) |
+             map({emailAddress:{address:.}})')
+
+          HTML_BODY=$(cat <<HTML
+          <!DOCTYPE html>
+          <html>
+          <body style="font-family:Arial,sans-serif;color:#333;">
+            <div style="max-width:700px;margin:auto;border:1px solid #ddd;padding:25px;">
+              <h2 style="color:${COLOR};">${HEADING}</h2>
+              <p>${DESCRIPTION}</p>
+              <table style="width:100%;border-collapse:collapse;" border="1" cellpadding="10">
+                <tr><td><b>Repository</b></td><td>${REPOSITORY}</td></tr>
+                <tr><td><b>Branch</b></td><td>${BRANCH}</td></tr>
+                <tr><td><b>Triggered By</b></td><td>${TRIGGERED_BY}</td></tr>
+                <tr><td><b>Commit SHA</b></td><td>${COMMIT_SHA}</td></tr>
+                <tr><td><b>Workflow</b></td><td>${WORKFLOW_NAME}</td></tr>
+                <tr><td><b>Workflow Result</b></td><td>${WORKFLOW_RESULT}</td></tr>
+                <tr><td><b>Kubernetes Namespace</b></td><td>${NAMESPACE}</td></tr>
+                <tr><td><b>Status</b></td><td style="color:${COLOR};"><b>${STATUS}</b></td></tr>
+              </table>
+              <p style="margin-top:25px;">
+                <a href="${RUN_URL}">View GitHub Actions Run</a>
+              </p>
+            </div>
+          </body>
+          </html>
+          HTML
+          )
+
+          MAIL_PAYLOAD=$(jq -n \
+            --arg subject "$SUBJECT" \
+            --arg html "$HTML_BODY" \
+            --argjson to "$TO_JSON" \
+            --argjson cc "$CC_JSON" \
+            '{
+              message: {
+                subject: $subject,
+                body: {contentType:"HTML", content:$html},
+                toRecipients: $to,
+                ccRecipients: $cc
+              },
+              saveToSentItems: true
+            }')
+
+          HTTP_STATUS=$(curl -sS \
+            -o /tmp/ems-graph-response.txt \
+            -w "%{http_code}" \
+            -X POST \
+            "https://graph.microsoft.com/v1.0/users/${MS_SENDER_EMAIL}/sendMail" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$MAIL_PAYLOAD")
+
+          if [ "$HTTP_STATUS" != "202" ]; then
+            echo "Microsoft Graph email failed: HTTP ${HTTP_STATUS}"
+            cat /tmp/ems-graph-response.txt
+            exit 1
+          fi
+
+          echo "${STATUS} notification accepted by Microsoft Graph."
